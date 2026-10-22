@@ -305,8 +305,6 @@ impl CompareView {
                                 short(&c.new_text()),
                                 short(&c.old_text())
                             ),
-                                short(&c.new_text())
-                            ),
                         };
                         let color = match c.kind {
                             ChangeKind::Deleted => DELETED,
