@@ -62,7 +62,9 @@ fn rewrite_wraps_to_frame_and_can_be_moved_and_resized() {
 
     // Erneut setzen mit dem gemessenen Kasten: gleicher Umbruch (stabil).
     let mut again = saved;
-    again.set_paragraph(0, &np, &np.text.clone(), np.frame()).unwrap();
+    again
+        .set_paragraph(0, &np, &np.text.clone(), np.frame())
+        .unwrap();
     let stable = para(&again.paragraphs(0).unwrap(), "Ein ganz").clone();
     assert_eq!(stable.lines, np.lines);
     assert!((stable.width - np.width).abs() < 0.01);
