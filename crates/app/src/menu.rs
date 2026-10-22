@@ -201,6 +201,14 @@ impl FolioApp {
                 ui.label(egui::RichText::new(format!("{pending} Schwärzung(en) markiert")).weak());
                 ui.separator();
                 if ui
+                    .add_enabled(pending > 0, Button::new("Schwärzungen anwenden…"))
+                    .clicked()
+                {
+                    self.redact_confirm = true;
+                    ui.close();
+                }
+                ui.separator();
+                if ui
                     .button("Suchtreffer schwärzen…")
                     .on_hover_text("Öffnet die Suche; dort „Alle Treffer schwärzen“")
                     .clicked()

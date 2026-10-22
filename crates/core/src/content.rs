@@ -48,6 +48,23 @@ impl Matrix {
         ])
     }
 
+    /// Umkehrabbildung (`None`, wenn die Matrix nicht umkehrbar ist, z. B. Breite 0).
+    pub fn invert(&self) -> Option<Matrix> {
+        let [a, b, c, d, e, f] = self.0;
+        let det = a * d - b * c;
+        if det.abs() < 1e-9 {
+            return None;
+        }
+        Some(Matrix([
+            d / det,
+            -b / det,
+            -c / det,
+            a / det,
+            (c * f - d * e) / det,
+            (b * e - a * f) / det,
+        ]))
+    }
+
     pub fn apply(&self, p: Point) -> Point {
         let [a, b, c, d, e, f] = self.0;
         Point::new(a * p.x + c * p.y + e, b * p.x + d * p.y + f)
@@ -880,6 +897,15 @@ mod tests {
         assert_eq!((p.x, p.y), (12.0, 2.0));
         let p = move_.then(&scale).apply(Point::new(1.0, 1.0));
         assert_eq!((p.x, p.y), (22.0, 2.0));
+    }
+
+    #[test]
+    fn inverse_roundtrip() {
+        let m = Matrix([2.0, 0.5, -1.0, 3.0, 10.0, -4.0]);
+        let p = Point::new(3.0, 7.0);
+        let back = m.invert().unwrap().apply(m.apply(p));
+        assert!((back.x - p.x).abs() < 1e-4 && (back.y - p.y).abs() < 1e-4);
+        assert!(Matrix([1.0, 0.0, 0.0, 0.0, 0.0, 0.0]).invert().is_none());
     }
 
     #[test]

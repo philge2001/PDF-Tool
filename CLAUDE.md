@@ -18,7 +18,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 ## Workspace
 | Crate | Pfad | Aufgabe | Darf abhängen von |
 |---|---|---|---|
-| foliocraft-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing |
+| foliocraft-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg |
 | foliocraft-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
 | foliocraft-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore |
 | foliocraft-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, eframe, rfd, der, ureq |
@@ -51,7 +51,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 ## Meilensteine Phase 5 (Schwärzen & Bereinigen)
 - [x] 5.1 Content-Stream-Interpreter (core)
 - [x] 5.2 Schwärzungen markieren (Redact-Annotationen, UI)
-- [ ] 5.3 Schwärzungen anwenden + komplett neu schreiben
+- [x] 5.3 Schwärzungen anwenden + komplett neu schreiben
 - [ ] 5.4 Bereinigen + Abschluss
 
 ## Meilensteine Phase 4 (Signaturen)
@@ -101,6 +101,8 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Formularfelder im Overlay mit egui-Schrift; eigene Erscheinungsbilder von Kontrollkästchen/Optionsfeldern
   (z. B. Kreuz statt Häkchen) zeigt FolioCraft vereinfacht – in der Datei bleiben sie erhalten.
   Felder auf gedrehten Seiten: Text nicht mitgedreht. Formular-JavaScript (Berechnungen, Formate) wird nicht ausgeführt.
+- Schwärzen: Pfade, die einen Bereich kreuzen, verschwinden ganz (kein Zuschneiden); Bilder in JPEG 2000, JBIG2,
+  CCITT werden ganz entfernt; Ersatztexte nur in direkten BDC-Dictionaries (nicht über /Properties-Ressourcen).
 - Signaturen: keine Sperrprüfung (OCSP/CRL) und kein LTV (B-LT/B-LTA), RSA-PSS wird nicht geprüft,
   DocMDP-Berechtigungen werden angezeigt, aber Änderungen danach nicht darauf geprüft. Digitale IDs nur als
   PKCS#12-Datei (kein Windows-Zertifikatspeicher, keine Smartcards). Vertrauen nur über selbst
@@ -212,8 +214,17 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   Signieren läuft als Job (`open_after_job`), Zeitstempel per `ureq` (`http_tsa`)
 - `app::signatures` – `SigState` (neu prüfen bei neuen Bytes/Vertrauensstand), Hinweisleiste, Panel
   (Details, Zertifikate, „vertrauen“, „Signierte Fassung speichern“), Vertrauensspeicher in den Einstellungen
+- `core::raster` – Bilddaten dekodieren (roh/Flate/LZW/ASCII, JPEG via zune-jpeg; Grau/RGB/CMYK/ICC/Indexed/Masken,
+  1–16 Bit), `blacken` (Pixelbereich, /Decode-Umkehr beachtet), `encode` (Flate); `normalize_inline` für BI-Abkürzungen
+- `core::redact` – `redact_pdf(bytes, Bereiche je Seitenobjekt)`: Zeichen ≥ 40 % im Bereich raus (TJ-Verschiebung
+  gleicher Breite), unsichere Breiten = ganze Ausgabe raus, /ActualText betroffener BDC-Abschnitte weg, Pfade
+  (außer reinen Rechtecken) → `n`, Bilder als geschwärzte Kopie (sonst ganz entfernt), Formular-XObjects
+  rekursiv als Kopie, ersetzte Originale aus den Ressourcen entfernt, Annotationen/Widgets im Bereich und
+  alle /Redact raus (Felder aus /AcroForm), schwarze Kästen; danach `rewrite` (prune, ohne /Prev).
+  `Document::{redaction_input, has_signatures, replacement}`
 - `AnnotKind::Redact { quads }` – Schwärzungs-Markierung (/Redact, /QuadPoints, /IC schwarz), Vorschau rot
-- `app::redact` – `redact_search_hits` (alle Suchtreffer → Redact, 1 Undo-Schritt), `pending_redactions`;
+- `app::redact` – Rückfrage (Signaturwarnung), Schwärzen als Job, Ergebnis per `pending_doc`/`DocSlot` als
+  ungespeicherte Fassung (`Document::replacement`); `redact_search_hits` (alle Suchtreffer → Redact, 1 Undo-Schritt), `pending_redactions`;
   Werkzeuge `Tool::RedactText` (wie Hervorheben) und `Tool::RedactArea` (Rechteck), Menü „Schwärzen“
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
 
@@ -227,6 +238,8 @@ Datei-/Ordnerdialoge (rfd über xdg-portal) funktionieren im Container nicht –
 PDFium liegt lokal in `pdfium/lib` (gitignored).
 `cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf` schreibt jeden Annotationstyp –
 zur Gegenprobe mit anderen Readern (z. B. `pdftoppm -png out.pdf x`).
+`cargo run -p foliocraft-core --example redact_demo -- in.pdf out.pdf 1:x0,y0,x1,y1 …` schwärzt Bereiche
+(Gegenprobe: `pdftotext`, `pdftoppm`).
 `cargo run -p foliocraft-core --example content_dump -- datei.pdf [Seite]` zeigt die Interpreter-Ergebnisse
 (Gegenprobe: `pdftotext -bbox`, gleiche x-Positionen).
 `cargo run -p foliocraft-sign --example sign_demo -- in.pdf out.pdf [id.p12 pw] [rsa]` signiert (ohne ID mit Testzertifikat).

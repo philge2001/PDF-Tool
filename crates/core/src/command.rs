@@ -507,6 +507,11 @@ impl History {
     pub fn mark_saved(&mut self) {
         self.saved_at = Some(self.undo.len());
     }
+
+    /// Gilt als "ungespeichert", bis zum nächsten Speichern (z. B. nach dem Schwärzen).
+    pub fn mark_unsaved(&mut self) {
+        self.saved_at = None;
+    }
 }
 
 #[cfg(test)]

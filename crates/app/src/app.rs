@@ -86,6 +86,9 @@ pub struct FolioApp {
     pub(crate) cert_dialog: Option<crate::sign_ui::CertDialog>,
     /// Nach erfolgreichem Job diese Datei öffnen (z. B. frisch signierte Fassung).
     pub(crate) open_after_job: Option<PathBuf>,
+    /// Ergebnis-Dokument eines laufenden Jobs (z. B. Schwärzen) und sein Pfad.
+    pub(crate) pending_doc: Option<(crate::redact::DocSlot, Option<PathBuf>)>,
+    pub(crate) redact_confirm: bool,
 }
 
 impl FolioApp {
@@ -133,6 +136,8 @@ impl FolioApp {
             sign_dialog: None,
             cert_dialog: None,
             open_after_job: None,
+            pending_doc: None,
+            redact_confirm: false,
         };
         app.rebuild_trust();
         if let Some(path) = initial_file {
@@ -313,13 +318,17 @@ impl FolioApp {
                 let open = self.open_after_job.take();
                 match result {
                     Ok(msg) => {
+                        self.take_pending_doc();
                         if let Some(path) = open {
                             self.open_path(ctx, &path);
                             self.show_signatures = true;
                         }
                         self.info = Some(msg);
                     }
-                    Err(msg) => self.error = Some(msg),
+                    Err(msg) => {
+                        self.pending_doc = None;
+                        self.error = Some(msg);
+                    }
                 }
             }
         }
@@ -615,6 +624,7 @@ impl eframe::App for FolioApp {
         self.merge_dialog_ui(&ctx);
         self.extract_dialog_ui(&ctx);
         self.split_dialog_ui(&ctx);
+        self.redact_confirm_ui(&ctx);
         self.sign_dialog_ui(&ctx);
         self.cert_dialog_ui(&ctx);
         self.job_ui(&ctx);

@@ -1569,6 +1569,7 @@ dependencies = [
  "lopdf",
  "thiserror 2.0.21",
  "tracing",
+ "zune-jpeg",
 ]
 
 [[package]]
