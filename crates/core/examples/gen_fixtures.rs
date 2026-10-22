@@ -734,6 +734,196 @@ fn big(path: &Path, pages: usize) {
     b.finish(path);
 }
 
+/// Minimaler Text-Rasterizer für die "gescannte" Seite: Glyphen-Umrisse der eingebauten
+/// Noto Sans (ttf-parser), Kurven in Linien zerlegt, gefüllt nach der Nonzero-Regel mit
+/// 4 Unterzeilen pro Pixel und exakter Abdeckung in x-Richtung.
+struct TextRaster {
+    width: usize,
+    height: usize,
+    /// Deckung 0..1 je Pixel.
+    cover: Vec<f32>,
+}
+
+/// Sammelt die Umrisse einer Glyphe als Liniensegmente (in Pixeln).
+struct Outline<'a> {
+    edges: &'a mut Vec<((f32, f32), (f32, f32))>,
+    to_px: &'a dyn Fn(f32, f32) -> (f32, f32),
+    start: (f32, f32),
+    last: (f32, f32),
+}
+
+impl ttf_parser::OutlineBuilder for Outline<'_> {
+    fn move_to(&mut self, x: f32, y: f32) {
+        self.start = (self.to_px)(x, y);
+        self.last = self.start;
+    }
+    fn line_to(&mut self, x: f32, y: f32) {
+        let p = (self.to_px)(x, y);
+        self.edges.push((self.last, p));
+        self.last = p;
+    }
+    fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
+        let (p0, c, p1) = (self.last, (self.to_px)(x1, y1), (self.to_px)(x, y));
+        for i in 1..=8 {
+            let t = i as f32 / 8.0;
+            let u = 1.0 - t;
+            let p = (
+                u * u * p0.0 + 2.0 * u * t * c.0 + t * t * p1.0,
+                u * u * p0.1 + 2.0 * u * t * c.1 + t * t * p1.1,
+            );
+            self.edges.push((self.last, p));
+            self.last = p;
+        }
+    }
+    fn curve_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) {
+        let (p0, c1, c2, p1) = (
+            self.last,
+            (self.to_px)(x1, y1),
+            (self.to_px)(x2, y2),
+            (self.to_px)(x, y),
+        );
+        for i in 1..=10 {
+            let t = i as f32 / 10.0;
+            let u = 1.0 - t;
+            let b = |a: f32, b: f32, c: f32, d: f32| {
+                u * u * u * a + 3.0 * u * u * t * b + 3.0 * u * t * t * c + t * t * t * d
+            };
+            let p = (b(p0.0, c1.0, c2.0, p1.0), b(p0.1, c1.1, c2.1, p1.1));
+            self.edges.push((self.last, p));
+            self.last = p;
+        }
+    }
+    fn close(&mut self) {
+        if self.last != self.start {
+            self.edges.push((self.last, self.start));
+        }
+        self.last = self.start;
+    }
+}
+
+impl TextRaster {
+    fn new(width: usize, height: usize) -> Self {
+        Self {
+            width,
+            height,
+            cover: vec![0.0; width * height],
+        }
+    }
+
+    /// Schreibt `text` ab (x, Grundlinie y) in Pixeln, Schriftgröße `size` in Pixeln.
+    fn text(&mut self, x: f32, y: f32, size: f32, text: &str) {
+        let face =
+            ttf_parser::Face::parse(foliocraft_core::embedded_font::NOTO_SANS, 0).expect("Schrift");
+        let scale = size / f32::from(face.units_per_em());
+        let mut pen = x;
+        for c in text.chars() {
+            let Some(gid) = face.glyph_index(c) else {
+                continue;
+            };
+            let mut edges = Vec::new();
+            let origin = pen;
+            let to_px = move |gx: f32, gy: f32| (origin + gx * scale, y - gy * scale);
+            let mut b = Outline {
+                edges: &mut edges,
+                to_px: &to_px,
+                start: (0.0, 0.0),
+                last: (0.0, 0.0),
+            };
+            face.outline_glyph(gid, &mut b);
+            self.fill(&edges);
+            pen += f32::from(face.glyph_hor_advance(gid).unwrap_or(0)) * scale;
+        }
+    }
+
+    fn fill(&mut self, edges: &[((f32, f32), (f32, f32))]) {
+        const SUB: usize = 4;
+        let (y_min, y_max) = edges.iter().fold((f32::MAX, f32::MIN), |(a, b), (p, q)| {
+            (a.min(p.1).min(q.1), b.max(p.1).max(q.1))
+        });
+        if y_min > y_max {
+            return;
+        }
+        let first = ((y_min.floor().max(0.0)) as usize) * SUB;
+        let last = ((y_max.ceil().min(self.height as f32)) as usize) * SUB;
+        for sub in first..last {
+            let sy = (sub as f32 + 0.5) / SUB as f32;
+            // Schnittpunkte mit Richtung (Nonzero-Regel).
+            let mut xs: Vec<(f32, i32)> = edges
+                .iter()
+                .filter_map(|&((x0, y0), (x1, y1))| {
+                    if (y0 <= sy && y1 > sy) || (y1 <= sy && y0 > sy) {
+                        let t = (sy - y0) / (y1 - y0);
+                        Some((x0 + t * (x1 - x0), if y1 > y0 { 1 } else { -1 }))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            xs.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let row = sub / SUB;
+            let mut winding = 0;
+            for pair in xs.windows(2) {
+                winding += pair[0].1;
+                if winding == 0 {
+                    continue;
+                }
+                let (a, b) = (pair[0].0.max(0.0), pair[1].0.min(self.width as f32));
+                let mut px = a.floor() as usize;
+                while (px as f32) < b && px < self.width {
+                    let cov = (b.min(px as f32 + 1.0) - a.max(px as f32)).max(0.0);
+                    let cell = &mut self.cover[row * self.width + px];
+                    *cell = (*cell + cov / SUB as f32).min(1.0);
+                    px += 1;
+                }
+            }
+        }
+    }
+
+    /// Graustufen: weißes Papier, schwarze Schrift.
+    fn gray(&self) -> Vec<u8> {
+        self.cover
+            .iter()
+            .map(|c| (255.0 * (1.0 - c)).round() as u8)
+            .collect()
+    }
+}
+
+/// "Gescannte" Seite: nur ein Bild mit Text (keine Textebene) – für die Texterkennung.
+fn scan(path: &Path) {
+    let mut b = Builder::new();
+    // 150 dpi: A4 = 1240 × 1754 Pixel; 1 pt = 150/72 Pixel.
+    let (w, h) = (1240usize, 1754usize);
+    let px = 150.0 / 72.0;
+    let mut r = TextRaster::new(w, h);
+    let lines: [(f32, f32, &str); 5] = [
+        (72.0, 760.0, "Rechnung Nummer 4711"),
+        (72.0, 720.0, "Sehr geehrte Damen und Herren,"),
+        (72.0, 700.0, "vielen Dank für Ihre Bestellung."),
+        (72.0, 680.0, "Der Betrag ist zahlbar bis Freitag."),
+        (72.0, 640.0, "Mit freundlichen Grüßen"),
+    ];
+    for (i, (x, y, text)) in lines.iter().enumerate() {
+        let size = if i == 0 { 20.0 } else { 13.0 };
+        r.text(x * px, (842.0 - y) * px, size * px, text);
+    }
+    let mut image = Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image",
+            "Width" => w as i64, "Height" => h as i64,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+        },
+        r.gray(),
+    );
+    image.compress().expect("komprimieren");
+    let image = b.doc.add_object(image);
+    b.raw_page(
+        A4,
+        b"q 595 0 0 842 0 0 cm /Scan Do Q".to_vec(),
+        dictionary! { "XObject" => dictionary! { "Scan" => image } },
+    );
+    b.finish(path);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("big") {
@@ -757,4 +947,5 @@ fn main() {
     form(&dir.join("form.pdf"));
     content_mix(&dir.join("content_mix.pdf"));
     sanitize(&dir.join("sanitize.pdf"));
+    scan(&dir.join("scan.pdf"));
 }

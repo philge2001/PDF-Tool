@@ -158,3 +158,24 @@ fn renders_page_and_tile() {
     svc.open(3, Arc::new(saved.bytes().to_vec()), hidden);
     assert_eq!(pixel_in_highlight(&svc, 3), [255, 255, 255], "ausgeblendet");
 }
+
+#[test]
+fn offscreen_render_from_other_thread() {
+    let Ok(svc) = RenderService::start(|| {}) else {
+        eprintln!("PDFium nicht gefunden – Test übersprungen");
+        return;
+    };
+    let off = svc.offscreen().expect("Worker läuft");
+    let bytes = Arc::new(fixture("text_two_pages.pdf"));
+    // Ohne geöffnetes Dokument in der Ansicht, aus einem eigenen Thread (wie ein Job).
+    let handle = std::thread::spawn(move || {
+        let a = off.render_page(&bytes, 0, (595.0, 842.0), 2.0).unwrap();
+        let b = off.render_page(&bytes, 1, (595.0, 842.0), 1.0).unwrap();
+        (a, b)
+    });
+    let (a, b) = handle.join().unwrap();
+    assert_eq!((a.width, a.height), (1190, 1684));
+    assert_eq!((b.width, b.height), (595, 842));
+    // Auf Seite 1 gibt es dunkle Pixel (Text).
+    assert!(a.pixels.chunks_exact(4).any(|p| p[0] < 100));
+}
