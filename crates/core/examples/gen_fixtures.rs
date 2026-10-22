@@ -891,6 +891,56 @@ impl TextRaster {
     }
 }
 
+/// Seite mit einem hoch aufgelösten "Foto" (1200 × 800 Pixel auf 200 × 133 pt ≈ 430 dpi,
+/// mit weicher Transparenzmaske) und Text – zum Testen der Komprimierung.
+fn photo(path: &Path) {
+    let mut b = Builder::new();
+    let (w, h) = (1200usize, 800usize);
+    let mut rgb = Vec::with_capacity(w * h * 3);
+    let mut alpha = Vec::with_capacity(w * h);
+    for y in 0..h {
+        for x in 0..w {
+            // Weiche Verläufe + ein Kreis: verhält sich beim Komprimieren wie ein Foto.
+            let (fx, fy) = (x as f32 / w as f32, y as f32 / h as f32);
+            let d = ((fx - 0.5).powi(2) + (fy - 0.5).powi(2)).sqrt();
+            rgb.push((255.0 * fx) as u8);
+            rgb.push((255.0 * (1.0 - fy)) as u8);
+            rgb.push(if d < 0.3 { 220 } else { (128.0 * fy) as u8 });
+            alpha.push(if d < 0.45 { 255 } else { 0 });
+        }
+    }
+    let mut mask = Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => w as i64, "Height" => h as i64,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+        },
+        alpha,
+    );
+    mask.compress().expect("komprimieren");
+    let mask = b.doc.add_object(mask);
+    let mut image = Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => w as i64, "Height" => h as i64,
+            "ColorSpace" => "DeviceRGB", "BitsPerComponent" => 8, "SMask" => mask,
+        },
+        rgb,
+    );
+    image.compress().expect("komprimieren");
+    let image = b.doc.add_object(image);
+    let font = b.font_id;
+    b.raw_page(
+        A4,
+        b"BT /F1 14 Tf 72 760 Td (Foto mit hoher Aufloesung) Tj ET\n\
+          q 200 0 0 133.33 72 600 cm /Foto Do Q"
+            .to_vec(),
+        dictionary! {
+            "Font" => dictionary! { "F1" => font },
+            "XObject" => dictionary! { "Foto" => image },
+        },
+    );
+    b.finish(path);
+}
+
 /// "Gescannte" Seite: nur ein Bild mit Text (keine Textebene) – für die Texterkennung.
 fn scan(path: &Path) {
     let mut b = Builder::new();
@@ -951,4 +1001,5 @@ fn main() {
     content_mix(&dir.join("content_mix.pdf"));
     sanitize(&dir.join("sanitize.pdf"));
     scan(&dir.join("scan.pdf"));
+    photo(&dir.join("photo.pdf"));
 }

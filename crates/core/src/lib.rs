@@ -6,6 +6,7 @@
 pub mod annotation;
 pub mod command;
 pub mod compare;
+pub mod compress;
 pub mod content;
 pub mod date;
 pub mod document;

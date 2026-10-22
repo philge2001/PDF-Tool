@@ -42,6 +42,13 @@ impl FolioApp {
                     self.open_export_dialog();
                 }
                 if ui
+                    .add_enabled(has_doc, Button::new("Komprimieren…"))
+                    .on_hover_text("Datei verkleinern (Bilder, alte Fassungen, Objekt-Streams)")
+                    .clicked()
+                {
+                    self.open_compress_dialog();
+                }
+                if ui
                     .add_enabled(has_doc, Button::new("Vergleichen mit…"))
                     .on_hover_text("Textunterschiede zu einer anderen PDF anzeigen")
                     .clicked()

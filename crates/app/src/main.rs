@@ -4,6 +4,7 @@ mod annot_draw;
 mod app;
 mod comments;
 mod compare;
+mod compress_ui;
 mod content_edit;
 mod export;
 mod file_ops;

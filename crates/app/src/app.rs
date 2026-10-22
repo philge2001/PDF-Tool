@@ -91,6 +91,7 @@ pub struct FolioApp {
     /// Ergebnis-Dokument eines laufenden Jobs (z. B. Schwärzen) und sein Pfad.
     pub(crate) pending_doc: Option<(crate::redact::DocSlot, Option<PathBuf>)>,
     pub(crate) export_dialog: Option<crate::export::ExportDialog>,
+    pub(crate) compress_dialog: Option<crate::compress_ui::CompressDialog>,
     /// Dokumentvergleich: Ergebnis des laufenden Jobs, offenes Vergleichsfenster.
     pub(crate) pending_compare: Option<(
         crate::compare::CompareSlot,
@@ -186,6 +187,7 @@ impl FolioApp {
             open_after_job: None,
             pending_doc: None,
             export_dialog: None,
+            compress_dialog: None,
             pending_compare: None,
             compare: None,
             #[cfg(feature = "ocr")]
@@ -732,6 +734,7 @@ impl eframe::App for FolioApp {
         self.redact_confirm_ui(&ctx);
         self.sanitize_dialog_ui(&ctx);
         self.export_dialog_ui(&ctx);
+        self.compress_dialog_ui(&ctx);
         self.compare_ui(&ctx);
         #[cfg(feature = "ocr")]
         self.ocr_dialog_ui(&ctx);
