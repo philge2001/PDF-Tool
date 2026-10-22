@@ -89,7 +89,8 @@ impl FolioApp {
         }
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
             // Esc der Reihe nach: laufenden Zug abbrechen, Auswahl aufheben, zurück zur Textauswahl.
-            let had_something = d.gesture.take().is_some()
+            let had_something = d.form.focus.take().is_some()
+                || d.gesture.take().is_some()
                 || d.annot_drag.take().is_some()
                 || d.selected.take().is_some()
                 || d.selection.take().is_some();

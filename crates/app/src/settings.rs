@@ -30,6 +30,8 @@ pub struct Settings {
     pub font_size: f32,
     /// Farbe pro Werkzeug als RGB-Bytes.
     pub tool_colors: Vec<(Tool, [u8; 3])>,
+    /// Ausfüllbare Formularfelder farbig hinterlegen.
+    pub highlight_fields: bool,
 }
 
 impl Default for Settings {
@@ -44,6 +46,7 @@ impl Default for Settings {
             stroke_width: tools.stroke_width,
             font_size: tools.font_size,
             tool_colors: Vec::new(),
+            highlight_fields: true,
         }
     }
 }

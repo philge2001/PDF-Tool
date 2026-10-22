@@ -41,6 +41,8 @@ pub struct OpenDocument {
     pub page_input: Option<String>,
     /// Inhalt des Zoomfelds in der Toolbar, während der Nutzer tippt.
     pub zoom_input: Option<String>,
+    /// Formular ausfüllen: Fokus, Aufklappliste.
+    pub form: crate::forms::FormUi,
 }
 
 pub struct FolioApp {
@@ -165,6 +167,7 @@ impl FolioApp {
             search: SearchState::default(),
             selection: None,
             gesture: None,
+            form: Default::default(),
             editor: None,
             selected: None,
             annot_drag: None,
@@ -389,7 +392,15 @@ impl FolioApp {
         let Some(d) = &mut self.document else { return };
         let view = d.viewer.show(ui);
         let tool = self.tool;
+        // Formularfelder lassen sich mit den beiden Auswahlwerkzeugen ausfüllen. Liegt die Maus
+        // über einem Feld, bekommt das Werkzeug den Klick nicht.
+        let fill_forms = matches!(tool, Tool::TextSelect | Tool::Select);
+        let over_field = fill_forms && d.handle_form_input(ui, &view);
+        if fill_forms {
+            d.handle_form_keys(ui.ctx(), &view);
+        }
         match tool {
+            _ if over_field => {}
             Tool::Select => {
                 d.handle_annotation_select(ui, &view, true);
             }
@@ -420,6 +431,10 @@ impl FolioApp {
                 }
             }
             _ => d.handle_create_tool(ui, &view, tool, &self.tool_settings),
+        }
+        d.paint_forms(ui, &view, self.settings.highlight_fields);
+        if fill_forms {
+            d.show_field_editor(ui, &view);
         }
         d.paint_annotations(ui, &view);
         d.paint_annotation_selection(ui, &view);
@@ -479,6 +494,12 @@ impl eframe::App for FolioApp {
                         // `d.viewer` – getrennte Felder, daher erlaubt der Borrow-Checker beides.
                         let overlay = |painter: &egui::Painter, page: usize, rect: egui::Rect| {
                             let Ok(info) = d.doc.page(page) else { return };
+                            for (f, w) in d.doc.forms().widgets_on(info.object_id) {
+                                if f.kind.is_fillable() && !w.hidden {
+                                    let style = crate::form_draw::Style::default();
+                                    crate::form_draw::paint(painter, info, rect, f, w, style);
+                                }
+                            }
                             for a in d.doc.annotations().on_page(page) {
                                 annot_draw::paint(painter, info, rect, a);
                             }
