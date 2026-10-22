@@ -14,6 +14,11 @@ impl FolioApp {
             ui.toggle_value(&mut self.show_thumbnails, "Seiten")
                 .on_hover_text("Seitenleiste mit Miniaturen ein-/ausblenden");
 
+            ui.separator();
+            for tool in crate::tools::Tool::ALL {
+                ui.selectable_value(&mut self.tool, tool, tool.label());
+            }
+
             let Some(d) = &mut self.document else { return };
             ui.separator();
 

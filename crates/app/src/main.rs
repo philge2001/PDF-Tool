@@ -5,6 +5,7 @@ mod search;
 mod shortcuts;
 mod text_cache;
 mod toolbar;
+mod tools;
 mod viewer;
 
 use eframe::egui;

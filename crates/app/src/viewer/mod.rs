@@ -42,12 +42,26 @@ pub enum ZoomMode {
 /// Seiten, die in diesem Frame sichtbar sind – für Overlays (Suche, Auswahl, Annotationen).
 pub struct ViewOutput {
     /// Interaktionsfläche des gesamten Inhalts (Klicks, Ziehen).
-    #[allow(dead_code)] // TODO(M4): Textauswahl
     pub response: egui::Response,
     /// Sichtbarer Bildschirmbereich des Scrollfelds (zum Zuschneiden von Overlays).
     pub clip: Rect,
     /// (Seitenindex, Bildschirmrechteck) aller gezeichneten Seiten.
     pub pages: Vec<(usize, Rect)>,
+}
+
+impl ViewOutput {
+    /// Seite unter `pos`; liegt `pos` zwischen Seiten, die vertikal nächstgelegene.
+    pub fn page_at(&self, pos: Pos2) -> Option<(usize, Rect)> {
+        self.pages.iter().copied().min_by(|a, b| {
+            let da = vertical_distance(a.1, pos.y);
+            let db = vertical_distance(b.1, pos.y);
+            da.total_cmp(&db)
+        })
+    }
+}
+
+fn vertical_distance(r: Rect, y: f32) -> f32 {
+    (r.min.y - y).max(0.0).max(y - r.max.y)
 }
 
 /// Render-Aufträge, die während eines Frames gesammelt und am Ende verschickt werden.
@@ -290,6 +304,8 @@ impl Viewer {
         }
 
         let ppp = ui.ctx().pixels_per_point();
+        // Hinweis: Ziehen-zum-Scrollen ist in egui standardmäßig nur bei Touchscreens aktiv;
+        // mit der Maus gehört das Ziehen den Werkzeugen (Textauswahl, Hand).
         let mut area = ScrollArea::both().auto_shrink(false);
         if let Some(off) = self.scroll_to.take() {
             area = area.scroll_offset(off);

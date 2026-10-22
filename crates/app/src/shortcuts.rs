@@ -52,10 +52,19 @@ impl FolioApp {
             v.set_zoom_mode(ZoomMode::FitPage);
         }
 
-        // Navigationstasten nur, wenn gerade kein Textfeld tippt.
+        // Ab hier nur, wenn gerade kein Textfeld tippt.
         if ctx.egui_wants_keyboard_input() {
             return;
         }
+
+        // egui meldet Strg+C nicht als Taste, sondern als eigenes `Copy`-Ereignis.
+        if ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Copy))) {
+            d.copy_selection(ctx);
+        }
+        if ctx.input(|i| i.key_pressed(Key::Escape)) {
+            d.selection = None;
+        }
+        let v = &mut d.viewer;
         let pressed = |key| ctx.input(|i| i.key_pressed(key) && i.modifiers.is_none());
         if pressed(Key::PageDown) {
             v.scroll_to_page(v.current_page + 1);

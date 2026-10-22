@@ -14,7 +14,6 @@ pub fn pdf_to_screen(info: &PageInfo, page_rect: Rect, p: Point) -> Pos2 {
     )
 }
 
-#[allow(dead_code)] // TODO(M4): Textauswahl
 pub fn screen_to_pdf(info: &PageInfo, page_rect: Rect, p: Pos2) -> Point {
     let u = Point::new(
         (p.x - page_rect.min.x) / page_rect.width(),

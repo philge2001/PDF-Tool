@@ -146,6 +146,33 @@ impl PageText {
     }
 }
 
+impl PageText {
+    /// Caret-Position (0..=len) an einem Punkt: vor dem nächstgelegenen Zeichen, oder
+    /// dahinter, wenn der Punkt in dessen rechter Hälfte liegt (wie in einem Texteditor).
+    pub fn caret_at(&self, p: Point, max_dist: f32) -> Option<usize> {
+        let i = self.char_at(p, max_dist)?;
+        let r = self.chars[i].rect;
+        Some(if p.x > (r.x0 + r.x1) / 2.0 { i + 1 } else { i })
+    }
+
+    /// Wort um das Zeichen `i` (Buchstaben, Ziffern, Bindestrich, Unterstrich).
+    pub fn word_at(&self, i: usize) -> Option<TextRange> {
+        let is_word = |c: char| c.is_alphanumeric() || c == '-' || c == '_';
+        if !is_word(self.chars.get(i)?.ch) {
+            return Some(TextRange::new(i, i + 1));
+        }
+        let start = self.chars[..i]
+            .iter()
+            .rposition(|c| !is_word(c.ch))
+            .map_or(0, |p| p + 1);
+        let end = self.chars[i..]
+            .iter()
+            .position(|c| !is_word(c.ch))
+            .map_or(self.chars.len(), |p| i + p);
+        Some(TextRange::new(start, end))
+    }
+}
+
 /// Zwei Rechtecke gehören zur selben Zeile, wenn sie sich vertikal mindestens zur
 /// Hälfte der kleineren Höhe überlappen.
 fn same_line(a: &Rect, b: &Rect) -> bool {
@@ -220,6 +247,22 @@ pub(crate) mod tests {
         assert_eq!(rects[0], Rect::new(82.0, 700.0, 102.0, 712.0));
         assert_eq!(rects[1], Rect::new(72.0, 680.0, 92.0, 692.0));
         assert_eq!(t.text_in(TextRange::new(1, 7)), "bc\nde");
+    }
+
+    #[test]
+    fn caret_before_or_after_char() {
+        let t = sample(&["abc"]);
+        // 'b' liegt bei x = 82..92: linke Hälfte -> Caret 1, rechte Hälfte -> Caret 2.
+        assert_eq!(t.caret_at(Point::new(84.0, 705.0), 1.0), Some(1));
+        assert_eq!(t.caret_at(Point::new(90.0, 705.0), 1.0), Some(2));
+    }
+
+    #[test]
+    fn word_at_expands_to_word() {
+        let t = sample(&["foo bar-baz qux"]);
+        let w = t.word_at(5).unwrap(); // 'a' in "bar-baz"
+        assert_eq!(t.text_in(w), "bar-baz");
+        assert_eq!(t.text_in(t.word_at(3).unwrap()), " ");
     }
 
     #[test]

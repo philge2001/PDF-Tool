@@ -2,6 +2,8 @@
 
 use crate::search::SearchState;
 use crate::text_cache::TextCache;
+use crate::tools::Tool;
+use crate::tools::text_select::TextSelection;
 use crate::viewer::Viewer;
 use crate::viewer::thumbnails::Thumbnails;
 use eframe::egui;
@@ -16,6 +18,7 @@ pub struct OpenDocument {
     pub thumbs: Thumbnails,
     pub texts: TextCache,
     pub search: SearchState,
+    pub selection: Option<TextSelection>,
     /// Inhalt des Seitenfelds in der Toolbar, während der Nutzer tippt.
     pub page_input: Option<String>,
     /// Inhalt des Zoomfelds in der Toolbar, während der Nutzer tippt.
@@ -30,6 +33,7 @@ pub struct FolioApp {
     /// Fehlermeldung, die als Dialog angezeigt wird.
     pub(crate) error: Option<String>,
     pub(crate) show_thumbnails: bool,
+    pub(crate) tool: Tool,
 }
 
 impl FolioApp {
@@ -50,6 +54,7 @@ impl FolioApp {
             document: None,
             error: None,
             show_thumbnails: true,
+            tool: Tool::default(),
         };
         if let Some(path) = initial_file {
             app.open_path(&cc.egui_ctx, &path);
@@ -75,6 +80,7 @@ impl FolioApp {
                     thumbs: Thumbnails::new(&sizes),
                     texts: TextCache::new(id, sizes.len()),
                     search: SearchState::default(),
+                    selection: None,
                     viewer: Viewer::new(id, sizes),
                     doc,
                     page_input: None,
@@ -214,7 +220,28 @@ impl eframe::App for FolioApp {
                 .frame(egui::Frame::NONE.fill(ui.visuals().extreme_bg_color))
                 .show(ui, |ui| {
                     let view = d.viewer.show(ui);
+                    match self.tool {
+                        Tool::TextSelect => {
+                            // Text der sichtbaren Seiten vorab laden, damit Auswahl sofort geht.
+                            if let Ok(render) = &self.render {
+                                for &(page, _) in &view.pages {
+                                    d.texts.ensure(render, page);
+                                }
+                            }
+                            d.handle_text_select(ui, &view);
+                        }
+                        Tool::Hand => {
+                            let resp = &view.response;
+                            if resp.dragged() {
+                                d.viewer.scroll_by(-resp.drag_delta());
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                            } else if resp.hovered() {
+                                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                            }
+                        }
+                    }
                     d.paint_search_hits(ui, &view);
+                    d.paint_selection(ui, &view);
                 });
             if let Ok(render) = &self.render {
                 d.viewer.flush_requests(render);
