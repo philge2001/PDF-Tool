@@ -269,6 +269,70 @@ fn with_annotations(path: &Path) {
     b.finish(path);
 }
 
+/// Verschachtelter Seitenbaum: MediaBox, Ressourcen und Rotation werden von den
+/// Zwischenknoten geerbt (wie in vielen echten PDFs). Testet das Umsortieren von Seiten.
+///
+///   Wurzel ─┬─ Knoten A (A4, Schrift F1)            ─┬─ Seite 1
+///           │                                         └─ Seite 2
+///           └─ Knoten B (Letter quer, Rotate 90, F1) ─┬─ Seite 3
+///                                                     └─ Seite 4
+fn nested_tree(path: &Path) {
+    let mut doc = Document::with_version("1.7");
+    let font = doc.add_object(dictionary! {
+        "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica", "Encoding" => "WinAnsiEncoding",
+    });
+    let root = doc.new_object_id();
+    let node_a = doc.new_object_id();
+    let node_b = doc.new_object_id();
+    let page = |doc: &mut Document, parent: ObjectId, n: usize| -> ObjectId {
+        let text = format!("Seite {n} im verschachtelten Baum");
+        let content = Content {
+            operations: vec![
+                Operation::new("BT", vec![]),
+                Operation::new("Tf", vec!["F1".into(), 24.into()]),
+                Operation::new("Td", vec![72.into(), 500.into()]),
+                Operation::new("Tj", vec![winansi(&text)]),
+                Operation::new("ET", vec![]),
+            ],
+        };
+        let c = doc.add_object(Stream::new(
+            Dictionary::new(),
+            content.encode().expect("Content"),
+        ));
+        doc.add_object(dictionary! { "Type" => "Page", "Parent" => parent, "Contents" => c })
+    };
+    let p1 = page(&mut doc, node_a, 1);
+    let p2 = page(&mut doc, node_a, 2);
+    let p3 = page(&mut doc, node_b, 3);
+    let p4 = page(&mut doc, node_b, 4);
+    let resources = || dictionary! { "Font" => dictionary! { "F1" => font } };
+    doc.objects.insert(
+        node_a,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages", "Parent" => root, "Kids" => vec![p1.into(), p2.into()], "Count" => 2,
+            "MediaBox" => vec![0.into(), 0.into(), A4.0.into(), A4.1.into()],
+            "Resources" => resources(),
+        }),
+    );
+    doc.objects.insert(node_b, Object::Dictionary(dictionary! {
+        "Type" => "Pages", "Parent" => root, "Kids" => vec![p3.into(), p4.into()], "Count" => 2,
+        "MediaBox" => vec![0.into(), 0.into(), LETTER_LANDSCAPE.0.into(), LETTER_LANDSCAPE.1.into()],
+        "Resources" => resources(),
+        "Rotate" => 90,
+    }));
+    doc.objects.insert(
+        root,
+        Object::Dictionary(dictionary! {
+            "Type" => "Pages", "Kids" => vec![node_a.into(), node_b.into()], "Count" => 4,
+        }),
+    );
+    let catalog = doc.add_object(dictionary! { "Type" => "Catalog", "Pages" => root });
+    doc.trailer.set("Root", catalog);
+    doc.compress();
+    doc.save(path).expect("PDF speichern");
+    println!("geschrieben: {}", path.display());
+}
+
 /// Viele Seiten für Performance-Tests (wird nicht eingecheckt).
 fn big(path: &Path, pages: usize) {
     let mut b = Builder::new();
@@ -303,4 +367,5 @@ fn main() {
     mixed_sizes(&dir.join("mixed_sizes.pdf"));
     rotated(&dir.join("rotated.pdf"));
     with_annotations(&dir.join("with_annotations.pdf"));
+    nested_tree(&dir.join("nested_tree.pdf"));
 }

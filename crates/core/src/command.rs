@@ -3,6 +3,7 @@
 //! etwas geändert wurde.
 
 use crate::annotation::{AnnotId, Annotation, AnnotationStore};
+use crate::document::{PageId, PageInfo};
 use crate::error::{CoreError, Result};
 use std::any::Any;
 
@@ -11,6 +12,17 @@ use std::any::Any;
 #[derive(Debug, Default, Clone)]
 pub struct Model {
     pub annotations: AnnotationStore,
+    /// Seiten in Anzeigereihenfolge. Annotationen verweisen per Index darauf; Seiten-Commands
+    /// rechnen diese Indizes beim Umsortieren/Löschen mit um.
+    pub pages: Vec<PageInfo>,
+    next_page_id: u32,
+}
+
+impl Model {
+    pub fn allocate_page_id(&mut self) -> PageId {
+        self.next_page_id += 1;
+        PageId(self.next_page_id)
+    }
 }
 
 /// Eine rückgängig machbare Änderung.

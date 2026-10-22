@@ -10,9 +10,15 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// Stabile Kennung einer Seite innerhalb einer Sitzung. Anders als der Seitenindex ändert
+/// sie sich beim Umsortieren nicht – die App erkennt daran schon gerenderte Seiten wieder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct PageId(pub u32);
+
 /// Infos über eine Seite, ermittelt aus der PDF-Struktur.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PageInfo {
+    pub id: PageId,
     /// Objekt-ID des Seiten-Dictionarys (wird beim Speichern gebraucht).
     pub object_id: ObjectId,
     /// Sichtbarer Bereich (CropBox, sonst MediaBox) im unrotierten Benutzerraum.
@@ -68,8 +74,10 @@ pub struct Document {
     /// bekommt eine billige Kopie des Zeigers statt einer Kopie der Daten.
     bytes: Arc<Vec<u8>>,
     pdf: lopdf::Document,
-    pages: Vec<PageInfo>,
     model: Model,
+    /// Seiten (Objekt-ID, Rotation) so, wie sie in der Datei stehen – zum Erkennen von
+    /// Änderungen am Seitenbaum beim Speichern.
+    saved_pages: Vec<(ObjectId, u16)>,
     history: History,
     /// Stand der verwalteten Annotationen in der Datei (nach Laden/Speichern),
     /// nach Objektnummer – zum Erkennen von Änderungen beim Speichern.
@@ -92,19 +100,27 @@ impl Document {
     /// Lädt ein PDF aus dem Speicher (z. B. in Tests).
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
         let pdf = lopdf::Document::load_mem(&bytes)?;
-        let pages = read_pages(&pdf)?;
+        let mut model = Model::default();
+        model.pages = read_pages(&pdf)?
+            .into_iter()
+            .map(|mut p| {
+                p.id = model.allocate_page_id();
+                p
+            })
+            .collect();
         let mut doc = Self {
             path: None,
             bytes: Arc::new(bytes),
             pdf,
-            pages,
-            model: Model::default(),
+            saved_pages: Vec::new(),
+            model,
             history: History::new(),
             imported: HashMap::new(),
         };
+        doc.saved_pages = doc.page_structure();
         doc.import_annotations();
         tracing::debug!(
-            pages = doc.pages.len(),
+            pages = doc.model.pages.len(),
             annotations = doc.model.annotations.len(),
             "Dokument geladen"
         );
@@ -112,7 +128,7 @@ impl Document {
     }
 
     fn import_annotations(&mut self) {
-        for (page_idx, info) in self.pages.iter().enumerate() {
+        for (page_idx, info) in self.model.pages.iter().enumerate() {
             for entry in annotation::import::page_annots(&self.pdf, info.object_id) {
                 let Object::Reference(id) = entry else {
                     continue;
@@ -139,18 +155,39 @@ impl Document {
         &self.pdf
     }
 
+    /// Seiten in der aktuellen Reihenfolge (inkl. noch nicht gespeicherter Änderungen).
     pub fn pages(&self) -> &[PageInfo] {
-        &self.pages
+        &self.model.pages
     }
 
     pub fn page(&self, index: usize) -> Result<&PageInfo> {
-        self.pages
+        self.model
+            .pages
             .get(index)
             .ok_or(CoreError::PageOutOfRange(index))
     }
 
     pub fn page_count(&self) -> usize {
-        self.pages.len()
+        self.model.pages.len()
+    }
+
+    /// Stabile IDs aller Seiten in aktueller Reihenfolge.
+    pub fn page_ids(&self) -> Vec<PageId> {
+        self.model.pages.iter().map(|p| p.id).collect()
+    }
+
+    /// (Objekt-ID, Rotation) aller Seiten – vergleicht Modell und Datei.
+    fn page_structure(&self) -> Vec<(ObjectId, u16)> {
+        self.model
+            .pages
+            .iter()
+            .map(|p| (p.object_id, p.rotation))
+            .collect()
+    }
+
+    /// Stand der Seiten in der Datei (für `save`).
+    pub(crate) fn saved_pages(&self) -> &[(ObjectId, u16)] {
+        &self.saved_pages
     }
 
     // ---------- Modell & Undo/Redo ----------
@@ -199,7 +236,7 @@ impl Document {
     /// Positionen im /Annots-Array einer Seite, die FolioCraft selbst verwaltet (und
     /// daher als Overlay zeichnet). Der Renderer blendet genau diese aus.
     pub fn managed_annot_indices(&self, page: usize) -> Vec<usize> {
-        let Some(info) = self.pages.get(page) else {
+        let Some(info) = self.model.pages.get(page) else {
             return Vec::new();
         };
         annotation::import::page_annots(&self.pdf, info.object_id)
@@ -230,6 +267,17 @@ impl Document {
     /// Erzeugt die Bytes einer inkrementell aktualisierten Datei, ohne etwas zu verändern.
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
         Ok(save::incremental(self)?.bytes)
+    }
+
+    /// Momentaufnahme für den Renderer nach strukturellen Änderungen (Seiten gedreht,
+    /// gelöscht, umsortiert): Bytes des aktuellen Stands plus die Annotationen, die der
+    /// Renderer ausblenden soll (Seitenindex -> Positionen in /Annots).
+    pub fn render_snapshot(&self) -> Result<RenderSnapshot> {
+        let out = save::incremental(self)?;
+        Ok(RenderSnapshot {
+            bytes: out.bytes,
+            hidden: out.hidden,
+        })
     }
 
     /// Speichert an den bisherigen Pfad.
@@ -272,9 +320,16 @@ impl Document {
             .iter()
             .filter_map(|a| Some((a.source?.object_id, a.clone())))
             .collect();
+        self.saved_pages = self.page_structure();
         self.history.mark_saved();
         Ok(())
     }
+}
+
+/// Siehe [`Document::render_snapshot`].
+pub struct RenderSnapshot {
+    pub bytes: Vec<u8>,
+    pub hidden: HashMap<u32, Vec<usize>>,
 }
 
 /// Schreibt erst in eine temporäre Datei und benennt sie dann um. So bleibt bei einem
@@ -314,6 +369,7 @@ fn read_pages(pdf: &lopdf::Document) -> Result<Vec<PageInfo>> {
             // Nur Vielfache von 90 sind erlaubt; alles andere behandeln wir als 0.
             let rotation = if rotation % 90 == 0 { rotation } else { 0 };
             Ok(PageInfo {
+                id: PageId(0), // wird vom Aufrufer vergeben
                 object_id: id,
                 crop_box: crop,
                 rotation,
@@ -326,7 +382,11 @@ fn read_pages(pdf: &lopdf::Document) -> Result<Vec<PageInfo>> {
 ///
 /// Die Lifetime `'a` sagt: Das zurückgegebene `&Object` lebt höchstens so lange
 /// wie das ausgeliehene `pdf` – es zeigt ja in dessen Daten.
-fn inherited<'a>(pdf: &'a lopdf::Document, page: ObjectId, key: &[u8]) -> Option<&'a Object> {
+pub(crate) fn inherited<'a>(
+    pdf: &'a lopdf::Document,
+    page: ObjectId,
+    key: &[u8],
+) -> Option<&'a Object> {
     let mut current: &Dictionary = pdf.get_dictionary(page).ok()?;
     // Begrenzung schützt vor Endlosschleifen in kaputten PDFs mit zyklischen /Parent-Ketten.
     for _ in 0..64 {
@@ -399,6 +459,7 @@ mod tests {
     fn display_transform_roundtrip_all_rotations() {
         for rotation in [0, 90, 180, 270] {
             let page = PageInfo {
+                id: PageId(1),
                 object_id: (1, 0),
                 crop_box: Rect::new(0.0, 0.0, 600.0, 800.0),
                 rotation,
@@ -413,6 +474,7 @@ mod tests {
         }
         // Oben links im unrotierten Raum landet bei 90° oben rechts in der Anzeige.
         let page = PageInfo {
+            id: PageId(1),
             object_id: (1, 0),
             crop_box: Rect::new(0.0, 0.0, 600.0, 800.0),
             rotation: 90,

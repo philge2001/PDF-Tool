@@ -41,6 +41,7 @@ mod tests {
 
     fn page(rotation: u16) -> PageInfo {
         PageInfo {
+            id: foliocraft_core::PageId(1),
             object_id: (1, 0),
             crop_box: PdfRect::new(0.0, 0.0, 600.0, 800.0),
             rotation,
