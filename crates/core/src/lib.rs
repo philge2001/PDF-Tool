@@ -25,6 +25,7 @@ pub mod page_import;
 pub mod page_ops;
 pub mod paragraph;
 pub mod pdf_string;
+pub mod pdfa;
 pub mod raster;
 pub mod redact;
 pub mod sanitize;

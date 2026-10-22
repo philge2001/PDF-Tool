@@ -18,7 +18,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 ## Workspace
 | Crate | Pfad | Aufgabe | Darf abhängen von |
 |---|---|---|---|
-| foliocraft-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg, ttf-parser, subsetter, png |
+| foliocraft-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg, ttf-parser, subsetter, png, jpeg-encoder, zip, similar |
 | foliocraft-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
 | foliocraft-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore |
 | foliocraft-ocr | crates/ocr | Texterkennung (Tesseract), Wörter mit Pixelrechteck | tesseract-rs (baut Tesseract/Leptonica mit CMake) |
@@ -48,6 +48,13 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Kommentare und UI-Texte auf Deutsch, Bezeichner auf Englisch.
 - Tests für core: Roundtrip „erstellen → speichern → neu laden → vergleichen“ mit den Fixtures.
 - Fixtures in `tests/fixtures/` werden ausschließlich per `gen_fixtures` erzeugt.
+
+## Meilensteine Phase 8 (Export, Vergleich, Komprimierung, PDF/A)
+- [x] 8.1 Export Bilder (PNG/JPEG) & Text
+- [x] 8.2 Einfacher DOCX-Export
+- [x] 8.3 Dokumentvergleich
+- [x] 8.4 Komprimieren
+- [x] 8.5 PDF/A-2b (bestmöglich) + Abschluss
 
 ## Meilensteine Phase 7 (Texterkennung)
 - [x] 7.1 Tesseract einbinden (ocr-Crate, Sprachdaten, Offscreen-Rendern)
@@ -113,6 +120,12 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   Zeile vereinheitlicht; nur links-/Blocksatz (zentriert/rechtsbündig wird linksbündig neu gesetzt); Kerning geht verloren;
   aus eingebetteten Teilmengen nur Zeichen, die auf der Seite schon vorkommen (Rest in Noto Sans, kein CJK);
   der Seiteninhalt wird neu kodiert (ein Stream); eingefügte, ungespeicherte Seiten erst nach dem Speichern.
+- Export DOCX: kein Layout (Spalten, Tabellen, Positionen), Text in Formular-XObjects fehlt, CMYK/Indexed-Bilder fehlen.
+- Vergleich: nur Text (kein Pixelvergleich), Formatierung wird nicht verglichen.
+- Komprimieren: nur Grau/RGB-Bilder mit 8 Bit ohne /Mask und /Decode; Inline-Bilder bleiben.
+- PDF/A: nur 2b; nicht eingebettete CID- und Symbol-Schriften, DeviceCMYK und unbekannte Annotationen ohne
+  /AP werden gemeldet statt behoben. Ersatzschriften werden voll eingebettet (≈ 0,4 MB je Schnitt).
+  Unbekannte nicht eingebettete Schriften werden durch Liberation Sans genähert (Breiten können abweichen).
 - Texterkennung: nur waagerechter Text in der Anzeige (keine automatische Drehung schiefer Scans), Wörter unter
   30 % Sicherheit werden verworfen; CJK ist nicht eingebaut (Noto Sans ohne CJK). Der Tesseract-Build lädt beim ersten
   Mal Quellen von github.com (im Container gesperrt: Quellen per `git clone` nach `~/.tesseract-rs/third_party/`,
@@ -183,6 +196,28 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   erkannt), `Document::paragraphs`/`set_paragraph(…, ParaFrame { origin, width, justify })`: alte Ausgaben →
   Verschiebungen, Absatz neu hinter dem Inhalt in `/FcPara BMC … EMC` (wird beim nächsten Mal ersetzt), Stil der
   ersten Zeile (Schrift, Größe, Füllfarbe aus `TextShow::fill`, Tc/Tw/Tz/Ts/Tr, Matrix), Umbruch auf die Kastenbreite
+- `core::image_codec` – `encode_png`/`encode_jpeg` (Gray/Rgb/Rgba, JPEG: Alpha auf Weiß)
+- `core::docx` – `export_docx(doc, seiten, progress)`: Absätze (`core::paragraph`, Größe, Fett aus /BaseFont) und
+  Bilder (JPEG direkt, Grau/RGB-8-Bit als PNG; seitenfüllendes Bild nur ohne Text) nach Höhe sortiert,
+  Seitenumbrüche; ZIP mit minimalem WordprocessingML (`zip`, nur Deflate)
+- `core::compare` – `words(seite, PageText)`, `compare(alt, neu)` (similar, Patience, dokumentweit) → `Change`
+  (Deleted/Inserted/Replaced, Wörter mit Rechteck und Seite)
+- `core::compress` – `compress_pdf(bytes, CompressOptions { image_dpi, jpeg_quality }, progress)`: größte Darstellung je
+  Bild (Seiten + Formular-XObjects rekursiv), Grau/RGB-8-Bit-Bilder ohne /Mask//Decode verkleinern (Flächenmittel) →
+  JPEG, /SMask mit; prune, compress, `SaveOptions` mit Objekt-Streams. `CompressReport::summary`, `human`
+- `core::pdfa` – `convert_to_pdfa(bytes)` → (Bytes, `PdfaReport { fixed, problems }`): sanitize (JS, eingebettete
+  Dateien), über `Document` fehlende /AP erzeugen (Annotationen, Formularfelder), /Btn-/N als Zustands-Dictionary,
+  leere /AP als Notlösung, geerbte /Resources in die Seite, direkte Schriften zu Objekten, nicht eingebettete
+  Standardschriften → Liberation (TrueType, WinAnsi, Breiten aus der Schrift, voll eingebettet), sRGB-OutputIntent,
+  XMP (pdfaid 2/B, abgeglichen mit /Info, unkomprimiert), LZW/TR/Interpolate/AA/NeedAppearances weg, /F druckbar,
+  /ID, Version 1.7. Assets: `assets/fonts/liberation` (OFL), `assets/icc/sRGB-v2-magic.icc` (CC0)
+- `render::worker::OffscreenRenderer` – zusätzlich `page_text` (Lesereihenfolge) und `page_chars` (`PageText`)
+- `app::export` – Datei → Exportieren… (PNG/JPEG je Seite mit dpi/Qualität, TXT mit Seitenvorschub, DOCX);
+  testbar über `export_images`/`export_text` (mit PDFium), `page_file_name`
+- `app::compare` – Datei → Vergleichen mit… bzw. `foliocraft alt.pdf --vergleichen neu.pdf`; Job (Wörter beider
+  Dokumente offscreen) → `CompareView` (Liste + Seiten nebeneinander, Vorschaubilder per Hilfsthread)
+- `app::compress_ui` – Datei → Komprimieren… (dpi, Qualität) und Datei → Nach PDF/A umwandeln; Ergebnis per
+  `pending_doc` als ungespeicherte Fassung, Bericht als Meldung
 - `ocr` (Crate) – `Engine::new("deu+eng")`/`recognize(&Image)` → `Word` (Pixel, oben links, Konfidenz) aus
   Tesseracts TSV; `LANGUAGES` (eingebettete tessdata_fast, beim ersten Gebrauch in `tessdata_dir()` im Temp-Ordner)
 - `render::worker::OffscreenRenderer` – `RenderService::offscreen()`, klonbar/`Send`: Jobs rendern Seiten
@@ -309,6 +344,12 @@ Zeitstempel: `--tsa-openssl tsa.cnf` (lokale OpenSSL-TSA, `openssl ts -reply`) o
 Gegenprobe: `pdfsig out.pdf`; CMS mit `openssl cms -verify -binary -inform DER -content daten.bin`.
 `cargo run -p foliocraft-sign --example sign_check -- datei.pdf [vertraut.pem]` prüft Signaturen (Gegenprobe: `pdfsig`).
 Unabhängig signierte Test-PDFs: OpenSSL (`openssl cms -sign -binary -outform DER`) über die ByteRange.
+`cargo run -p foliocraft-core --example docx_demo -- in.pdf out.docx` (Gegenprobe: python-docx, `soffice --convert-to pdf`).
+`cargo run -p foliocraft-core --example compress_demo -- in.pdf out.pdf [dpi] [qualität]` (Gegenprobe: `pdfimages -list`).
+`cargo run -p foliocraft-core --example pdfa_demo -- in.pdf out.pdf`, Prüfung mit veraPDF (nur Testwerkzeug, nicht im Repo):
+`curl -o ~/tools/verapdf.jar https://maven-central.storage-download.googleapis.com/maven2/org/verapdf/apps/greenfield-apps/1.28.2/greenfield-apps-1.28.2.jar`,
+`java -cp ~/tools/verapdf.jar org.verapdf.apps.GreenfieldCliWrapper --flavour 2b --format text -v datei.pdf`.
+Platz: `target/` wächst schnell (> 25 GB) – im Container mit `CARGO_INCREMENTAL=0` bauen und bei Bedarf `cargo clean`.
 `cargo run -p foliocraft-ocr --example ocr_demo -- bild.pgm [deu+eng] [dpi]` erkennt Text in einem 8-Bit-PGM.
 `FOLIOCRAFT_PDFIUM_PATH=… cargo run -p foliocraft-render --example offscreen_pgm -- datei.pdf out.pgm 4.1667` rendert
 Seite 1 offscreen (300 dpi), `… --example text_boxes -- datei.pdf [Zeichen]` zeigt PDFiums Zeichen-Rechtecke.

@@ -1,5 +1,6 @@
-//! Dialog "Komprimieren": Ziel-Auflösung für Bilder und JPEG-Qualität wählen. Das Ergebnis
-//! ist – wie beim Schwärzen – eine neue, noch ungespeicherte Fassung des Dokuments.
+//! Dialog "Komprimieren" (Ziel-Auflösung für Bilder, JPEG-Qualität) und "Nach PDF/A
+//! umwandeln". Das Ergebnis ist – wie beim Schwärzen – eine neue, noch ungespeicherte
+//! Fassung des Dokuments.
 
 use crate::app::FolioApp;
 use crate::redact::DocSlot;
@@ -89,6 +90,43 @@ impl FolioApp {
         };
         self.compress_dialog = None;
         self.start_compress(ctx, options);
+    }
+
+    /// Wandelt das Dokument nach PDF/A-2b um (bestmöglich, mit Bericht).
+    pub(crate) fn start_pdfa(&mut self, ctx: &egui::Context) {
+        let Some(d) = &self.document else { return };
+        if self.job.is_some() {
+            return;
+        }
+        let bytes = match d.doc.to_bytes() {
+            Ok(b) => b,
+            Err(e) => {
+                self.error = Some(e.to_string());
+                return;
+            }
+        };
+        let signed = d.doc.has_signatures();
+        let slot: DocSlot = Arc::new(Mutex::new(None));
+        let out = slot.clone();
+        let job = crate::jobs::Job::spawn("PDF/A", ctx, move |c| {
+            c.progress(0.3, "Umwandeln …");
+            let (result, report) = foliocraft_core::pdfa::convert_to_pdfa(&bytes)
+                .map_err(|e| format!("Umwandlung fehlgeschlagen:\n{e}"))?;
+            if let Ok(mut s) = out.lock() {
+                *s = Some(result);
+            }
+            let mut msg = report.summary();
+            if signed {
+                msg.push_str("\nDie Signaturen sind durch das Neuschreiben ungültig geworden.\n");
+            }
+            msg.push_str(
+                "\nNoch nicht gespeichert – zum Übernehmen speichern (Strg+S). \
+                 Spätere Änderungen können die PDF/A-Konformität aufheben.",
+            );
+            Ok(msg)
+        });
+        self.pending_doc = Some((slot, d.doc.path().map(PathBuf::from)));
+        self.job = Some(job);
     }
 
     fn start_compress(&mut self, ctx: &egui::Context, options: CompressOptions) {

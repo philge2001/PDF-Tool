@@ -34,6 +34,38 @@ pub fn display_from_unix(secs: i64) -> String {
     )
 }
 
+/// PDF-Datum ("D:20261022123045+02'00'") -> XMP/ISO 8601 ("2026-10-22T12:30:45+02:00").
+/// Fehlende Teile werden mit Nullen bzw. "Z" ergänzt; `None`, wenn kein Jahr/Monat/Tag da ist.
+pub fn pdf_date_to_xmp(s: &str) -> Option<String> {
+    let t = s.strip_prefix("D:").unwrap_or(s);
+    let digits: String = t.chars().take_while(char::is_ascii_digit).collect();
+    if digits.len() < 8 {
+        return None;
+    }
+    let part = |a: usize, b: usize| digits.get(a..b).unwrap_or("00").to_string();
+    let rest = &t[digits.len()..];
+    let zone = match rest.chars().next() {
+        Some(sign @ ('+' | '-')) => {
+            let z: String = rest[1..].chars().filter(char::is_ascii_digit).collect();
+            format!(
+                "{sign}{}:{}",
+                z.get(0..2).unwrap_or("00"),
+                z.get(2..4).unwrap_or("00")
+            )
+        }
+        _ => "Z".to_string(),
+    };
+    Some(format!(
+        "{}-{}-{}T{}:{}:{}{zone}",
+        part(0, 4),
+        part(4, 6),
+        part(6, 8),
+        part(8, 10),
+        part(10, 12),
+        part(12, 14)
+    ))
+}
+
 /// Lesbare Anzeige eines PDF-Datums ("D:20261022123045+02'00'" -> "22.10.2026 12:30 +02:00").
 /// Unlesbares wird unverändert zurückgegeben.
 pub fn display_pdf_date(s: &str) -> String {
@@ -86,6 +118,19 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn xmp_dates() {
+        assert_eq!(
+            pdf_date_to_xmp("D:20261022123045+02'00'").as_deref(),
+            Some("2026-10-22T12:30:45+02:00")
+        );
+        assert_eq!(
+            pdf_date_to_xmp("D:20261022").as_deref(),
+            Some("2026-10-22T00:00:00Z")
+        );
+        assert_eq!(pdf_date_to_xmp("gestern"), None);
+    }
 
     #[test]
     fn known_dates() {

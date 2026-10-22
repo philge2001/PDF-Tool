@@ -49,6 +49,15 @@ impl FolioApp {
                     self.open_compress_dialog();
                 }
                 if ui
+                    .add_enabled(has_doc, Button::new("Nach PDF/A umwandeln"))
+                    .on_hover_text(
+                        "Für die Langzeitarchivierung: Schriften einbetten, Farbprofil, Metadaten",
+                    )
+                    .clicked()
+                {
+                    self.start_pdfa(ui.ctx());
+                }
+                if ui
                     .add_enabled(has_doc, Button::new("Vergleichen mit…"))
                     .on_hover_text("Textunterschiede zu einer anderen PDF anzeigen")
                     .clicked()

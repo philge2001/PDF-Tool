@@ -3,7 +3,7 @@
 Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 „FolioCraft“ ist ein Arbeitstitel. Lizenz: MIT OR Apache-2.0.
 
-**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare), Phase 4 (Signaturen), Phase 5 (Schwärzen & Bereinigen), Phase 6 (Text und Bilder bearbeiten) und Phase 7 (Texterkennung) abgeschlossen.
+**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare), Phase 4 (Signaturen), Phase 5 (Schwärzen & Bereinigen), Phase 6 (Text und Bilder bearbeiten) Phase 7 (Texterkennung) und Phase 8 (Export, Vergleich, Komprimierung, PDF/A) abgeschlossen.
 
 ## Funktionen (Phase 1)
 
@@ -64,6 +64,17 @@ Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 - „Dokument bereinigen“: Metadaten, JavaScript, eingebettete Dateien, ausgeblendete Ebenen, Kommentare,
   Formulardaten – mit Anzeige, was gefunden wurde
 - Warnung, wenn signierte Dokumente betroffen sind
+
+## Funktionen (Phase 8 – Export, Vergleich, Komprimierung, PDF/A)
+
+- „Datei → Exportieren…“: Seiten als PNG oder JPEG (Auflösung, Qualität), Text als TXT, einfaches Word (DOCX)
+  mit Absätzen und Bildern
+- „Datei → Vergleichen mit…“: Textunterschiede zu einer anderen PDF – Liste und beide Seiten nebeneinander
+  (gelöscht rot, eingefügt grün); auch per `foliocraft alt.pdf --vergleichen neu.pdf`
+- „Datei → Komprimieren…“: Bilder auf eine Ziel-Auflösung verkleinern (JPEG), alte Fassungen und unbenutzte
+  Objekte entfernen, Objekt-Streams – mit Größe vorher/nachher
+- „Datei → Nach PDF/A umwandeln“: PDF/A-2b für die Archivierung (Schriften einbetten, Farbprofil, Metadaten,
+  fehlende Erscheinungsbilder erzeugen) – mit Bericht, was angepasst wurde und was nicht ging
 
 ## Funktionen (Phase 7 – Texterkennung)
 
@@ -198,6 +209,13 @@ cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "¶Lorem
 ## Projektstruktur
 
 Siehe [CLAUDE.md](CLAUDE.md) für Architektur und Konventionen.
+
+## Mitgelieferte Schriften und Profile (Phase 8)
+
+- `assets/fonts/liberation/` – Liberation Sans/Serif/Mono (SIL Open Font License 1.1, `COPYRIGHT`):
+  Ersatz für nicht eingebettete Standardschriften bei der PDF/A-Umwandlung.
+- `assets/icc/sRGB-v2-magic.icc` – sRGB-Profil aus Compact-ICC-Profiles (CC0, `assets/icc/LICENSE`).
+- JPEG-Kodierung mit `jpeg-encoder`: „This software is based in part on the work of the Independent JPEG Group.“
 
 ## Mitgelieferte Sprachdaten
 
