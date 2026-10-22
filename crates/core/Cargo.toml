@@ -17,6 +17,7 @@ subsetter.workspace = true
 png.workspace = true
 jpeg-encoder.workspace = true
 zip.workspace = true
+similar.workspace = true
 
 [lints]
 workspace = true

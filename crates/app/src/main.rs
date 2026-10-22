@@ -3,6 +3,7 @@
 mod annot_draw;
 mod app;
 mod comments;
+mod compare;
 mod content_edit;
 mod export;
 mod file_ops;
@@ -40,8 +41,17 @@ fn main() -> eframe::Result<()> {
         )
         .init();
 
-    // Optional: erste Kommandozeilen-Argument = zu öffnende Datei.
-    let initial_file = std::env::args_os().nth(1).map(PathBuf::from);
+    // Kommandozeile: `foliocraft [datei.pdf] [--vergleichen andere.pdf]`.
+    let mut initial_file = None;
+    let mut compare_with = None;
+    let mut args = std::env::args_os().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--vergleichen" {
+            compare_with = args.next().map(PathBuf::from);
+        } else if initial_file.is_none() {
+            initial_file = Some(PathBuf::from(arg));
+        }
+    }
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -53,7 +63,7 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "FolioCraft",
         options,
-        // Die Closure wird einmal beim Start aufgerufen; `move` übergibt `initial_file` hinein.
-        Box::new(move |cc| Ok(Box::new(app::FolioApp::new(cc, initial_file)))),
+        // Die Closure wird einmal beim Start aufgerufen; `move` übergibt die Pfade hinein.
+        Box::new(move |cc| Ok(Box::new(app::FolioApp::new(cc, initial_file, compare_with)))),
     )
 }

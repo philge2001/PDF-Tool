@@ -91,6 +91,12 @@ pub struct FolioApp {
     /// Ergebnis-Dokument eines laufenden Jobs (z. B. Schwärzen) und sein Pfad.
     pub(crate) pending_doc: Option<(crate::redact::DocSlot, Option<PathBuf>)>,
     pub(crate) export_dialog: Option<crate::export::ExportDialog>,
+    /// Dokumentvergleich: Ergebnis des laufenden Jobs, offenes Vergleichsfenster.
+    pub(crate) pending_compare: Option<(
+        crate::compare::CompareSlot,
+        foliocraft_render::OffscreenRenderer,
+    )>,
+    pub(crate) compare: Option<crate::compare::CompareView>,
     /// Dialog "Texterkennung" und Ergebnis des laufenden OCR-Jobs.
     #[cfg(feature = "ocr")]
     pub(crate) ocr_dialog: Option<crate::ocr_ui::OcrDialog>,
@@ -129,7 +135,11 @@ fn install_fonts(ctx: &egui::Context) {
 }
 
 impl FolioApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, initial_file: Option<PathBuf>) -> Self {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        initial_file: Option<PathBuf>,
+        compare_with: Option<PathBuf>,
+    ) -> Self {
         // egui würde Strg+Plus/Minus sonst für die UI-Vergrößerung nutzen – wir zoomen das Dokument.
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
         install_fonts(&cc.egui_ctx);
@@ -176,6 +186,8 @@ impl FolioApp {
             open_after_job: None,
             pending_doc: None,
             export_dialog: None,
+            pending_compare: None,
+            compare: None,
             #[cfg(feature = "ocr")]
             ocr_dialog: None,
             #[cfg(feature = "ocr")]
@@ -186,6 +198,9 @@ impl FolioApp {
         app.rebuild_trust();
         if let Some(path) = initial_file {
             app.open_path(&cc.egui_ctx, &path);
+        }
+        if let Some(other) = compare_with {
+            app.start_compare_with(&cc.egui_ctx, other);
         }
         app
     }
@@ -368,6 +383,7 @@ impl FolioApp {
                 match result {
                     Ok(msg) => {
                         self.take_pending_doc();
+                        self.take_pending_compare();
                         #[cfg(feature = "ocr")]
                         self.take_pending_ocr();
                         if let Some(path) = open {
@@ -378,6 +394,7 @@ impl FolioApp {
                     }
                     Err(msg) => {
                         self.pending_doc = None;
+                        self.pending_compare = None;
                         #[cfg(feature = "ocr")]
                         {
                             self.pending_ocr = None;
@@ -715,6 +732,7 @@ impl eframe::App for FolioApp {
         self.redact_confirm_ui(&ctx);
         self.sanitize_dialog_ui(&ctx);
         self.export_dialog_ui(&ctx);
+        self.compare_ui(&ctx);
         #[cfg(feature = "ocr")]
         self.ocr_dialog_ui(&ctx);
         self.sign_dialog_ui(&ctx);

@@ -41,6 +41,13 @@ impl FolioApp {
                 {
                     self.open_export_dialog();
                 }
+                if ui
+                    .add_enabled(has_doc, Button::new("Vergleichen mit…"))
+                    .on_hover_text("Textunterschiede zu einer anderen PDF anzeigen")
+                    .clicked()
+                {
+                    self.start_compare(ui.ctx());
+                }
                 if ui.button("Dateien zusammenführen…").clicked() {
                     self.open_merge_dialog();
                 }

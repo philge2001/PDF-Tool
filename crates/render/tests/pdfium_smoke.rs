@@ -173,6 +173,8 @@ fn offscreen_render_from_other_thread() {
         let b = off.render_page(&bytes, 1, (595.0, 842.0), 1.0).unwrap();
         let text = off.page_text(&bytes, 1).unwrap();
         assert!(text.contains("Zebra"), "{text}");
+        let chars = off.page_chars(&bytes, 1).unwrap();
+        assert!(chars.chars.iter().any(|c| c.ch == 'Z' && c.has_area()));
         (a, b)
     });
     let (a, b) = handle.join().unwrap();

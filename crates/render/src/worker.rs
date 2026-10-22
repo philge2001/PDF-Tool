@@ -124,6 +124,8 @@ enum OffscreenKind {
     },
     /// Text der Seite in Lesereihenfolge (wie PDFium ihn liefert, mit Zeilenumbrüchen).
     Text { reply: Sender<Result<String>> },
+    /// Zeichen mit Rechtecken (wie `Event::Text`).
+    Chars { reply: Sender<Result<PageText>> },
 }
 
 /// Rendert Seiten für Hintergrund-Jobs. Klonbar und `Send`: Jeder Job-Thread bekommt eine
@@ -161,6 +163,13 @@ impl OffscreenRenderer {
     pub fn page_text(&self, bytes: &Arc<Vec<u8>>, page: u32) -> Result<String> {
         let (reply, answer) = mpsc::channel();
         self.send(bytes, page, OffscreenKind::Text { reply })?;
+        answer.recv().map_err(|_| RenderError::WorkerGone)?
+    }
+
+    /// Zeichen einer Seite mit Rechtecken (PDF-Raum). Blockiert.
+    pub fn page_chars(&self, bytes: &Arc<Vec<u8>>, page: u32) -> Result<PageText> {
+        let (reply, answer) = mpsc::channel();
+        self.send(bytes, page, OffscreenKind::Chars { reply })?;
         answer.recv().map_err(|_| RenderError::WorkerGone)?
     }
 
@@ -558,6 +567,9 @@ fn run_offscreen<'p>(
         } => {
             let result = pdf.and_then(|pdf| render_offscreen(pdf, job.page, page_size_pt, scale));
             let _ = reply.send(result);
+        }
+        OffscreenKind::Chars { reply } => {
+            let _ = reply.send(pdf.and_then(|pdf| extract_text(pdf, job.page)));
         }
         OffscreenKind::Text { reply } => {
             let result = pdf.and_then(|pdf| {
