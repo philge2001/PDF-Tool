@@ -61,6 +61,8 @@ pub struct FolioApp {
     /// Dauerhafte Einstellungen (werden beim Beenden gespeichert).
     pub(crate) settings: Settings,
     pub(crate) show_settings_window: bool,
+    pub(crate) insert_dialog: Option<crate::page_dialogs::InsertDialog>,
+    pub(crate) merge_dialog: Option<crate::page_dialogs::MergeDialog>,
 }
 
 impl FolioApp {
@@ -96,6 +98,8 @@ impl FolioApp {
             window_title: String::new(),
             settings,
             show_settings_window: false,
+            insert_dialog: None,
+            merge_dialog: None,
         };
         if let Some(path) = initial_file {
             app.open_path(&cc.egui_ctx, &path);
@@ -104,35 +108,14 @@ impl FolioApp {
     }
 
     pub fn open_path(&mut self, ctx: &egui::Context, path: &Path) {
-        let render = match &self.render {
-            Ok(r) => r,
-            Err(e) => {
-                self.error = Some(e.clone());
-                return;
-            }
-        };
+        if let Err(e) = &self.render {
+            self.error = Some(e.clone());
+            return;
+        }
+        let _ = ctx; // Fenstertitel setzt `update_title` im nächsten Frame
         match Document::open(path) {
             Ok(doc) => {
-                let id = crate::pages::new_doc_id();
-                // Arc-Klon: nur der Zeiger wird kopiert, nicht die Daten.
-                render.open(id, doc.bytes().clone(), hidden_annots(&doc));
-                let sizes: Vec<_> = doc.pages().iter().map(|p| p.display_size()).collect();
-                self.document = Some(OpenDocument {
-                    thumbs: Thumbnails::new(&sizes),
-                    texts: TextCache::new(id, sizes.len()),
-                    structure: doc.pages().iter().map(|p| (p.id, p.rotation)).collect(),
-                    search: SearchState::default(),
-                    selection: None,
-                    gesture: None,
-                    editor: None,
-                    selected: None,
-                    annot_drag: None,
-                    viewer: Viewer::new(id, sizes),
-                    doc,
-                    page_input: None,
-                    zoom_input: None,
-                });
-                let _ = ctx; // Fenstertitel setzt `update_title` im nächsten Frame
+                self.adopt_document(doc);
                 self.settings.add_recent(path);
                 tracing::info!(path = %path.display(), "Dokument geöffnet");
             }
@@ -144,6 +127,42 @@ impl FolioApp {
                 self.settings.prune_missing(); // z. B. verschobene Datei aus "Zuletzt geöffnet"
             }
         }
+    }
+
+    /// Macht ein geladenes Dokument zum aktuellen (ersetzt ein evtl. offenes ohne Rückfrage).
+    pub(crate) fn adopt_document(&mut self, doc: Document) {
+        let Ok(render) = &self.render else { return };
+        let id = crate::pages::new_doc_id();
+        // Ungespeicherte Änderungen (z. B. zusammengeführte Seiten) stehen noch nicht in den
+        // Dateibytes – dann bekommt der Renderer eine Momentaufnahme des aktuellen Stands.
+        if doc.is_dirty() {
+            match doc.render_snapshot() {
+                Ok(s) => render.open(id, std::sync::Arc::new(s.bytes), s.hidden),
+                Err(e) => {
+                    self.error = Some(format!("Dokument kann nicht angezeigt werden:\n{e}"));
+                    return;
+                }
+            }
+        } else {
+            // Arc-Klon: nur der Zeiger wird kopiert, nicht die Daten.
+            render.open(id, doc.bytes().clone(), hidden_annots(&doc));
+        }
+        let sizes: Vec<_> = doc.pages().iter().map(|p| p.display_size()).collect();
+        self.document = Some(OpenDocument {
+            thumbs: Thumbnails::new(&sizes),
+            texts: TextCache::new(id, sizes.len()),
+            structure: doc.pages().iter().map(|p| (p.id, p.rotation)).collect(),
+            search: SearchState::default(),
+            selection: None,
+            gesture: None,
+            editor: None,
+            selected: None,
+            annot_drag: None,
+            viewer: Viewer::new(id, sizes),
+            doc,
+            page_input: None,
+            zoom_input: None,
+        });
     }
 
     pub(crate) fn open_dialog(&mut self, ctx: &egui::Context) {
@@ -452,6 +471,8 @@ impl eframe::App for FolioApp {
             egui::CentralPanel::default().show(ui, |ui| self.empty_state(ui));
         }
         self.settings_window(&ctx);
+        self.insert_dialog_ui(&ctx);
+        self.merge_dialog_ui(&ctx);
         self.unsaved_changes_dialog(&ctx);
         self.error_dialog(&ctx);
     }

@@ -78,6 +78,9 @@ pub struct Document {
     /// Seiten (Objekt-ID, Rotation) so, wie sie in der Datei stehen – zum Erkennen von
     /// Änderungen am Seitenbaum beim Speichern.
     saved_pages: Vec<(ObjectId, u16)>,
+    /// Nächste freie Objektnummer für neue Objekte. Zählt nur hoch – so kollidieren
+    /// rückgängig gemachte und später wiederhergestellte Einfügungen nie miteinander.
+    next_object_id: u32,
     history: History,
     /// Stand der verwalteten Annotationen in der Datei (nach Laden/Speichern),
     /// nach Objektnummer – zum Erkennen von Änderungen beim Speichern.
@@ -113,11 +116,13 @@ impl Document {
             bytes: Arc::new(bytes),
             pdf,
             saved_pages: Vec::new(),
+            next_object_id: 0,
             model,
             history: History::new(),
             imported: HashMap::new(),
         };
         doc.saved_pages = doc.page_structure();
+        doc.next_object_id = doc.pdf.max_id + 1;
         doc.import_annotations();
         tracing::debug!(
             pages = doc.model.pages.len(),
@@ -145,6 +150,12 @@ impl Document {
 
     pub fn path(&self) -> Option<&Path> {
         self.path.as_deref()
+    }
+
+    /// Löst das Dokument von seiner Datei (z. B. nach dem Zusammenführen): Das nächste
+    /// Speichern fragt dann nach einem neuen Namen.
+    pub fn forget_path(&mut self) {
+        self.path = None;
     }
 
     pub fn bytes(&self) -> &Arc<Vec<u8>> {
@@ -198,6 +209,27 @@ impl Document {
 
     pub fn annotations(&self) -> &AnnotationStore {
         &self.model.annotations
+    }
+
+    pub(crate) fn allocate_page_id(&mut self) -> PageId {
+        self.model.allocate_page_id()
+    }
+
+    pub(crate) fn next_free_object_id(&self) -> u32 {
+        self.next_object_id
+    }
+
+    /// Markiert alle Objektnummern unterhalb von `next` als vergeben.
+    pub(crate) fn reserve_object_ids(&mut self, next: u32) {
+        self.next_object_id = self.next_object_id.max(next);
+    }
+
+    /// Ein Objekt aus der Datei oder (falls noch nicht gespeichert) aus dem Modell.
+    pub fn object(&self, id: ObjectId) -> Option<&Object> {
+        self.model
+            .extra_objects
+            .get(&id)
+            .or_else(|| self.pdf.get_object(id).ok())
     }
 
     /// Neue ID für eine Annotation, die gleich per Command hinzugefügt wird.
@@ -321,6 +353,9 @@ impl Document {
             .filter_map(|a| Some((a.source?.object_id, a.clone())))
             .collect();
         self.saved_pages = self.page_structure();
+        // Die zusätzlichen Objekte stehen jetzt in der Datei.
+        self.model.extra_objects.clear();
+        self.next_object_id = self.next_object_id.max(self.pdf.max_id + 1);
         self.history.mark_saved();
         Ok(())
     }

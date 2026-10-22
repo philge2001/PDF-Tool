@@ -9,6 +9,8 @@ use std::path::PathBuf;
 pub enum PendingAction {
     Close,
     Open(PathBuf),
+    /// Ein bereits geladenes Dokument übernehmen (z. B. Ergebnis von "Zusammenführen").
+    Adopt(Box<foliocraft_core::Document>),
 }
 
 impl OpenDocument {
@@ -82,6 +84,15 @@ impl FolioApp {
         }
     }
 
+    /// Übernimmt ein geladenes Dokument – fragt vorher nach, wenn es ungespeicherte Änderungen gibt.
+    pub(crate) fn request_adopt(&mut self, doc: foliocraft_core::Document) {
+        if self.document.as_ref().is_some_and(|d| d.doc.is_dirty()) {
+            self.pending = Some(PendingAction::Adopt(Box::new(doc)));
+        } else {
+            self.adopt_document(doc);
+        }
+    }
+
     /// Fängt das Schließen des Fensters ab, solange es ungespeicherte Änderungen gibt.
     pub(crate) fn handle_close_request(&mut self, ctx: &egui::Context) {
         if !ctx.input(|i| i.viewport().close_requested()) {
@@ -145,6 +156,7 @@ impl FolioApp {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
             Some(PendingAction::Open(path)) => self.open_path(ctx, &path),
+            Some(PendingAction::Adopt(doc)) => self.adopt_document(*doc),
             None => {}
         }
     }

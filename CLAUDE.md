@@ -43,7 +43,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 ## Meilensteine Phase 2 (Seitenorganisation)
 - [x] 2.1 Seitenmodell & Seiten-Commands (core)
 - [x] 2.2 Seiten-UI (Mehrfachauswahl, Kontextmenü, Drag & Drop)
-- [ ] 2.3 Einfügen, Zusammenführen, Leerseite
+- [x] 2.3 Einfügen, Zusammenführen, Leerseite
 - [ ] 2.4 Extrahieren & Teilen, Hintergrund-Jobs
 
 ## Meilensteine Phase 1
@@ -90,6 +90,11 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - `core::command` – `Command`-Trait, `Model` (Annotationen + Seitenliste), `History` (Undo/Redo, dirty)
 - `core::page_ops` – `RotatePages`, `DeletePages`, `ReorderPages` (rechnen Annotations-Seitenindizes mit um);
   `PageInfo::id` (`PageId`) ist stabil über Umsortieren hinweg
+- `core::page_import` – `Document::prepare_insert` (Tiefenkopie von Seiten aus einer anderen PDF mit
+  Umnummerierung; /Parent und fremde Seiten werden nicht verfolgt; verwaltete Annotationen werden
+  ins Modell übernommen), `prepare_blank_page`, `InsertPages`-Command, `parse_page_ranges("1-3, 5, 8-")`.
+  Neue Objekte liegen bis zum Speichern in `Model::extra_objects`; Objektnummern vergibt ein
+  nur hochzählender Zähler (`next_object_id`)
 - `Document::render_snapshot` – Bytes des aktuellen Stands + Ausblendliste für den Renderer
   (nach strukturellen Änderungen, ohne zu speichern)
 - `core::save` – inkrementelles Speichern: Seitenbaum (bei neuer Reihenfolge flach unter der Wurzel,
@@ -122,6 +127,8 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   Texturen/Text per `PageId` auf neue Indizes um, lädt den Worker mit `render_snapshot` und NEUER DocId),
   `new_doc_id`, `target_pages` (Auswahl in der Seitenleiste oder aktuelle Seite)
 - `app::viewer::thumbnails` – zusätzlich Mehrfachauswahl (als `PageId`), Kontextmenü, Drag & Drop (`ThumbAction`)
+- `app::page_dialogs` – Dialoge „Seiten aus Datei einfügen“ und „Dateien zusammenführen“
+  (Ergebnis = neues unbenanntes Dokument, `adopt_document` zeigt es über eine Momentaufnahme an)
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
 
 ## Tastenkürzel

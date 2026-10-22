@@ -15,6 +15,9 @@ pub struct Model {
     /// Seiten in Anzeigereihenfolge. Annotationen verweisen per Index darauf; Seiten-Commands
     /// rechnen diese Indizes beim Umsortieren/Löschen mit um.
     pub pages: Vec<PageInfo>,
+    /// Neue PDF-Objekte, die noch nicht in der Datei stehen (z. B. eingefügte Seiten
+    /// samt Schriften und Bildern). Werden beim Speichern geschrieben.
+    pub extra_objects: std::collections::BTreeMap<lopdf::ObjectId, lopdf::Object>,
     next_page_id: u32,
 }
 

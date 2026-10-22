@@ -1,7 +1,7 @@
 //! Inkrementelles Speichern: Originalbytes bleiben unverändert, Änderungen werden angehängt
 //! (ISO 32000-1, Abschnitt 7.5.6). Dadurch bleiben z. B. vorhandene Signaturen gültig.
 
-use crate::annotation::{AnnotId, Annotation, appearance, export, import};
+use crate::annotation::{AnnotId, Annotation, appearance, export};
 use crate::date::pdf_date_now;
 use crate::document::{Document, inherited};
 use crate::error::{CoreError, Result};
@@ -16,6 +16,21 @@ pub(crate) struct SaveOutput {
     /// Pro Seitenindex: Positionen in /Annots, die FolioCraft selbst zeichnet
     /// (der Renderer blendet genau diese aus).
     pub hidden: HashMap<u32, Vec<usize>>,
+}
+
+/// /Annots einer Seite – auch für Seiten, die erst eingefügt und noch nicht gespeichert sind.
+fn page_annots(doc: &Document, page: ObjectId) -> Vec<Object> {
+    let Some(Object::Dictionary(d)) = doc.object(page) else {
+        return Vec::new();
+    };
+    match d.get(b"Annots") {
+        Ok(Object::Array(a)) => a.clone(),
+        Ok(Object::Reference(id)) => match doc.object(*id) {
+            Some(Object::Array(a)) => a.clone(),
+            _ => Vec::new(),
+        },
+        _ => Vec::new(),
+    }
 }
 
 /// Schreibt Änderungen am Seitenbaum: Reihenfolge, gelöschte Seiten, Rotation.
@@ -100,6 +115,14 @@ pub(crate) fn incremental(doc: &Document) -> Result<SaveOutput> {
     let mut hidden = HashMap::new();
     let store = &doc.model().annotations;
 
+    // Neue Objekte (eingefügte Seiten usw.) zuerst – der Seitenbaum verweist darauf.
+    for (&id, obj) in &doc.model().extra_objects {
+        inc.new_document.set_object(id, obj.clone());
+    }
+    // Neue Nummern (z. B. für Appearance Streams) erst hinter allen vergebenen.
+    let reserved = doc.next_free_object_id().saturating_sub(1);
+    inc.new_document.max_id = inc.new_document.max_id.max(reserved);
+
     write_page_tree(doc, &mut inc)?;
 
     // Popups von importierten Annotationen, die gelöscht wurden, fliegen mit raus.
@@ -116,7 +139,7 @@ pub(crate) fn incremental(doc: &Document) -> Result<SaveOutput> {
         .collect();
 
     for (page_idx, info) in doc.pages().iter().enumerate() {
-        let original = import::page_annots(pdf, info.object_id);
+        let original = page_annots(doc, info.object_id);
         let managed: Vec<&Annotation> = store.on_page(page_idx).collect();
         let kept: HashSet<ObjectId> = managed
             .iter()

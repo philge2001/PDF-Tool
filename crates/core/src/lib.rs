@@ -10,6 +10,7 @@ pub mod document;
 pub mod error;
 pub mod font;
 pub mod geometry;
+pub mod page_import;
 pub mod page_ops;
 pub mod pdf_string;
 mod save;
@@ -22,5 +23,6 @@ pub use command::{
 pub use document::{Document, PageId, PageInfo, RenderSnapshot};
 pub use error::{CoreError, Result};
 pub use geometry::{Color, Point, Quad, Rect};
+pub use page_import::{InsertPages, parse_page_ranges};
 pub use page_ops::{DeletePages, ReorderPages, RotatePages};
 pub use text::{CharBox, PageText, TextRange};

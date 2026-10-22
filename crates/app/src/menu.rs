@@ -33,6 +33,9 @@ impl FolioApp {
                 {
                     self.save_document(true);
                 }
+                if ui.button("Dateien zusammenführen…").clicked() {
+                    self.open_merge_dialog();
+                }
                 ui.separator();
                 ui.menu_button("Zuletzt geöffnet", |ui| {
                     if self.settings.recent_files.is_empty() {
@@ -119,10 +122,18 @@ impl FolioApp {
             });
 
             ui.menu_button("Seiten", |ui| {
-                let Some(d) = &mut self.document else {
+                if self.document.is_none() {
                     ui.label("Kein Dokument");
                     return;
-                };
+                }
+                if ui.button("Seiten aus Datei einfügen…").clicked() {
+                    self.start_insert_from_file();
+                }
+                if ui.button("Leere Seite einfügen").clicked() {
+                    self.insert_blank_page();
+                }
+                ui.separator();
+                let Some(d) = &mut self.document else { return };
                 let target = d.target_pages();
                 let n = d.doc.page_count();
                 let what = if target.len() == 1 {
