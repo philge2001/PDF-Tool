@@ -1,0 +1,30 @@
+[package]
+name = "foliocraft-sign"
+description = "Digitale PDF-Signaturen prüfen und erstellen (PAdES) – ohne UI und ohne PDFium"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+foliocraft-core.workspace = true
+lopdf.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+cms.workspace = true
+x509-cert.workspace = true
+der.workspace = true
+spki.workspace = true
+rsa.workspace = true
+p256.workspace = true
+p384.workspace = true
+sha1.workspace = true
+sha2.workspace = true
+p12-keystore.workspace = true
+rand_core.workspace = true
+
+[dev-dependencies]
+
+[lints]
+workspace = true

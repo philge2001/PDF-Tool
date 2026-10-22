@@ -47,6 +47,8 @@ pub struct OpenDocument {
     pub form_edit: crate::form_edit::FormEdit,
     /// Noch nicht übernommene Eingaben im Eigenschaften-Panel.
     pub prop_inputs: crate::form_props::PropInputs,
+    /// Geprüfte Signaturen.
+    pub signatures: crate::signatures::SigState,
 }
 
 pub struct FolioApp {
@@ -75,6 +77,15 @@ pub struct FolioApp {
     pub(crate) job: Option<crate::jobs::Job>,
     /// Erfolgsmeldung, die als Dialog angezeigt wird.
     pub(crate) info: Option<String>,
+    /// Vertrauenswürdige Zertifikate (aus den Einstellungen) und ein Zähler, der bei jeder
+    /// Änderung hochzählt – daran erkennen Dokumente, dass sie neu prüfen müssen.
+    pub(crate) trust: foliocraft_sign::TrustStore,
+    pub(crate) trust_version: u64,
+    pub(crate) show_signatures: bool,
+    pub(crate) sign_dialog: Option<crate::sign_ui::SignDialog>,
+    pub(crate) cert_dialog: Option<crate::sign_ui::CertDialog>,
+    /// Nach erfolgreichem Job diese Datei öffnen (z. B. frisch signierte Fassung).
+    pub(crate) open_after_job: Option<PathBuf>,
 }
 
 impl FolioApp {
@@ -116,7 +127,14 @@ impl FolioApp {
             split_dialog: None,
             job: None,
             info: None,
+            trust: Default::default(),
+            trust_version: 0,
+            show_signatures: false,
+            sign_dialog: None,
+            cert_dialog: None,
+            open_after_job: None,
         };
+        app.rebuild_trust();
         if let Some(path) = initial_file {
             app.open_path(&cc.egui_ctx, &path);
         }
@@ -174,6 +192,7 @@ impl FolioApp {
             form: Default::default(),
             form_edit: Default::default(),
             prop_inputs: Default::default(),
+            signatures: Default::default(),
             editor: None,
             selected: None,
             annot_drag: None,
@@ -290,11 +309,18 @@ impl FolioApp {
             None => job.show(ctx),
             Some(result) => {
                 tracing::info!(job = %job.title, ?result, "Job beendet");
+                self.job = None;
+                let open = self.open_after_job.take();
                 match result {
-                    Ok(msg) => self.info = Some(msg),
+                    Ok(msg) => {
+                        if let Some(path) = open {
+                            self.open_path(ctx, &path);
+                            self.show_signatures = true;
+                        }
+                        self.info = Some(msg);
+                    }
                     Err(msg) => self.error = Some(msg),
                 }
-                self.job = None;
             }
         }
     }
@@ -395,18 +421,24 @@ impl OpenDocument {
 impl FolioApp {
     /// Hauptansicht: Seiten zeichnen, Werkzeug-Interaktion, Overlays.
     fn document_view(&mut self, ui: &mut egui::Ui) {
+        // Vor dem Ausleihen von `self.document` abfragen (beides sind Teile von `self`).
+        let placing = self.is_placing_signature();
         let Some(d) = &mut self.document else { return };
         let view = d.viewer.show(ui);
         let tool = self.tool;
         // Formularfelder lassen sich mit den beiden Auswahlwerkzeugen ausfüllen. Liegt die Maus
         // über einem Feld, bekommt das Werkzeug den Klick nicht.
-        let fill_forms = matches!(tool, Tool::TextSelect | Tool::Select);
+        let fill_forms = !placing && matches!(tool, Tool::TextSelect | Tool::Select);
         let over_field = fill_forms && d.handle_form_input(ui, &view);
         if fill_forms {
             d.handle_form_keys(ui.ctx(), &view);
         }
+        if placing {
+            self.handle_sign_placement(ui, &view);
+        }
+        let Some(d) = &mut self.document else { return };
         match tool {
-            _ if over_field => {}
+            _ if over_field || placing => {}
             Tool::Select => {
                 d.handle_annotation_select(ui, &view, true);
             }
@@ -456,6 +488,7 @@ impl FolioApp {
         d.paint_gesture_preview(ui, &view, tool, &self.tool_settings);
         d.paint_search_hits(ui, &view);
         d.paint_selection(ui, &view);
+        self.paint_sign_area(ui, &view);
     }
 }
 
@@ -489,12 +522,28 @@ impl eframe::App for FolioApp {
             }
             d.validate_selection();
             d.validate_field_selection();
+            d.update_signatures(&self.trust, self.trust_version);
+        }
+        if self
+            .document
+            .as_ref()
+            .is_some_and(|d| !d.signatures.reports.is_empty())
+        {
+            egui::Panel::top("signature_banner").show(ui, |ui| self.signature_banner(ui));
+        }
+        if self.show_signatures && self.document.is_some() && !self.tool.is_form_tool() {
+            egui::Panel::right("signatures")
+                .default_size(300.0)
+                .size_range(220.0..=520.0)
+                .show(ui, |ui| self.signatures_panel(ui));
+        }
+        if let Some(d) = &mut self.document {
             if self.tool.is_form_tool() {
                 egui::Panel::right("field_properties")
                     .default_size(280.0)
                     .size_range(220.0..=500.0)
                     .show(ui, |ui| d.field_properties(ui));
-            } else if self.show_comments {
+            } else if self.show_comments && !self.show_signatures {
                 egui::Panel::right("comments")
                     .default_size(280.0)
                     .size_range(200.0..=500.0)
@@ -559,6 +608,8 @@ impl eframe::App for FolioApp {
         self.merge_dialog_ui(&ctx);
         self.extract_dialog_ui(&ctx);
         self.split_dialog_ui(&ctx);
+        self.sign_dialog_ui(&ctx);
+        self.cert_dialog_ui(&ctx);
         self.job_ui(&ctx);
         self.info_dialog(&ctx);
         self.unsaved_changes_dialog(&ctx);

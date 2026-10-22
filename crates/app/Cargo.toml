@@ -14,6 +14,9 @@ path = "src/main.rs"
 [dependencies]
 foliocraft-core.workspace = true
 foliocraft-render.workspace = true
+ureq.workspace = true
+foliocraft-sign.workspace = true
+der.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true

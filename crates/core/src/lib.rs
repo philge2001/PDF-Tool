@@ -17,6 +17,7 @@ pub mod page_import;
 pub mod page_ops;
 pub mod pdf_string;
 mod save;
+pub mod signature_prep;
 pub mod text;
 
 pub use annotation::{AnnotId, AnnotKind, Annotation, AnnotationStore};
