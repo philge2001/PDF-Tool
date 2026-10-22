@@ -1,8 +1,12 @@
 //! Das geöffnete Dokument: Originalbytes, lopdf-Struktur und Seiteninformationen.
 
+use crate::annotation::{self, AnnotId, Annotation, AnnotationStore, Source};
+use crate::command::{Command, History, Model};
 use crate::error::{CoreError, Result};
 use crate::geometry::{Point, Rect};
+use crate::save;
 use lopdf::{Dictionary, Object, ObjectId};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -57,14 +61,19 @@ impl PageInfo {
     }
 }
 
-/// Ein geöffnetes PDF-Dokument.
+/// Ein geöffnetes PDF-Dokument samt bearbeitbarem Modell und Undo-Historie.
 pub struct Document {
     path: Option<PathBuf>,
-    /// Originalbytes. `Arc` = geteilter, unveränderlicher Besitz: Der Render-Thread
+    /// Aktuelle Dateibytes. `Arc` = geteilter, unveränderlicher Besitz: Der Render-Thread
     /// bekommt eine billige Kopie des Zeigers statt einer Kopie der Daten.
     bytes: Arc<Vec<u8>>,
     pdf: lopdf::Document,
     pages: Vec<PageInfo>,
+    model: Model,
+    history: History,
+    /// Stand der verwalteten Annotationen in der Datei (nach Laden/Speichern),
+    /// nach Objektnummer – zum Erkennen von Änderungen beim Speichern.
+    imported: HashMap<ObjectId, Annotation>,
 }
 
 impl Document {
@@ -84,13 +93,38 @@ impl Document {
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
         let pdf = lopdf::Document::load_mem(&bytes)?;
         let pages = read_pages(&pdf)?;
-        tracing::debug!(pages = pages.len(), "Dokument geladen");
-        Ok(Self {
+        let mut doc = Self {
             path: None,
             bytes: Arc::new(bytes),
             pdf,
             pages,
-        })
+            model: Model::default(),
+            history: History::new(),
+            imported: HashMap::new(),
+        };
+        doc.import_annotations();
+        tracing::debug!(
+            pages = doc.pages.len(),
+            annotations = doc.model.annotations.len(),
+            "Dokument geladen"
+        );
+        Ok(doc)
+    }
+
+    fn import_annotations(&mut self) {
+        for (page_idx, info) in self.pages.iter().enumerate() {
+            for entry in annotation::import::page_annots(&self.pdf, info.object_id) {
+                let Object::Reference(id) = entry else {
+                    continue;
+                };
+                if let Some(a) = annotation::import::parse(&self.pdf, page_idx, id) {
+                    let new_id = self.model.annotations.push(a);
+                    if let Some(a) = self.model.annotations.get(new_id) {
+                        self.imported.insert(id, a.clone());
+                    }
+                }
+            }
+        }
     }
 
     pub fn path(&self) -> Option<&Path> {
@@ -118,6 +152,124 @@ impl Document {
     pub fn page_count(&self) -> usize {
         self.pages.len()
     }
+
+    // ---------- Modell & Undo/Redo ----------
+
+    pub fn model(&self) -> &Model {
+        &self.model
+    }
+
+    pub fn annotations(&self) -> &AnnotationStore {
+        &self.model.annotations
+    }
+
+    /// Neue ID für eine Annotation, die gleich per Command hinzugefügt wird.
+    pub fn allocate_annotation_id(&mut self) -> AnnotId {
+        self.model.annotations.allocate_id()
+    }
+
+    /// Führt eine Änderung aus (der einzige Weg, das Modell zu verändern).
+    pub fn execute(&mut self, cmd: Box<dyn Command>) -> Result<()> {
+        // `history` und `model` sind getrennte Felder – Rust erlaubt, beide
+        // gleichzeitig veränderlich auszuleihen.
+        self.history.execute(cmd, &mut self.model)
+    }
+
+    pub fn undo(&mut self) -> Result<bool> {
+        self.history.undo(&mut self.model)
+    }
+
+    pub fn redo(&mut self) -> Result<bool> {
+        self.history.redo(&mut self.model)
+    }
+
+    pub fn history(&self) -> &History {
+        &self.history
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        self.history.is_dirty()
+    }
+
+    pub(crate) fn imported(&self) -> impl Iterator<Item = &Annotation> {
+        self.imported.values()
+    }
+
+    pub(crate) fn is_imported(&self, id: ObjectId) -> bool {
+        self.imported.contains_key(&id)
+    }
+
+    pub(crate) fn imported_snapshot(&self, id: ObjectId) -> Option<&Annotation> {
+        self.imported.get(&id)
+    }
+
+    // ---------- Speichern ----------
+
+    /// Erzeugt die Bytes einer inkrementell aktualisierten Datei, ohne etwas zu verändern.
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        Ok(save::incremental(self)?.bytes)
+    }
+
+    /// Speichert an den bisherigen Pfad.
+    pub fn save(&mut self) -> Result<()> {
+        let path = self
+            .path
+            .clone()
+            .ok_or_else(|| CoreError::Other("Dokument hat noch keinen Dateipfad".into()))?;
+        self.save_as(path)
+    }
+
+    /// Speichert unter einem (neuen) Pfad. Danach gilt dieser Pfad als Dokumentpfad.
+    pub fn save_as(&mut self, path: impl AsRef<Path>) -> Result<()> {
+        let path = path.as_ref();
+        let out = save::incremental(self)?;
+        write_atomically(path, &out.bytes)?;
+        self.after_save(out)?;
+        self.path = Some(path.to_path_buf());
+        tracing::info!(path = %path.display(), "gespeichert");
+        Ok(())
+    }
+
+    /// Übernimmt den gespeicherten Stand: neue Bytes, neue Objektnummern, "nicht geändert".
+    fn after_save(&mut self, out: save::SaveOutput) -> Result<()> {
+        self.pdf = lopdf::Document::load_mem(&out.bytes)?;
+        self.bytes = Arc::new(out.bytes);
+        for (id, object_id, name, modified) in out.written {
+            if let Some(a) = self.model.annotations.get(id) {
+                let mut a = a.clone();
+                let popup = a.source.and_then(|s| s.popup);
+                a.source = Some(Source { object_id, popup });
+                a.name = name;
+                a.modified = modified;
+                self.model.annotations.replace(a);
+            }
+        }
+        self.imported = self
+            .model
+            .annotations
+            .iter()
+            .filter_map(|a| Some((a.source?.object_id, a.clone())))
+            .collect();
+        self.history.mark_saved();
+        Ok(())
+    }
+}
+
+/// Schreibt erst in eine temporäre Datei und benennt sie dann um. So bleibt bei einem
+/// Absturz mitten im Schreiben die alte Datei unversehrt.
+fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
+    let io_err = |source| CoreError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".foliocraft-tmp");
+    let tmp = PathBuf::from(tmp);
+    std::fs::write(&tmp, bytes).map_err(io_err)?;
+    std::fs::rename(&tmp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        io_err(e)
+    })
 }
 
 fn read_pages(pdf: &lopdf::Document) -> Result<Vec<PageInfo>> {

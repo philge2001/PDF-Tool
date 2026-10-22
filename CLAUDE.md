@@ -46,7 +46,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - [x] M2 Zoom, Navigation, Thumbnails, Cache
 - [x] M3 Textsuche
 - [x] M4 Text auswählen & kopieren
-- [ ] M5 Annotationsmodell, Commands, Speichern (core)
+- [x] M5 Annotationsmodell, Commands, Speichern (core)
 - [ ] M6 Annotationswerkzeuge (UI)
 - [ ] M7 Bearbeiten, Kommentar-Panel, Undo/Redo-Shortcuts
 - [ ] M8 Speichern in der App
@@ -64,6 +64,12 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   `Viewer::show` (zeichnet nur sichtbare Seiten, Kacheln ab 3072 px), Zoom mit Anker (`set_zoom`),
   `ZoomMode` (Custom/FitWidth/FitPage), `FrameRequests` (Render-Aufträge pro Frame, `flush_requests`)
 - `app::viewer::thumbnails` – Seitenleiste, gleiche Texturen, Priorität `Thumbnail`
+- `core::annotation` – `Annotation`/`AnnotKind` (9 Typen), `AnnotationStore`; `import` (PDF -> Modell,
+  Unverstandenes bleibt fremd), `export` (Dictionary, Basis = Original-Dict), `appearance` (/AP-Streams)
+- `core::command` – `Command`-Trait, `Model` (was Commands ändern dürfen), `History` (Undo/Redo, dirty)
+- `core::save` – inkrementelles Speichern: pro Seite fremde Einträge + verwaltete; unveränderte
+  behalten ihren Verweis, geänderte werden unter derselben Objektnummer neu geschrieben
+- `core::font` (Helvetica-Breiten, WinAnsi, Umbruch), `core::pdf_string` (Textstrings), `core::date`
 - `core::text` – `PageText`/`CharBox` (Zeichen + Rechteck im PDF-Raum), `find`, `range_rects`, `char_at`
 - `render::worker` – Textextraktion (`extract_text`, Event `Text`), eigene Warteschlange:
   sichtbare Seiten > Text > Prefetch > Miniaturen
@@ -79,4 +85,6 @@ Strg+O öffnen · Strg+C kopiert markierten Text · Esc hebt Auswahl auf · Strg
 Strg+Mausrad zoomt um den Mauszeiger · Bild↑/↓ Seite · Pos1/Ende · Pfeiltasten scrollen
 
 ## Testen im Container (ohne Bildschirm)
-PDFium liegt lokal in `pdfium/lib` (gitignored). Screenshots über Xvfb + xdotool + ImageMagick `import`.
+PDFium liegt lokal in `pdfium/lib` (gitignored).
+`cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf` schreibt jeden Annotationstyp –
+zur Gegenprobe mit anderen Readern (z. B. `pdftoppm -png out.pdf x`). Screenshots über Xvfb + xdotool + ImageMagick `import`.
