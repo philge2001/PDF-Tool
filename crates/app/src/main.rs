@@ -1,6 +1,10 @@
 //! Einstiegspunkt der FolioCraft-Desktop-App.
 
+mod app;
+mod viewer;
+
 use eframe::egui;
+use std::path::PathBuf;
 
 fn main() -> eframe::Result<()> {
     // Logging: Standard "info", überschreibbar mit z. B. RUST_LOG=debug
@@ -10,6 +14,9 @@ fn main() -> eframe::Result<()> {
                 .unwrap_or_else(|_| "info,foliocraft=debug".into()),
         )
         .init();
+
+    // Optional: erste Kommandozeilen-Argument = zu öffnende Datei.
+    let initial_file = std::env::args_os().nth(1).map(PathBuf::from);
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -21,16 +28,7 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "FolioCraft",
         options,
-        Box::new(|_cc| Ok(Box::new(FolioApp))),
+        // Die Closure wird einmal beim Start aufgerufen; `move` übergibt `initial_file` hinein.
+        Box::new(move |cc| Ok(Box::new(app::FolioApp::new(cc, initial_file)))),
     )
-}
-
-struct FolioApp;
-
-impl eframe::App for FolioApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ui, |ui| {
-            ui.centered_and_justified(|ui| ui.heading("FolioCraft – noch kein Dokument geöffnet"));
-        });
-    }
 }

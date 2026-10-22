@@ -42,7 +42,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 
 ## Meilensteine Phase 1
 - [x] M0 Grundgerüst
-- [ ] M1 Öffnen & Rendern
+- [x] M1 Öffnen & Rendern
 - [ ] M2 Zoom, Navigation, Thumbnails, Cache
 - [ ] M3 Textsuche
 - [ ] M4 Text auswählen & kopieren
@@ -54,3 +54,14 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 
 ## Bekannte Einschränkungen
 - FreeText/Notizen nutzen Helvetica (WinAnsi): Westeuropäische Zeichen gehen, CJK/Kyrillisch noch nicht.
+
+## Wichtige Module (Stand M1)
+- `core::document` – `Document::open`, `PageInfo` (CropBox, /Rotate, Umrechnung PDF ↔ Anzeige)
+- `render::worker` – `RenderService` (Thread + Channels), `RenderKey` (Seite, Skalierungsstufe, Kachel),
+  `page_pixel_size`/`tile_grid`/`tile_rect` (gemeinsame Rechenregeln für App und Worker)
+- `render::cache::ByteLru` – LRU mit Byte-Budget
+- `app::viewer` – `Layout` (Präfixsummen, Binärsuche), `PageTextures` (GPU-Texturen, pending/wanted),
+  `Viewer::show` (zeichnet nur sichtbare Seiten, Kacheln ab 3072 px)
+
+## Testen im Container (ohne Bildschirm)
+PDFium liegt lokal in `pdfium/lib` (gitignored). Screenshots über Xvfb + xdotool + ImageMagick `import`.

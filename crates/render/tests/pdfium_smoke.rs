@@ -1,0 +1,88 @@
+//! Rendert eine Fixture-Seite mit echtem PDFium. Wird übersprungen (nicht fehlgeschlagen),
+//! wenn die PDFium-Bibliothek nicht gefunden wird – z. B. in CI.
+//!
+//! Lokal: FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo test -p foliocraft-render
+
+use foliocraft_render::{Event, Priority, RenderKey, RenderRequest, RenderService};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+fn fixture(name: &str) -> Vec<u8> {
+    let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures")
+        .join(name);
+    std::fs::read(p).expect("Fixture lesen")
+}
+
+/// Wartet bis zu 10 s auf ein Ereignis, das `pred` erfüllt.
+fn wait_for(svc: &RenderService, mut pred: impl FnMut(&Event) -> bool) -> Event {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        for ev in svc.poll() {
+            if pred(&ev) {
+                return ev;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    panic!("Zeitüberschreitung beim Warten auf Render-Ereignis");
+}
+
+#[test]
+fn renders_page_and_tile() {
+    let Ok(svc) = RenderService::start(|| {}) else {
+        eprintln!("PDFium nicht gefunden – Test übersprungen");
+        return;
+    };
+    svc.open(1, Arc::new(fixture("text_two_pages.pdf")));
+    match wait_for(&svc, |e| {
+        matches!(e, Event::Opened { .. } | Event::OpenFailed { .. })
+    }) {
+        Event::Opened { page_count, .. } => assert_eq!(page_count, 2),
+        _ => panic!("Öffnen fehlgeschlagen"),
+    }
+
+    let key = RenderKey {
+        doc: 1,
+        page: 0,
+        scale_milli: 1000,
+        tile: None,
+    };
+    svc.request(RenderRequest {
+        key,
+        page_size_pt: (595.0, 842.0),
+        priority: Priority::Visible,
+    });
+    let Event::Rendered { image, .. } = wait_for(&svc, |e| matches!(e, Event::Rendered { .. }))
+    else {
+        unreachable!()
+    };
+    assert_eq!((image.width, image.height), (595, 842));
+    assert_eq!(image.pixels.len(), 595 * 842 * 4);
+    // Oben links ist weißer Rand, irgendwo muss dunkler Text sein.
+    assert_eq!(&image.pixels[0..4], &[255, 255, 255, 255]);
+    assert!(
+        image
+            .pixels
+            .chunks(4)
+            .any(|p| p[0] < 100 && p[1] < 100 && p[2] < 100)
+    );
+
+    // Kachel (1,0) bei 400 %: Seite 2380x3368 px -> Kachel x=1024..2048, y=0..1024
+    let key = RenderKey {
+        doc: 1,
+        page: 0,
+        scale_milli: 4000,
+        tile: Some((1, 0)),
+    };
+    svc.request(RenderRequest {
+        key,
+        page_size_pt: (595.0, 842.0),
+        priority: Priority::Visible,
+    });
+    let Event::Rendered { image, .. } = wait_for(&svc, |e| matches!(e, Event::Rendered { .. }))
+    else {
+        unreachable!()
+    };
+    assert_eq!((image.width, image.height), (1024, 1024));
+}
