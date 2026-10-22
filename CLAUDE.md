@@ -20,7 +20,8 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 |---|---|---|---|
 | foliocraft-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing |
 | foliocraft-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
-| foliocraft-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, eframe, rfd |
+| foliocraft-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2) |
+| foliocraft-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, eframe, rfd, der |
 
 ## Architekturregeln
 - **core** kennt weder UI noch PDFium und ist vollständig unit-testbar.
@@ -34,6 +35,9 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   Modell (`Model::forms`); ihre Widgets blendet der Worker aus, die App zeichnet sie. Schaltflächen und
   Signaturfelder bleiben PDFium überlassen. Widgets merken sich ihre Seite als Objektnummer (nicht Index).
   JavaScript wird nicht ausgeführt, /NeedAppearances bleibt unverändert.
+- **Signaturen** (Crate `sign`): Kryptografie nur dort, `core` bleibt frei davon. Geprüft werden immer die
+  Dateibytes (`Document::bytes`), nie ungespeicherte Änderungen. RustCrypto bewusst im stabilen Stand
+  (cms 0.2, x509-cert 0.2, der 0.7, rsa 0.9, p256/p384 0.13) – die nächste Generation ist noch RC.
 - **Speichern** ist ein inkrementelles Update: Die Originalbytes bleiben unverändert, die Änderungen werden angehängt.
 - Fehler: `thiserror` in Library-Crates, `anyhow` nur in der App. Logging mit `tracing`.
 - Keine AGPL-Abhängigkeiten. Jede neue Crate wird im Commit bzw. hier mit einem Satz begründet.
@@ -43,6 +47,11 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Kommentare und UI-Texte auf Deutsch, Bezeichner auf Englisch.
 - Tests für core: Roundtrip „erstellen → speichern → neu laden → vergleichen“ mit den Fixtures.
 - Fixtures in `tests/fixtures/` werden ausschließlich per `gen_fixtures` erzeugt.
+
+## Meilensteine Phase 4 (Signaturen)
+- [x] 4.1 Signaturen prüfen (sign-Crate, Panel, Vertrauensspeicher)
+- [ ] 4.2 Signieren PAdES B-B (PKCS#12, Platzhalter, CMS)
+- [ ] 4.3 Zeitstempel (PAdES B-T) + Abschluss
 
 ## Meilensteine Phase 3 (Formulare)
 - [x] 3.1 Formularmodell, Werte-Commands, Speichern mit AP (core)
@@ -167,6 +176,12 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - `app::form_props` – Eigenschaften-Panel (ersetzt im Bearbeiten-Modus die Kommentare); Name/Optionsliste
   werden erst übernommen, wenn gültig (`PropInputs`)
 - `app::form_draw` – zeichnet Widgets (Layout aus `core::form::appearance::layout`), Hervorhebung, Pflichtrahmen
+- `sign::crypto` – OIDs, `Hash` (SHA-1/256/384/512), `verify`/`verify_prehashed` (RSA PKCS#1 v1.5, ECDSA P-256/P-384)
+- `sign::cert` – `CertInfo`, `TrustStore` (PEM aus den Einstellungen), `build_chain` → `Trust` (Trusted/Unknown/Invalid)
+- `sign::verify` – `verify_document` → `SignatureReport` (ByteRange-Prüfung, CMS, messageDigest, Signatur,
+  Kette, spätere Revisionen, DocMDP); `Status` für die Ampel
+- `app::signatures` – `SigState` (neu prüfen bei neuen Bytes/Vertrauensstand), Hinweisleiste, Panel
+  (Details, Zertifikate, „vertrauen“, „Signierte Fassung speichern“), Vertrauensspeicher in den Einstellungen
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
 
 ## Tastenkürzel
@@ -179,4 +194,6 @@ Datei-/Ordnerdialoge (rfd über xdg-portal) funktionieren im Container nicht –
 PDFium liegt lokal in `pdfium/lib` (gitignored).
 `cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf` schreibt jeden Annotationstyp –
 zur Gegenprobe mit anderen Readern (z. B. `pdftoppm -png out.pdf x`).
+`cargo run -p foliocraft-sign --example sign_check -- datei.pdf [vertraut.pem]` prüft Signaturen (Gegenprobe: `pdfsig`).
+Unabhängig signierte Test-PDFs: OpenSSL (`openssl cms -sign -binary -outform DER`) über die ByteRange.
 `cargo run -p foliocraft-core --example form_fill -- in.pdf [out.pdf name=Wert …]` listet/füllt Formularfelder. Screenshots über Xvfb + xdotool + ImageMagick `import`.

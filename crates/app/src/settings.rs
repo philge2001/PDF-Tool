@@ -32,6 +32,8 @@ pub struct Settings {
     pub tool_colors: Vec<(Tool, [u8; 3])>,
     /// Ausfüllbare Formularfelder farbig hinterlegen.
     pub highlight_fields: bool,
+    /// Vertrauenswürdige Zertifikate (PEM) für die Signaturprüfung.
+    pub trusted_certs: Vec<String>,
 }
 
 impl Default for Settings {
@@ -47,6 +49,7 @@ impl Default for Settings {
             font_size: tools.font_size,
             tool_colors: Vec::new(),
             highlight_fields: true,
+            trusted_certs: Vec::new(),
         }
     }
 }

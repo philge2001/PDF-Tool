@@ -15,6 +15,7 @@ mod pages;
 mod search;
 mod settings;
 mod shortcuts;
+mod signatures;
 mod text_cache;
 mod toolbar;
 mod tools;

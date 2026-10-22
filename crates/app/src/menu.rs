@@ -185,6 +185,7 @@ impl FolioApp {
             ui.menu_button("Ansicht", |ui| {
                 ui.checkbox(&mut self.show_thumbnails, "Seitenleiste");
                 ui.checkbox(&mut self.show_comments, "Kommentare");
+                ui.checkbox(&mut self.show_signatures, "Signaturen");
                 ui.separator();
                 ui.label("Design");
                 self.theme_radios(ui);
@@ -247,6 +248,8 @@ impl FolioApp {
                         ui.vertical(|ui| self.theme_radios(ui));
                         ui.end_row();
                     });
+                ui.separator();
+                self.trust_settings(ui);
             });
         self.show_settings_window = open;
     }

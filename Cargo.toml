@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/render", "crates/app"]
+members = ["crates/core", "crates/render", "crates/sign", "crates/app"]
 
 [workspace.package]
 version = "0.1.0"
@@ -13,6 +13,7 @@ publish = false
 [workspace.dependencies]
 foliocraft-core = { path = "crates/core" }
 foliocraft-render = { path = "crates/render" }
+foliocraft-sign = { path = "crates/sign" }
 
 anyhow = "1.0"
 thiserror = "2.0"
@@ -27,6 +28,18 @@ eframe = { version = "0.37", default-features = false, features = [
     "accesskit", "clipboard", "default_fonts", "glow", "persistence", "wayland", "x11",
 ] }
 rfd = "0.17"
+
+# Digitale Signaturen (Phase 4) – RustCrypto, reines Rust, MIT/Apache.
+# Bewusst der stabile 0.2/0.7/0.9/0.13-Stand: die nächste Generation ist noch Release-Candidate.
+cms = "0.2.3"                                                # CMS/PKCS#7 SignedData lesen und bauen
+x509-cert = { version = "0.2.5", features = ["builder"] }   # Zertifikate lesen, Testzertifikate bauen
+der = { version = "0.7", features = ["oid", "std"] }        # ASN.1-DER-Kodierung
+spki = "0.7"                                                 # öffentliche Schlüssel aus Zertifikaten
+rsa = { version = "0.9", features = ["sha2"] }              # RSA-Signaturen (PKCS#1 v1.5)
+p256 = "0.13"                                                # ECDSA mit Kurve P-256
+p384 = "0.13"                                                # ECDSA mit Kurve P-384
+sha1 = { version = "0.10", features = ["oid"] }             # SHA-1 nur zum PRÜFEN alter Signaturen
+sha2 = { version = "0.10", features = ["oid"] }             # SHA-256/384/512
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

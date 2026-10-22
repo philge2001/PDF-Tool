@@ -47,6 +47,8 @@ pub struct OpenDocument {
     pub form_edit: crate::form_edit::FormEdit,
     /// Noch nicht übernommene Eingaben im Eigenschaften-Panel.
     pub prop_inputs: crate::form_props::PropInputs,
+    /// Geprüfte Signaturen.
+    pub signatures: crate::signatures::SigState,
 }
 
 pub struct FolioApp {
@@ -75,6 +77,11 @@ pub struct FolioApp {
     pub(crate) job: Option<crate::jobs::Job>,
     /// Erfolgsmeldung, die als Dialog angezeigt wird.
     pub(crate) info: Option<String>,
+    /// Vertrauenswürdige Zertifikate (aus den Einstellungen) und ein Zähler, der bei jeder
+    /// Änderung hochzählt – daran erkennen Dokumente, dass sie neu prüfen müssen.
+    pub(crate) trust: foliocraft_sign::TrustStore,
+    pub(crate) trust_version: u64,
+    pub(crate) show_signatures: bool,
 }
 
 impl FolioApp {
@@ -116,7 +123,11 @@ impl FolioApp {
             split_dialog: None,
             job: None,
             info: None,
+            trust: Default::default(),
+            trust_version: 0,
+            show_signatures: false,
         };
+        app.rebuild_trust();
         if let Some(path) = initial_file {
             app.open_path(&cc.egui_ctx, &path);
         }
@@ -174,6 +185,7 @@ impl FolioApp {
             form: Default::default(),
             form_edit: Default::default(),
             prop_inputs: Default::default(),
+            signatures: Default::default(),
             editor: None,
             selected: None,
             annot_drag: None,
@@ -489,12 +501,28 @@ impl eframe::App for FolioApp {
             }
             d.validate_selection();
             d.validate_field_selection();
+            d.update_signatures(&self.trust, self.trust_version);
+        }
+        if self
+            .document
+            .as_ref()
+            .is_some_and(|d| !d.signatures.reports.is_empty())
+        {
+            egui::Panel::top("signature_banner").show(ui, |ui| self.signature_banner(ui));
+        }
+        if self.show_signatures && self.document.is_some() && !self.tool.is_form_tool() {
+            egui::Panel::right("signatures")
+                .default_size(300.0)
+                .size_range(220.0..=520.0)
+                .show(ui, |ui| self.signatures_panel(ui));
+        }
+        if let Some(d) = &mut self.document {
             if self.tool.is_form_tool() {
                 egui::Panel::right("field_properties")
                     .default_size(280.0)
                     .size_range(220.0..=500.0)
                     .show(ui, |ui| d.field_properties(ui));
-            } else if self.show_comments {
+            } else if self.show_comments && !self.show_signatures {
                 egui::Panel::right("comments")
                     .default_size(280.0)
                     .size_range(200.0..=500.0)
