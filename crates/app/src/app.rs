@@ -12,10 +12,11 @@ use crate::tools::text_select::TextSelection;
 use crate::tools::{Tool, ToolSettings};
 use crate::viewer::ViewOutput;
 use crate::viewer::Viewer;
+use crate::viewer::thumbnails::ThumbAction;
 use crate::viewer::thumbnails::Thumbnails;
 use eframe::egui;
 use foliocraft_core::{AnnotId, Document};
-use foliocraft_render::{DocId, Event, HiddenAnnots, RenderService};
+use foliocraft_render::{Event, HiddenAnnots, RenderService};
 use std::path::{Path, PathBuf};
 
 /// Ein geöffnetes Dokument samt Ansicht.
@@ -24,6 +25,8 @@ pub struct OpenDocument {
     pub viewer: Viewer,
     pub thumbs: Thumbnails,
     pub texts: TextCache,
+    /// Letzter bekannter Stand der Seitenstruktur (siehe `sync_structure`).
+    pub structure: Vec<(foliocraft_core::PageId, u16)>,
     pub search: SearchState,
     pub selection: Option<TextSelection>,
     /// Laufender Mauszug eines Zeichenwerkzeugs.
@@ -43,7 +46,6 @@ pub struct OpenDocument {
 pub struct FolioApp {
     /// `Err` enthält die Fehlermeldung, wenn PDFium nicht geladen werden konnte.
     pub(crate) render: Result<RenderService, String>,
-    next_doc_id: DocId,
     pub(crate) document: Option<OpenDocument>,
     /// Fehlermeldung, die als Dialog angezeigt wird.
     pub(crate) error: Option<String>,
@@ -83,7 +85,6 @@ impl FolioApp {
 
         let mut app = Self {
             render,
-            next_doc_id: 1,
             document: None,
             error: None,
             show_thumbnails: settings.show_thumbnails,
@@ -112,14 +113,14 @@ impl FolioApp {
         };
         match Document::open(path) {
             Ok(doc) => {
-                let id = self.next_doc_id;
-                self.next_doc_id += 1;
+                let id = crate::pages::new_doc_id();
                 // Arc-Klon: nur der Zeiger wird kopiert, nicht die Daten.
                 render.open(id, doc.bytes().clone(), hidden_annots(&doc));
                 let sizes: Vec<_> = doc.pages().iter().map(|p| p.display_size()).collect();
                 self.document = Some(OpenDocument {
                     thumbs: Thumbnails::new(&sizes),
                     texts: TextCache::new(id, sizes.len()),
+                    structure: doc.pages().iter().map(|p| (p.id, p.rotation)).collect(),
                     search: SearchState::default(),
                     selection: None,
                     gesture: None,
@@ -392,6 +393,9 @@ impl eframe::App for FolioApp {
         egui::Panel::bottom("statusbar").show(ui, |ui| self.status_bar(ui));
 
         if let Some(d) = &mut self.document {
+            if let Ok(render) = &self.render {
+                d.sync_structure(render);
+            }
             d.validate_selection();
             if self.show_comments {
                 egui::Panel::right("comments")
@@ -418,8 +422,12 @@ impl eframe::App for FolioApp {
                                 annot_draw::paint(painter, info, rect, a);
                             }
                         };
-                        if let Some(page) = d.viewer.show_thumbnails(ui, &mut d.thumbs, overlay) {
-                            d.viewer.scroll_to_page(page);
+                        let ids = d.doc.page_ids();
+                        let action = d.viewer.show_thumbnails(ui, &mut d.thumbs, &ids, overlay);
+                        match action {
+                            Some(ThumbAction::Navigate(page)) => d.viewer.scroll_to_page(page),
+                            Some(ThumbAction::Page(a)) => d.apply_page_action(a),
+                            None => {}
                         }
                     });
             }

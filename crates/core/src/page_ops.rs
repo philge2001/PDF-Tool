@@ -165,6 +165,11 @@ impl ReorderPages {
         Ok(Self::new(order))
     }
 
+    /// Ändert sich gar nichts? (z. B. Seite an ihrer eigenen Position fallen gelassen)
+    pub fn is_identity(&self) -> bool {
+        self.order.iter().enumerate().all(|(i, &o)| i == o)
+    }
+
     fn permute(model: &mut Model, order: &[usize]) -> Result<()> {
         let n = model.pages.len();
         let mut seen = vec![false; n];
@@ -302,6 +307,10 @@ mod tests {
         c.undo(&mut m).unwrap();
         assert_eq!(ids(&m), vec![1, 2, 3, 4, 5]);
         assert_notes_follow(&m);
+
+        // An die eigene Position = keine Änderung
+        assert!(ReorderPages::moving(&[2], 2, 5).unwrap().is_identity());
+        assert!(ReorderPages::moving(&[2], 3, 5).unwrap().is_identity());
 
         // Ans Ende verschieben
         let mut c = ReorderPages::moving(&[0], 5, 5).unwrap();

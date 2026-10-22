@@ -40,6 +40,18 @@ impl TextCache {
         }
     }
 
+    /// Nach einer Strukturänderung: `old_of_new[neu] = Some(alter Index)` für Seiten, deren
+    /// Text weiterverwendet werden kann. Der Text ist unabhängig von der Rotation.
+    pub fn remap(&mut self, new_doc: DocId, old_of_new: &[Option<usize>]) {
+        let old = std::mem::take(&mut self.pages);
+        self.pages = old_of_new
+            .iter()
+            .map(|o| o.and_then(|i| old.get(i).cloned().flatten()))
+            .collect();
+        self.requested = self.pages.iter().map(Option::is_some).collect();
+        self.doc_id = new_doc;
+    }
+
     /// Nach Neuladen im Worker: noch nicht gelieferte Texte erneut anfordern lassen.
     pub fn reset_requested(&mut self) {
         for (req, page) in self.requested.iter_mut().zip(&self.pages) {

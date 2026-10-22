@@ -1,6 +1,7 @@
 //! Menüleiste: Datei, Bearbeiten, Ansicht.
 
 use crate::app::FolioApp;
+use crate::pages::PageAction;
 use crate::viewer::ZoomMode;
 use eframe::egui::{self, Button, ThemePreference};
 
@@ -114,6 +115,35 @@ impl FolioApp {
                     .clicked()
                 {
                     d.search.open();
+                }
+            });
+
+            ui.menu_button("Seiten", |ui| {
+                let Some(d) = &mut self.document else {
+                    ui.label("Kein Dokument");
+                    return;
+                };
+                let target = d.target_pages();
+                let n = d.doc.page_count();
+                let what = if target.len() == 1 {
+                    format!("Seite {}", target[0] + 1)
+                } else {
+                    format!("{} ausgewählte Seiten", target.len())
+                };
+                ui.label(egui::RichText::new(what).weak());
+                if ui.button("Im Uhrzeigersinn drehen").clicked() {
+                    d.apply_page_action(PageAction::Rotate(target.clone(), 1));
+                }
+                if ui.button("Gegen den Uhrzeigersinn drehen").clicked() {
+                    d.apply_page_action(PageAction::Rotate(target.clone(), -1));
+                }
+                ui.separator();
+                if ui
+                    .add_enabled(target.len() < n, Button::new("Löschen"))
+                    .on_disabled_hover_text("Mindestens eine Seite muss bleiben")
+                    .clicked()
+                {
+                    d.apply_page_action(PageAction::Delete(target));
                 }
             });
 

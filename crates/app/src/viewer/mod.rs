@@ -147,6 +147,21 @@ impl Viewer {
         }
     }
 
+    /// Neue Seitenstruktur übernehmen (Seiten umsortiert, gelöscht oder gedreht).
+    /// `new_page(alt) = Some(neu)` für Seiten, deren Bilder weiter gültig sind.
+    pub fn restructure(
+        &mut self,
+        new_doc: DocId,
+        page_sizes: Vec<(f32, f32)>,
+        new_page: impl Fn(u32) -> Option<u32>,
+    ) {
+        let keep = new_page(self.current_page as u32).map(|p| p as usize);
+        self.textures.remap(new_doc, new_page);
+        self.doc_id = new_doc;
+        self.layout = Layout::new(page_sizes);
+        self.scroll_to_page(keep.unwrap_or(self.current_page));
+    }
+
     /// Nach Neuladen im Worker: offene Aufträge gelten als verworfen.
     pub fn reset_pending(&mut self) {
         self.textures.reset_pending();

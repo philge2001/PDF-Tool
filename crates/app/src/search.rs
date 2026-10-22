@@ -37,6 +37,13 @@ impl SearchState {
         self.focus_field = true;
     }
 
+    /// Treffer verwerfen und neu suchen (z. B. nachdem Seiten umsortiert wurden).
+    pub fn invalidate(&mut self) {
+        self.hits.clear();
+        self.current = None;
+        self.active = None;
+    }
+
     pub fn close(&mut self) {
         self.open = false;
         self.hits.clear();

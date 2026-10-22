@@ -42,7 +42,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 
 ## Meilensteine Phase 2 (Seitenorganisation)
 - [x] 2.1 Seitenmodell & Seiten-Commands (core)
-- [ ] 2.2 Seiten-UI (Mehrfachauswahl, Kontextmenü, Drag & Drop)
+- [x] 2.2 Seiten-UI (Mehrfachauswahl, Kontextmenü, Drag & Drop)
 - [ ] 2.3 Einfügen, Zusammenführen, Leerseite
 - [ ] 2.4 Extrahieren & Teilen, Hintergrund-Jobs
 
@@ -118,6 +118,10 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - `app::menu` – Menüleiste Datei/Bearbeiten/Ansicht
 - `app::settings` – dauerhafte Einstellungen (serde + eframe-Persistenz, Schlüssel `foliocraft_settings`):
   zuletzt geöffnet, Design, Panels, Werkzeugstil, Autor
+- `app::pages` – `PageAction`, `sync_structure` (erkennt jede Strukturänderung inkl. Undo/Redo, biegt
+  Texturen/Text per `PageId` auf neue Indizes um, lädt den Worker mit `render_snapshot` und NEUER DocId),
+  `new_doc_id`, `target_pages` (Auswahl in der Seitenleiste oder aktuelle Seite)
+- `app::viewer::thumbnails` – zusätzlich Mehrfachauswahl (als `PageId`), Kontextmenü, Drag & Drop (`ThumbAction`)
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
 
 ## Tastenkürzel

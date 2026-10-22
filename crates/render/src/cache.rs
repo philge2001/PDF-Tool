@@ -109,6 +109,18 @@ impl<K: Eq + Hash + Clone, V> ByteLru<K, V> {
         });
     }
 
+    /// Nimmt alle Einträge heraus, die ältesten zuerst (so bleibt beim Wiedereinfügen die
+    /// LRU-Reihenfolge erhalten). Gibt (Schlüssel, Wert, Bytes) zurück.
+    pub fn drain(&mut self) -> Vec<(K, V, usize)> {
+        let mut entries: Vec<(K, Entry<V>)> = self.map.drain().collect();
+        entries.sort_by_key(|(_, e)| e.last_used);
+        self.used = 0;
+        entries
+            .into_iter()
+            .map(|(k, e)| (k, e.value, e.bytes))
+            .collect()
+    }
+
     pub fn clear(&mut self) {
         self.map.clear();
         self.used = 0;
@@ -163,6 +175,17 @@ mod tests {
         let evicted = c.insert(2, (), 50);
         assert_eq!(evicted, vec![1]);
         assert!(c.contains(&2));
+    }
+
+    #[test]
+    fn drain_returns_oldest_first() {
+        let mut c = ByteLru::new(100);
+        c.insert("a", 1, 10);
+        c.insert("b", 2, 10);
+        c.get(&"a");
+        let drained: Vec<_> = c.drain().into_iter().map(|(k, _, _)| k).collect();
+        assert_eq!(drained, vec!["b", "a"]);
+        assert!(c.is_empty() && c.used_bytes() == 0);
     }
 
     #[test]
