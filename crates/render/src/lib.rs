@@ -9,6 +9,6 @@ pub mod worker;
 pub use cache::ByteLru;
 pub use error::RenderError;
 pub use worker::{
-    DocId, Event, Priority, RenderKey, RenderRequest, RenderService, RgbaImage, TILE_SIZE,
-    needs_tiles, page_pixel_size, tile_grid, tile_rect,
+    DocId, Event, HiddenAnnots, Priority, RenderKey, RenderRequest, RenderService, RgbaImage,
+    TILE_SIZE, needs_tiles, page_pixel_size, tile_grid, tile_rect,
 };

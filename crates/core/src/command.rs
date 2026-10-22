@@ -135,6 +135,46 @@ impl Command for UpdateAnnotation {
     }
 }
 
+/// Mehrere Commands als EIN Undo-Schritt (z. B. Hervorhebung über mehrere Seiten).
+#[derive(Debug)]
+pub struct Batch {
+    label: String,
+    commands: Vec<Box<dyn Command>>,
+}
+
+impl Batch {
+    pub fn new(label: impl Into<String>, commands: Vec<Box<dyn Command>>) -> Self {
+        Self {
+            label: label.into(),
+            commands,
+        }
+    }
+}
+
+impl Command for Batch {
+    fn apply(&mut self, model: &mut Model) -> Result<()> {
+        for (i, cmd) in self.commands.iter_mut().enumerate() {
+            if let Err(e) = cmd.apply(model) {
+                // Bereits ausgeführte Teile zurückrollen, damit nichts halb angewendet bleibt.
+                for done in self.commands[..i].iter_mut().rev() {
+                    let _ = done.undo(model);
+                }
+                return Err(e);
+            }
+        }
+        Ok(())
+    }
+    fn undo(&mut self, model: &mut Model) -> Result<()> {
+        for cmd in self.commands.iter_mut().rev() {
+            cmd.undo(model)?;
+        }
+        Ok(())
+    }
+    fn label(&self) -> String {
+        self.label.clone()
+    }
+}
+
 fn not_found(id: AnnotId) -> CoreError {
     CoreError::AnnotationNotFound(format!("#{}", id.0))
 }
@@ -271,6 +311,20 @@ mod tests {
         assert_eq!(m.annotations.len(), 2);
         h.undo(&mut m).unwrap();
         assert_eq!(m.annotations.index_of(ids[1]), Some(1));
+    }
+
+    #[test]
+    fn batch_is_one_undo_step() {
+        let mut m = Model::default();
+        let mut h = History::new();
+        let cmds: Vec<Box<dyn Command>> = (0..3)
+            .map(|_| Box::new(AddAnnotation::new(note(&mut m))) as Box<dyn Command>)
+            .collect();
+        h.execute(Box::new(Batch::new("3 Notizen", cmds)), &mut m)
+            .unwrap();
+        assert_eq!(m.annotations.len(), 3);
+        h.undo(&mut m).unwrap();
+        assert!(m.annotations.is_empty());
     }
 
     #[test]

@@ -47,12 +47,15 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - [x] M3 Textsuche
 - [x] M4 Text auswählen & kopieren
 - [x] M5 Annotationsmodell, Commands, Speichern (core)
-- [ ] M6 Annotationswerkzeuge (UI)
+- [x] M6 Annotationswerkzeuge (UI)
 - [ ] M7 Bearbeiten, Kommentar-Panel, Undo/Redo-Shortcuts
 - [ ] M8 Speichern in der App
 - [ ] M9 Zuletzt geöffnet, Dark/Light Mode
 
 ## Bekannte Einschränkungen
+- Overlay vs. Datei: Hervorhebungen im Overlay halbtransparent (egui kann kein Multiply),
+  Freitext im Overlay mit egui-Schrift (Zeilenumbrüche identisch) und auf gedrehten Seiten nicht mitgedreht.
+- Importierte Annotationen mit exotischer Darstellung (z. B. Wolkenrand) werden vereinfacht neu gezeichnet.
 - FreeText/Notizen nutzen Helvetica (WinAnsi): Westeuropäische Zeichen gehen, CJK/Kyrillisch noch nicht.
 
 ## Wichtige Module
@@ -78,6 +81,11 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - `app::search` – Suchleiste, Treffer seitenweise sortiert, Overlay-Hervorhebung
 - `app::tools` – `Tool`-Enum (aktives Werkzeug); `tools::text_select` – `TextSelection`
   (Anker/Fokus als `TextPos`, seitenübergreifend), Kopieren, Doppelklick = Wort
+- `app::annot_draw` – zeichnet `Annotation` als egui-Overlay (auch Vorschau & Miniaturen)
+- `app::tools::create` – Gesten (Freihand/Formen/Pfeil), Markup aus Textauswahl (`Batch` = 1 Undo-Schritt)
+- `app::tools::editor` – Eingabefenster für Notiz-/Freitext (neu oder bestehend)
+- Render-Worker blendet per `HiddenAnnots` genau die von core verwalteten /Annots-Indizes aus
+  (`Document::managed_annot_indices`); die App zeichnet sie selbst
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
 
 ## Tastenkürzel

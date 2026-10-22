@@ -191,6 +191,23 @@ impl Document {
         self.history.is_dirty()
     }
 
+    /// Positionen im /Annots-Array einer Seite, die FolioCraft selbst verwaltet (und
+    /// daher als Overlay zeichnet). Der Renderer blendet genau diese aus.
+    pub fn managed_annot_indices(&self, page: usize) -> Vec<usize> {
+        let Some(info) = self.pages.get(page) else {
+            return Vec::new();
+        };
+        annotation::import::page_annots(&self.pdf, info.object_id)
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| {
+                o.as_reference()
+                    .is_ok_and(|id| self.imported.contains_key(&id))
+            })
+            .map(|(i, _)| i)
+            .collect()
+    }
+
     pub(crate) fn imported(&self) -> impl Iterator<Item = &Annotation> {
         self.imported.values()
     }

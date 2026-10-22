@@ -1,6 +1,7 @@
 //! Globale Tastenkürzel.
 
 use crate::app::FolioApp;
+use crate::tools::Tool;
 use crate::viewer::ZoomMode;
 use eframe::egui::{self, Key, Modifiers, vec2};
 
@@ -62,7 +63,10 @@ impl FolioApp {
             d.copy_selection(ctx);
         }
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
-            d.selection = None;
+            // Esc der Reihe nach: laufenden Zug abbrechen, Auswahl aufheben, zurück zur Textauswahl.
+            if d.gesture.take().is_none() && d.selection.take().is_none() {
+                self.tool = Tool::TextSelect;
+            }
         }
         let v = &mut d.viewer;
         let pressed = |key| ctx.input(|i| i.key_pressed(key) && i.modifiers.is_none());

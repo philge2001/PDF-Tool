@@ -1,14 +1,18 @@
 //! Die Haupt-App: hält Render-Service, geöffnetes Dokument und UI-Zustand.
 
+use crate::annot_draw;
 use crate::search::SearchState;
 use crate::text_cache::TextCache;
-use crate::tools::Tool;
+use crate::tools::create::Gesture;
+use crate::tools::editor::TextEditor;
 use crate::tools::text_select::TextSelection;
+use crate::tools::{Tool, ToolSettings};
+use crate::viewer::ViewOutput;
 use crate::viewer::Viewer;
 use crate::viewer::thumbnails::Thumbnails;
 use eframe::egui;
 use foliocraft_core::Document;
-use foliocraft_render::{DocId, Event, RenderService};
+use foliocraft_render::{DocId, Event, HiddenAnnots, RenderService};
 use std::path::{Path, PathBuf};
 
 /// Ein geöffnetes Dokument samt Ansicht.
@@ -19,6 +23,10 @@ pub struct OpenDocument {
     pub texts: TextCache,
     pub search: SearchState,
     pub selection: Option<TextSelection>,
+    /// Laufender Mauszug eines Zeichenwerkzeugs.
+    pub gesture: Option<Gesture>,
+    /// Offenes Eingabefenster für Notiz-/Freitext.
+    pub editor: Option<TextEditor>,
     /// Inhalt des Seitenfelds in der Toolbar, während der Nutzer tippt.
     pub page_input: Option<String>,
     /// Inhalt des Zoomfelds in der Toolbar, während der Nutzer tippt.
@@ -34,6 +42,7 @@ pub struct FolioApp {
     pub(crate) error: Option<String>,
     pub(crate) show_thumbnails: bool,
     pub(crate) tool: Tool,
+    pub(crate) tool_settings: ToolSettings,
 }
 
 impl FolioApp {
@@ -55,6 +64,7 @@ impl FolioApp {
             error: None,
             show_thumbnails: true,
             tool: Tool::default(),
+            tool_settings: ToolSettings::default(),
         };
         if let Some(path) = initial_file {
             app.open_path(&cc.egui_ctx, &path);
@@ -74,13 +84,16 @@ impl FolioApp {
             Ok(doc) => {
                 let id = self.next_doc_id;
                 self.next_doc_id += 1;
-                render.open(id, doc.bytes().clone()); // Arc-Klon: nur der Zeiger wird kopiert
+                // Arc-Klon: nur der Zeiger wird kopiert, nicht die Daten.
+                render.open(id, doc.bytes().clone(), hidden_annots(&doc));
                 let sizes: Vec<_> = doc.pages().iter().map(|p| p.display_size()).collect();
                 self.document = Some(OpenDocument {
                     thumbs: Thumbnails::new(&sizes),
                     texts: TextCache::new(id, sizes.len()),
                     search: SearchState::default(),
                     selection: None,
+                    gesture: None,
+                    editor: None,
                     viewer: Viewer::new(id, sizes),
                     doc,
                     page_input: None,
@@ -189,6 +202,82 @@ impl FolioApp {
     }
 }
 
+/// Welche Annotationen der Renderer weglassen soll: alle, die wir selbst zeichnen.
+fn hidden_annots(doc: &Document) -> HiddenAnnots {
+    (0..doc.page_count())
+        .map(|p| (p as u32, doc.managed_annot_indices(p)))
+        .filter(|(_, v)| !v.is_empty())
+        .collect()
+}
+
+impl OpenDocument {
+    /// Zeichnet alle Annotationen der sichtbaren Seiten (plus Vorschau eines neuen Freitexts).
+    pub fn paint_annotations(&self, ui: &egui::Ui, view: &ViewOutput) {
+        let painter = ui.painter_at(view.clip);
+        for &(page, rect) in &view.pages {
+            self.paint_page_annotations(&painter, page, rect);
+        }
+    }
+
+    /// Annotationen einer Seite in ein beliebiges Rechteck zeichnen (auch für Miniaturen).
+    pub fn paint_page_annotations(&self, painter: &egui::Painter, page: usize, rect: egui::Rect) {
+        let Ok(info) = self.doc.page(page) else {
+            return;
+        };
+        for a in self.doc.annotations().on_page(page) {
+            annot_draw::paint(painter, info, rect, a);
+        }
+        // Neuer Freitext/Notiz im Eingabefenster: schon während des Tippens anzeigen.
+        if let Some(ed) = &self.editor
+            && ed.is_new()
+            && ed.annotation.page == page
+        {
+            let mut preview = ed.annotation.clone();
+            preview.contents = ed.text.clone();
+            annot_draw::paint(painter, info, rect, &preview);
+        }
+    }
+}
+
+impl FolioApp {
+    /// Hauptansicht: Seiten zeichnen, Werkzeug-Interaktion, Overlays.
+    fn document_view(&mut self, ui: &mut egui::Ui) {
+        let Some(d) = &mut self.document else { return };
+        let view = d.viewer.show(ui);
+        let tool = self.tool;
+        match tool {
+            Tool::TextSelect | Tool::Highlight | Tool::Underline | Tool::StrikeOut => {
+                // Text der sichtbaren Seiten vorab laden, damit Auswahl sofort geht.
+                if let Ok(render) = &self.render {
+                    for &(page, _) in &view.pages {
+                        d.texts.ensure(render, page);
+                    }
+                }
+                d.handle_text_select(ui, &view);
+                // Mit einem Markup-Werkzeug wird die Auswahl beim Loslassen sofort zur Annotation.
+                let done = view.response.drag_stopped() || view.response.double_clicked();
+                if tool.is_text_markup() && done {
+                    d.create_markup_from_selection(tool, &self.tool_settings);
+                }
+            }
+            Tool::Hand => {
+                let resp = &view.response;
+                if resp.dragged() {
+                    d.viewer.scroll_by(-resp.drag_delta());
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+                } else if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+                }
+            }
+            _ => d.handle_create_tool(ui, &view, tool, &self.tool_settings),
+        }
+        d.paint_annotations(ui, &view);
+        d.paint_gesture_preview(ui, &view, tool, &self.tool_settings);
+        d.paint_search_hits(ui, &view);
+        d.paint_selection(ui, &view);
+    }
+}
+
 impl eframe::App for FolioApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
@@ -197,6 +286,9 @@ impl eframe::App for FolioApp {
         self.handle_shortcuts(&ctx);
 
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
+        if self.document.is_some() {
+            egui::Panel::top("annotation_bar").show(ui, |ui| self.annotation_bar(ui));
+        }
         egui::Panel::bottom("statusbar").show(ui, |ui| self.status_bar(ui));
 
         if let Some(d) = &mut self.document {
@@ -211,40 +303,29 @@ impl eframe::App for FolioApp {
                     .default_size(160.0)
                     .size_range(100.0..=400.0)
                     .show(ui, |ui| {
-                        if let Some(page) = d.viewer.show_thumbnails(ui, &mut d.thumbs) {
+                        // Das Closure leiht nur `d.doc`/`d.editor` aus, `show_thumbnails` nur
+                        // `d.viewer` – getrennte Felder, daher erlaubt der Borrow-Checker beides.
+                        let overlay = |painter: &egui::Painter, page: usize, rect: egui::Rect| {
+                            let Ok(info) = d.doc.page(page) else { return };
+                            for a in d.doc.annotations().on_page(page) {
+                                annot_draw::paint(painter, info, rect, a);
+                            }
+                        };
+                        if let Some(page) = d.viewer.show_thumbnails(ui, &mut d.thumbs, overlay) {
                             d.viewer.scroll_to_page(page);
                         }
                     });
             }
+        }
+        if self.document.is_some() {
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE.fill(ui.visuals().extreme_bg_color))
-                .show(ui, |ui| {
-                    let view = d.viewer.show(ui);
-                    match self.tool {
-                        Tool::TextSelect => {
-                            // Text der sichtbaren Seiten vorab laden, damit Auswahl sofort geht.
-                            if let Ok(render) = &self.render {
-                                for &(page, _) in &view.pages {
-                                    d.texts.ensure(render, page);
-                                }
-                            }
-                            d.handle_text_select(ui, &view);
-                        }
-                        Tool::Hand => {
-                            let resp = &view.response;
-                            if resp.dragged() {
-                                d.viewer.scroll_by(-resp.drag_delta());
-                                ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
-                            } else if resp.hovered() {
-                                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
-                            }
-                        }
-                    }
-                    d.paint_search_hits(ui, &view);
-                    d.paint_selection(ui, &view);
-                });
-            if let Ok(render) = &self.render {
-                d.viewer.flush_requests(render);
+                .show(ui, |ui| self.document_view(ui));
+            if let Some(d) = &mut self.document {
+                d.show_editor(&ctx);
+                if let Ok(render) = &self.render {
+                    d.viewer.flush_requests(render);
+                }
             }
         } else {
             egui::CentralPanel::default().show(ui, |ui| self.empty_state(ui));

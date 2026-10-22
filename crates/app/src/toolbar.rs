@@ -1,6 +1,7 @@
 //! Obere Werkzeugleiste: Öffnen, Seitennavigation, Zoom.
 
 use crate::app::FolioApp;
+use crate::tools::Tool;
 use crate::viewer::{ZOOM_STEPS, ZoomMode};
 use eframe::egui;
 
@@ -15,7 +16,7 @@ impl FolioApp {
                 .on_hover_text("Seitenleiste mit Miniaturen ein-/ausblenden");
 
             ui.separator();
-            for tool in crate::tools::Tool::ALL {
+            for tool in Tool::NAVIGATION {
                 ui.selectable_value(&mut self.tool, tool, tool.label());
             }
 
@@ -124,6 +125,62 @@ impl FolioApp {
                         }
                     }
                 });
+        });
+    }
+
+    /// Zweite Leiste: Annotationswerkzeuge und deren Stil.
+    pub(crate) fn annotation_bar(&mut self, ui: &mut egui::Ui) {
+        let Some(d) = &mut self.document else { return };
+        ui.horizontal(|ui| {
+            ui.label("Kommentieren:");
+            for tool in Tool::ANNOTATION {
+                if matches!(tool, Tool::Note | Tool::Ink) {
+                    ui.separator(); // Gruppen: Text-Markup | Notiz/Freitext | Zeichnen
+                }
+                let selected = self.tool == tool;
+                if ui.selectable_label(selected, tool.label()).clicked() {
+                    // Markup-Werkzeug bei vorhandener Textauswahl: sofort anwenden.
+                    let applied = tool.is_text_markup()
+                        && d.create_markup_from_selection(tool, &self.tool_settings);
+                    if !applied {
+                        // Erneuter Klick auf das aktive Werkzeug schaltet zurück auf Textauswahl.
+                        self.tool = if selected { Tool::TextSelect } else { tool };
+                    }
+                }
+            }
+
+            // Stil des aktiven (bzw. zuletzt gewählten) Werkzeugs
+            if !Tool::ANNOTATION.contains(&self.tool) {
+                return;
+            }
+            ui.separator();
+            let s = &mut self.tool_settings;
+            let mut rgb = s.color(self.tool).to_rgb8();
+            if ui
+                .color_edit_button_srgb(&mut rgb)
+                .on_hover_text("Farbe")
+                .changed()
+            {
+                s.set_color(self.tool, foliocraft_core::Color::from_rgb8(rgb));
+            }
+            if self.tool.uses_stroke_width() {
+                ui.label("Linie");
+                ui.add(
+                    egui::DragValue::new(&mut s.stroke_width)
+                        .range(0.5..=20.0)
+                        .speed(0.1)
+                        .suffix(" pt"),
+                );
+            }
+            if self.tool == Tool::FreeText {
+                ui.label("Schrift");
+                ui.add(
+                    egui::DragValue::new(&mut s.font_size)
+                        .range(6.0..=72.0)
+                        .speed(0.2)
+                        .suffix(" pt"),
+                );
+            }
         });
     }
 }

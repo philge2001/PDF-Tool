@@ -9,7 +9,7 @@ use crate::loader;
 use foliocraft_core::geometry::Rect;
 use foliocraft_core::text::{CharBox, PageText};
 use pdfium_render::prelude::*;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::JoinHandle;
@@ -95,6 +95,7 @@ enum Job {
     Open {
         doc: DocId,
         bytes: Arc<Vec<u8>>,
+        hidden: HiddenAnnots,
     },
     Close,
     Render(RenderRequest),
@@ -105,6 +106,10 @@ enum Job {
     /// Verwirft alle wartenden Aufträge, deren Schlüssel nicht in der Menge ist.
     Retain(HashSet<RenderKey>),
 }
+
+/// Pro Seite: Indizes im /Annots-Array, die beim Rendern ausgeblendet werden
+/// (weil die App sie selbst als Overlay zeichnet).
+pub type HiddenAnnots = HashMap<u32, Vec<usize>>;
 
 /// Pixelgröße einer Seite bei gegebener Skalierung. App und Worker nutzen dieselbe
 /// Funktion, damit Kachelraster und Bildgrößen garantiert übereinstimmen.
@@ -187,8 +192,9 @@ impl RenderService {
     }
 
     /// Öffnet ein Dokument (ersetzt ein evtl. vorher geöffnetes).
-    pub fn open(&self, doc: DocId, bytes: Arc<Vec<u8>>) {
-        self.send(Job::Open { doc, bytes });
+    /// `hidden`: Annotationen, die nicht mitgerendert werden sollen.
+    pub fn open(&self, doc: DocId, bytes: Arc<Vec<u8>>, hidden: HiddenAnnots) {
+        self.send(Job::Open { doc, bytes, hidden });
     }
 
     pub fn close(&self) {
@@ -231,7 +237,7 @@ impl Drop for RenderService {
 /// Die Lifetime `'p` verknüpft das Dokument mit `pdfium`: Ein `PdfDocument<'p>` darf
 /// nicht länger leben als die `Pdfium`-Instanz, von der es stammt. Der Compiler prüft das.
 fn run<'p>(pdfium: &'p Pdfium, jobs: Receiver<Job>, events: Sender<Event>, waker: impl Fn()) {
-    let mut doc: Option<(DocId, PdfDocument<'p>)> = None;
+    let mut doc: Option<OpenDoc<'p>> = None;
     let mut queues = Queues::default();
 
     loop {
@@ -246,13 +252,17 @@ fn run<'p>(pdfium: &'p Pdfium, jobs: Receiver<Job>, events: Sender<Event>, waker
         while let Ok(job) = jobs.try_recv() {
             handle_job(job, pdfium, &mut doc, &mut queues, &events, &waker);
         }
-        let Some((doc_id, d)) = &doc else {
+        let Some(d) = &mut doc else {
             queues.clear(); // ohne Dokument gibt es nichts zu tun
             continue;
         };
+        let doc_id = d.id;
 
         let event = match queues.next() {
-            Some(Work::Render(req)) if req.key.doc == *doc_id => match render(d, &req) {
+            Some(Work::Render(req)) if req.key.doc == doc_id => match d
+                .hide_annotations(req.key.page)
+                .and_then(|_| render(&d.pdf, &req))
+            {
                 Ok(image) => Event::Rendered {
                     key: req.key,
                     image,
@@ -262,10 +272,10 @@ fn run<'p>(pdfium: &'p Pdfium, jobs: Receiver<Job>, events: Sender<Event>, waker
                     error: e.to_string(),
                 },
             },
-            Some(Work::Text(id, page)) if id == *doc_id => Event::Text {
+            Some(Work::Text(id, page)) if id == doc_id => Event::Text {
                 doc: id,
                 page,
-                text: extract_text(d, page).unwrap_or_else(|e| {
+                text: extract_text(&d.pdf, page).unwrap_or_else(|e| {
                     tracing::warn!(page, error = %e, "Textextraktion fehlgeschlagen");
                     PageText::default()
                 }),
@@ -276,6 +286,35 @@ fn run<'p>(pdfium: &'p Pdfium, jobs: Receiver<Job>, events: Sender<Event>, waker
             return;
         }
         waker();
+    }
+}
+
+/// Das im Worker geöffnete Dokument.
+struct OpenDoc<'p> {
+    id: DocId,
+    pdf: PdfDocument<'p>,
+    hidden: HiddenAnnots,
+}
+
+impl OpenDoc<'_> {
+    /// Entfernt die auszublendenden Annotationen einer Seite aus der PDFium-Kopie im
+    /// Speicher (einmal pro Seite; die Datei selbst bleibt unberührt).
+    fn hide_annotations(&mut self, page: u32) -> Result<()> {
+        // `remove` liefert die Liste nur beim ersten Mal – danach ist die Seite erledigt.
+        let Some(mut indices) = self.hidden.remove(&page) else {
+            return Ok(());
+        };
+        let mut p = self.pdf.pages().get(page as PdfPageIndex)?;
+        // Absteigend löschen, damit sich die übrigen Indizes nicht verschieben.
+        indices.sort_unstable_by(|a, b| b.cmp(a));
+        for i in indices {
+            let annots = p.annotations_mut();
+            match annots.get(i as PdfPageAnnotationIndex) {
+                Ok(a) => annots.delete_annotation(a)?,
+                Err(e) => tracing::warn!(page, index = i, error = %e, "Annotation nicht gefunden"),
+            }
+        }
+        Ok(())
     }
 }
 
@@ -323,20 +362,24 @@ impl Queues {
 fn handle_job<'p>(
     job: Job,
     pdfium: &'p Pdfium,
-    doc: &mut Option<(DocId, PdfDocument<'p>)>,
+    doc: &mut Option<OpenDoc<'p>>,
     queues: &mut Queues,
     events: &Sender<Event>,
     waker: &impl Fn(),
 ) {
     match job {
-        Job::Open { doc: id, bytes } => {
+        Job::Open {
+            doc: id,
+            bytes,
+            hidden,
+        } => {
             queues.clear();
             *doc = None; // altes Dokument zuerst freigeben
             // PDFium will einen eigenen Vec; wir kopieren die Bytes einmalig.
             let event = match pdfium.load_pdf_from_byte_vec(bytes.as_ref().clone(), None) {
                 Ok(d) => {
                     let page_count = d.pages().len() as usize;
-                    *doc = Some((id, d));
+                    *doc = Some(OpenDoc { id, pdf: d, hidden });
                     Event::Opened {
                         doc: id,
                         page_count,

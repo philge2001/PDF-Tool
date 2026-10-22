@@ -15,7 +15,9 @@ mod save;
 pub mod text;
 
 pub use annotation::{AnnotId, AnnotKind, Annotation, AnnotationStore};
-pub use command::{AddAnnotation, Command, History, Model, RemoveAnnotation, UpdateAnnotation};
+pub use command::{
+    AddAnnotation, Batch, Command, History, Model, RemoveAnnotation, UpdateAnnotation,
+};
 pub use document::{Document, PageInfo};
 pub use error::{CoreError, Result};
 pub use geometry::{Color, Point, Quad, Rect};

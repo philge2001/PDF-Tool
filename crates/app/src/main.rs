@@ -1,5 +1,6 @@
 //! Einstiegspunkt der FolioCraft-Desktop-App.
 
+mod annot_draw;
 mod app;
 mod search;
 mod shortcuts;

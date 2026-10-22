@@ -31,7 +31,13 @@ impl Thumbnails {
 
 impl Viewer {
     /// Zeichnet die Miniaturen. Gibt die angeklickte Seite zurück.
-    pub fn show_thumbnails(&mut self, ui: &mut egui::Ui, thumbs: &mut Thumbnails) -> Option<usize> {
+    /// `overlay` wird pro Miniatur aufgerufen (Painter, Seite, Rechteck) – z. B. für Annotationen.
+    pub fn show_thumbnails(
+        &mut self,
+        ui: &mut egui::Ui,
+        thumbs: &mut Thumbnails,
+        overlay: impl Fn(&egui::Painter, usize, Rect),
+    ) -> Option<usize> {
         let zoom = THUMB_WIDTH / thumbs.layout.max_width_pt().max(1.0);
         let ppp = ui.ctx().pixels_per_point();
         let scale_milli = render_scale_milli(zoom * ppp);
@@ -76,6 +82,8 @@ impl Viewer {
                 } else if let Some(tex) = self.textures.best_fallback(self.doc_id, i as u32) {
                     paint_texture(&painter, tex.id(), rect);
                 }
+
+                overlay(&painter, i, rect);
 
                 let is_current = i == self.current_page;
                 let stroke = if is_current {
