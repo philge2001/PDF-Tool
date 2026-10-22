@@ -279,3 +279,204 @@ fn generated_states_for_checkbox_without_appearance() {
         _ => panic!("erwartet zwei Zustände"),
     }
 }
+
+// ---------- Formular-Editor (3.3) ----------
+
+use foliocraft_core::form::ChoiceOption;
+use foliocraft_core::{AddField, FormField, Rect, RemoveField};
+
+fn add(doc: &mut Document, mut f: FormField) -> foliocraft_core::FieldId {
+    f.id = doc.allocate_field_id();
+    let id = f.id;
+    doc.execute(Box::new(AddField::new(f))).unwrap();
+    id
+}
+
+fn update(doc: &mut Document, name: &str, change: impl FnOnce(&mut FormField)) {
+    let before = doc.forms().by_name(name).unwrap().clone();
+    let mut after = before.clone();
+    change(&mut after);
+    doc.execute(Box::new(UpdateField::new(before, after)))
+        .unwrap();
+}
+
+#[test]
+fn create_fields_in_document_without_form() {
+    let mut doc = Document::open(fixture("text_two_pages.pdf")).unwrap();
+    let page = doc.pages()[1].object_id;
+    let text_kind = FieldKind::Text {
+        multiline: false,
+        password: false,
+        max_len: Some(20),
+    };
+    let mut name = FormField::new(
+        text_kind,
+        "vorname",
+        page,
+        Rect::new(100.0, 600.0, 300.0, 620.0),
+    );
+    name.value = text("Anna");
+    name.required = true;
+    add(&mut doc, name);
+    let mut combo = FormField::new(
+        FieldKind::Combo { editable: true },
+        "farbe",
+        page,
+        Rect::new(100.0, 560.0, 250.0, 580.0),
+    );
+    combo.options = vec![
+        ChoiceOption {
+            export: "r".into(),
+            display: "Rot".into(),
+        },
+        ChoiceOption {
+            export: "Grün".into(),
+            display: "Grün".into(),
+        },
+    ];
+    combo.value = FieldValue::Choice(vec!["r".into()]);
+    add(&mut doc, combo);
+    let mut radio = FormField::new(
+        FieldKind::Radio,
+        "groesse",
+        page,
+        Rect::new(100.0, 520.0, 112.0, 532.0),
+    );
+    let mut second = radio.widgets[0].clone();
+    second.rect = second.rect.translate(40.0, 0.0);
+    second.on_state = Some("Option2".into());
+    radio.widgets.push(second);
+    radio.value = FieldValue::Toggle(Some("Option2".into()));
+    add(&mut doc, radio);
+
+    // Vor dem Speichern: Momentaufnahme blendet die neuen Widgets schon aus (kein Doppelbild).
+    let snap = doc.render_snapshot().unwrap();
+    assert_eq!(snap.hidden.get(&1).map(Vec::len), Some(4));
+
+    let back = reload(&doc);
+    assert_eq!(back.forms().len(), 3);
+    let f = back.forms().by_name("vorname").unwrap();
+    assert_eq!(f.value, text("Anna"));
+    assert!(f.required);
+    assert_eq!(
+        f.kind,
+        FieldKind::Text {
+            multiline: false,
+            password: false,
+            max_len: Some(20)
+        }
+    );
+    assert_eq!(f.widgets[0].page, back.pages()[1].object_id);
+    assert_eq!(f.widgets[0].rect, Rect::new(100.0, 600.0, 300.0, 620.0));
+    let c = back.forms().by_name("farbe").unwrap();
+    assert_eq!(c.options.len(), 2);
+    assert_eq!(c.display_of("r"), "Rot");
+    assert_eq!(c.kind, FieldKind::Combo { editable: true });
+    let r = back.forms().by_name("groesse").unwrap();
+    assert_eq!(r.kind, FieldKind::Radio);
+    assert_eq!(r.widgets.len(), 2);
+    assert!(r.widget_is_on(&r.widgets[1]));
+    assert_eq!(back.managed_annot_indices(1).len(), 4);
+}
+
+#[test]
+fn change_properties_of_existing_fields() {
+    let mut doc = open_form();
+    update(&mut doc, "pflicht", |f| {
+        f.name = "pflicht2".into();
+        f.required = false;
+        f.read_only = true;
+        f.tooltip = "Hinweis".into();
+        f.widgets[0].rect = f.widgets[0].rect.translate(10.0, -5.0);
+    });
+    update(&mut doc, "person.email", |f| f.name = "person.mail".into());
+    update(&mut doc, "land", |f| {
+        f.options.push(ChoiceOption {
+            export: "Italien".into(),
+            display: "Italien".into(),
+        })
+    });
+    let back = reload(&doc);
+    let f = back.forms().by_name("pflicht2").unwrap();
+    assert!(!f.required && f.read_only);
+    assert_eq!(f.tooltip, "Hinweis");
+    assert_eq!(f.widgets[0].rect, Rect::new(190.0, 380.0, 340.0, 398.0));
+    // Verschachteltes Feld: nur der Teilname ändert sich, der Elternteil bleibt.
+    assert!(back.forms().by_name("person.mail").is_some());
+    assert_eq!(back.forms().by_name("land").unwrap().options.len(), 4);
+}
+
+#[test]
+fn delete_nested_and_top_level_fields() {
+    let mut doc = open_form();
+    let annots_before = doc.managed_annot_indices(0).len();
+    for name in ["person.email", "bemerkung"] {
+        let id = doc.forms().by_name(name).unwrap().id;
+        doc.execute(Box::new(RemoveField::new(id))).unwrap();
+    }
+    let back = reload(&doc);
+    assert!(back.forms().by_name("person.email").is_none());
+    assert!(back.forms().by_name("bemerkung").is_none());
+    assert_eq!(value(&back, "person.name"), text("Max Mustermann"));
+    assert_eq!(back.forms().len(), 9);
+    assert_eq!(back.managed_annot_indices(0).len(), annots_before - 2);
+}
+
+#[test]
+fn add_option_to_existing_radio_group() {
+    let mut doc = open_form();
+    update(&mut doc, "versand", |f| {
+        let mut w = f.widgets[2].clone();
+        w.object_id = None;
+        w.rect = w.rect.translate(60.0, 0.0);
+        w.on_state = Some("kurier".into());
+        f.widgets.push(w);
+        f.value = FieldValue::Toggle(Some("kurier".into()));
+    });
+    let back = reload(&doc);
+    let v = back.forms().by_name("versand").unwrap();
+    assert_eq!(v.widgets.len(), 4);
+    assert_eq!(v.value, FieldValue::Toggle(Some("kurier".into())));
+    assert!(v.widget_is_on(&v.widgets[3]));
+    assert_eq!(back.managed_annot_indices(0).len(), 12);
+}
+
+#[test]
+fn created_field_survives_save_undo_redo() {
+    let path = std::env::temp_dir().join(format!(
+        "foliocraft-formedit-{}.pdf",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::copy(fixture("text_two_pages.pdf"), &path).unwrap();
+    let mut doc = Document::open(&path).unwrap();
+    let page = doc.pages()[0].object_id;
+    add(
+        &mut doc,
+        FormField::new(
+            FieldKind::CheckBox,
+            "ok",
+            page,
+            Rect::new(50.0, 50.0, 64.0, 64.0),
+        ),
+    );
+    doc.save().unwrap();
+    assert!(doc.forms().by_name("ok").unwrap().source.is_some());
+    // Nach dem Speichern ausfüllen: schreibt dasselbe Objekt neu.
+    set(&mut doc, "ok", FieldValue::Toggle(Some("Ja".into())));
+    doc.save().unwrap();
+    let back = Document::open(&path).unwrap();
+    assert_eq!(value(&back, "ok"), FieldValue::Toggle(Some("Ja".into())));
+    assert_eq!(back.forms().len(), 1);
+
+    doc.undo().unwrap(); // Wert
+    doc.undo().unwrap(); // Feld
+    doc.save().unwrap();
+    assert_eq!(Document::open(&path).unwrap().forms().len(), 0);
+    doc.redo().unwrap();
+    doc.save().unwrap();
+    assert_eq!(Document::open(&path).unwrap().forms().len(), 1);
+    let _ = std::fs::remove_file(path);
+}

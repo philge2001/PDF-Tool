@@ -239,6 +239,84 @@ impl Command for Batch {
 
 // ---------- Formular-Commands ----------
 
+/// Neues Formularfeld (Formular-Editor).
+#[derive(Debug)]
+pub struct AddField {
+    field: FormField,
+}
+
+impl AddField {
+    /// Das Feld sollte bereits eine ID haben (`FormStore::allocate_id`).
+    pub fn new(field: FormField) -> Self {
+        Self { field }
+    }
+}
+
+impl Command for AddField {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn apply(&mut self, model: &mut Model) -> Result<()> {
+        model.forms.push(self.field.clone());
+        Ok(())
+    }
+    fn undo(&mut self, model: &mut Model) -> Result<()> {
+        model
+            .forms
+            .remove(self.field.id)
+            .map(|_| ())
+            .ok_or_else(|| field_not_found(self.field.id))
+    }
+    fn label(&self) -> String {
+        format!("{} hinzufügen", self.field.kind.label())
+    }
+}
+
+#[derive(Debug)]
+pub struct RemoveField {
+    id: FieldId,
+    removed: Option<(usize, FormField)>,
+}
+
+impl RemoveField {
+    pub fn new(id: FieldId) -> Self {
+        Self { id, removed: None }
+    }
+}
+
+impl Command for RemoveField {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn apply(&mut self, model: &mut Model) -> Result<()> {
+        self.removed = Some(
+            model
+                .forms
+                .remove(self.id)
+                .ok_or_else(|| field_not_found(self.id))?,
+        );
+        Ok(())
+    }
+    fn undo(&mut self, model: &mut Model) -> Result<()> {
+        let (i, f) = self
+            .removed
+            .take()
+            .ok_or_else(|| field_not_found(self.id))?;
+        model.forms.insert(i, f);
+        Ok(())
+    }
+    fn label(&self) -> String {
+        match &self.removed {
+            Some((_, f)) => format!("{} löschen", f.kind.label()),
+            None => "Formularfeld löschen".into(),
+        }
+    }
+}
+
+fn field_not_found(id: FieldId) -> CoreError {
+    CoreError::Other(format!("Formularfeld #{} existiert nicht", id.0))
+}
+
 /// Ersetzt ein Formularfeld durch eine geänderte Fassung (Wert, später auch Eigenschaften).
 #[derive(Debug)]
 pub struct UpdateField {
@@ -289,7 +367,7 @@ impl UpdateField {
             .forms
             .replace(f)
             .map(|_| ())
-            .ok_or_else(|| CoreError::Other(format!("Formularfeld #{} existiert nicht", id.0)))
+            .ok_or_else(|| field_not_found(id))
     }
 }
 

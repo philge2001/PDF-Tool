@@ -5,6 +5,8 @@ mod app;
 mod comments;
 mod file_ops;
 mod form_draw;
+mod form_edit;
+mod form_props;
 mod forms;
 mod jobs;
 mod menu;

@@ -5,9 +5,9 @@ use crate::annotation::{AnnotId, Annotation, appearance, export};
 use crate::date::pdf_date_now;
 use crate::document::{Document, inherited};
 use crate::error::{CoreError, Result};
-use crate::form::{self, FieldKind, FieldValue, FormField, appearance::WidgetAppearance};
-use crate::pdf_string;
-use lopdf::{Dictionary, IncrementalDocument, Object, ObjectId, dictionary};
+use crate::form::FieldId;
+use crate::form_save;
+use lopdf::{IncrementalDocument, Object, ObjectId, dictionary};
 use std::collections::{HashMap, HashSet};
 
 /// Ergebnis eines Speichervorgangs.
@@ -18,6 +18,8 @@ pub(crate) struct SaveOutput {
     /// Pro Seitenindex: Positionen in /Annots, die FolioCraft selbst zeichnet
     /// (der Renderer blendet genau diese aus).
     pub hidden: HashMap<u32, Vec<usize>>,
+    /// Neu angelegte Formularobjekte: (Feld, Objektnummer des Felds, Nummern der Widgets).
+    pub written_fields: Vec<(FieldId, ObjectId, Vec<Option<ObjectId>>)>,
 }
 
 /// /Annots einer Seite – auch für Seiten, die erst eingefügt und noch nicht gespeichert sind.
@@ -126,8 +128,14 @@ pub(crate) fn incremental(doc: &Document) -> Result<SaveOutput> {
     inc.new_document.max_id = inc.new_document.max_id.max(reserved);
 
     write_page_tree(doc, &mut inc)?;
-    write_forms(doc, &mut inc)?;
-    let widgets: HashSet<ObjectId> = doc.model().forms.managed_widget_ids().collect();
+    let forms = form_save::write(doc, &mut inc)?;
+    // Widgets ausfüllbarer Felder – auch die gerade erst angelegten.
+    let widgets: HashSet<ObjectId> = doc
+        .model()
+        .forms
+        .managed_widget_ids()
+        .chain(forms.added_widgets.values().flatten().copied())
+        .collect();
     let is_widget = |o: &Object| o.as_reference().is_ok_and(|id| widgets.contains(&id));
 
     // Popups von importierten Annotationen, die gelöscht wurden, fliegen mit raus.
@@ -162,12 +170,17 @@ pub(crate) fn incremental(doc: &Document) -> Result<SaveOutput> {
                     changed |= !kept.contains(id);
                     continue;
                 }
-                if dropped_popups.contains(id) {
+                if dropped_popups.contains(id) || forms.removed_widgets.contains(id) {
                     changed = true;
                     continue;
                 }
             }
             new_list.push(entry.clone());
+        }
+        // Neue Widgets von Formularfeldern gehören zu den "fremden" Einträgen.
+        if let Some(added) = forms.added_widgets.get(&info.object_id) {
+            changed = true;
+            new_list.extend(added.iter().map(|&id| Object::from(id)));
         }
 
         // 2) Verwaltete Annotationen anhängen.
@@ -248,133 +261,6 @@ pub(crate) fn incremental(doc: &Document) -> Result<SaveOutput> {
         bytes,
         written,
         hidden,
+        written_fields: forms.written,
     })
-}
-
-/// Schreibt geänderte Formularfelder: Wert ins Feld (/V), Erscheinungsbild in jedes Widget.
-fn write_forms(doc: &Document, inc: &mut IncrementalDocument) -> Result<()> {
-    let pages: HashSet<ObjectId> = doc.pages().iter().map(|p| p.object_id).collect();
-    for field in doc.model().forms.iter() {
-        // Neue Felder (ohne Herkunft) kommen mit dem Formular-Editor (3.3).
-        let Some(src) = field.source else { continue };
-        if doc.imported_field(src) == Some(field) || !field.kind.is_fillable() {
-            continue;
-        }
-        inc.opt_clone_object_to_new_document(src)?;
-        let dict = inc
-            .new_document
-            .get_object_mut(src)
-            .and_then(Object::as_dict_mut)?;
-        set_value(dict, field);
-
-        for w in &field.widgets {
-            // Widgets auf gelöschten Seiten bleiben, wie sie sind.
-            let Some(wid) = w.object_id.filter(|_| pages.contains(&w.page)) else {
-                continue;
-            };
-            let existing_states = existing_states(doc, wid);
-            match form::appearance::build(field, w) {
-                Some(WidgetAppearance::Single(stream)) => {
-                    let ap = inc.new_document.add_object(stream);
-                    inc.opt_clone_object_to_new_document(wid)?;
-                    let wd = inc
-                        .new_document
-                        .get_object_mut(wid)
-                        .and_then(Object::as_dict_mut)?;
-                    wd.set("AP", dictionary! { "N" => ap });
-                }
-                Some(WidgetAppearance::States { on_state, on, off }) => {
-                    // Vorhandene Erscheinungsbilder behalten, nur den Zustand (/AS) umschalten.
-                    let ap = if existing_states.contains(&on_state) {
-                        None
-                    } else {
-                        let on_id = inc.new_document.add_object(on);
-                        let off_id = inc.new_document.add_object(off);
-                        let mut n = Dictionary::new();
-                        n.set(on_state.as_bytes(), on_id);
-                        n.set("Off", off_id);
-                        Some(dictionary! { "N" => n })
-                    };
-                    let state = if field.widget_is_on(w) {
-                        on_state.as_str()
-                    } else {
-                        "Off"
-                    };
-                    inc.opt_clone_object_to_new_document(wid)?;
-                    let wd = inc
-                        .new_document
-                        .get_object_mut(wid)
-                        .and_then(Object::as_dict_mut)?;
-                    wd.set("AS", Object::Name(state.as_bytes().to_vec()));
-                    if let Some(ap) = ap {
-                        wd.set("AP", ap);
-                    }
-                }
-                None => {}
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Namen der Zustände in /AP /N eines Widgets (leer, wenn es keine gibt).
-fn existing_states(doc: &Document, widget: ObjectId) -> Vec<String> {
-    let pdf = doc.pdf();
-    let deref = |o: &Object| pdf.dereference(o).map(|(_, o)| o.clone()).ok();
-    let Ok(d) = pdf.get_dictionary(widget) else {
-        return Vec::new();
-    };
-    d.get(b"AP")
-        .ok()
-        .and_then(deref)
-        .and_then(|ap| ap.as_dict().ok()?.get(b"N").ok().and_then(deref))
-        .and_then(|n| {
-            n.as_dict().ok().map(|n| {
-                n.iter()
-                    .map(|(k, _)| String::from_utf8_lossy(k).into_owned())
-                    .collect()
-            })
-        })
-        .unwrap_or_default()
-}
-
-/// Trägt den Wert des Felds als /V (und bei Listenfeldern /I) ein.
-fn set_value(dict: &mut Dictionary, field: &FormField) {
-    match &field.value {
-        FieldValue::None => {}
-        FieldValue::Text(t) => dict.set("V", pdf_string::encode(t)),
-        FieldValue::Toggle(state) => {
-            let name = state.as_deref().unwrap_or("Off");
-            dict.set("V", Object::Name(name.as_bytes().to_vec()));
-        }
-        FieldValue::Choice(values) => {
-            match values.as_slice() {
-                [] => {
-                    dict.remove(b"V");
-                }
-                [one] => dict.set("V", pdf_string::encode(one)),
-                many => dict.set(
-                    "V",
-                    Object::Array(many.iter().map(|v| pdf_string::encode(v)).collect()),
-                ),
-            }
-            // /I: Indizes der gewählten Einträge (hilft Readern bei doppelten Exportwerten).
-            if matches!(field.kind, FieldKind::List { .. }) {
-                let mut idx: Vec<i64> = field
-                    .options
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, o)| values.contains(&o.export))
-                    .map(|(i, _)| i as i64)
-                    .collect();
-                idx.sort_unstable();
-                dict.set(
-                    "I",
-                    Object::Array(idx.into_iter().map(Object::from).collect()),
-                );
-            } else {
-                dict.remove(b"I");
-            }
-        }
-    }
 }

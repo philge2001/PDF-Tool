@@ -43,6 +43,10 @@ pub struct OpenDocument {
     pub zoom_input: Option<String>,
     /// Formular ausfüllen: Fokus, Aufklappliste.
     pub form: crate::forms::FormUi,
+    /// Formular bearbeiten: Auswahl, laufender Zug.
+    pub form_edit: crate::form_edit::FormEdit,
+    /// Noch nicht übernommene Eingaben im Eigenschaften-Panel.
+    pub prop_inputs: crate::form_props::PropInputs,
 }
 
 pub struct FolioApp {
@@ -168,6 +172,8 @@ impl FolioApp {
             selection: None,
             gesture: None,
             form: Default::default(),
+            form_edit: Default::default(),
+            prop_inputs: Default::default(),
             editor: None,
             selected: None,
             annot_drag: None,
@@ -421,6 +427,11 @@ impl FolioApp {
                     d.create_markup_from_selection(tool, &self.tool_settings);
                 }
             }
+            t if t.is_form_tool() => {
+                if let Some(next) = d.handle_form_edit(ui, &view, t) {
+                    self.tool = next;
+                }
+            }
             Tool::Hand => {
                 let resp = &view.response;
                 if resp.dragged() {
@@ -432,9 +443,13 @@ impl FolioApp {
             }
             _ => d.handle_create_tool(ui, &view, tool, &self.tool_settings),
         }
-        d.paint_forms(ui, &view, self.settings.highlight_fields);
+        let editing_form = tool.is_form_tool();
+        d.paint_forms(ui, &view, self.settings.highlight_fields || editing_form);
         if fill_forms {
             d.show_field_editor(ui, &view);
+        }
+        if editing_form {
+            d.paint_form_edit(ui, &view);
         }
         d.paint_annotations(ui, &view);
         d.paint_annotation_selection(ui, &view);
@@ -473,7 +488,13 @@ impl eframe::App for FolioApp {
                 d.sync_structure(render);
             }
             d.validate_selection();
-            if self.show_comments {
+            d.validate_field_selection();
+            if self.tool.is_form_tool() {
+                egui::Panel::right("field_properties")
+                    .default_size(280.0)
+                    .size_range(220.0..=500.0)
+                    .show(ui, |ui| d.field_properties(ui));
+            } else if self.show_comments {
                 egui::Panel::right("comments")
                     .default_size(280.0)
                     .size_range(200.0..=500.0)

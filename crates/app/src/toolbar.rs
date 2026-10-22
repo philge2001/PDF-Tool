@@ -11,6 +11,18 @@ impl FolioApp {
             for tool in Tool::NAVIGATION {
                 ui.selectable_value(&mut self.tool, tool, tool.label());
             }
+            let form_mode = self.tool.is_form_tool();
+            if ui
+                .selectable_label(form_mode, "Formular bearbeiten")
+                .on_hover_text("Formularfelder anlegen, verschieben, Eigenschaften ändern")
+                .clicked()
+            {
+                self.tool = if form_mode {
+                    Tool::TextSelect
+                } else {
+                    Tool::FormEdit
+                };
+            }
 
             let Some(d) = &mut self.document else { return };
             ui.separator();
@@ -142,6 +154,22 @@ impl FolioApp {
     /// Zweite Leiste: Annotationswerkzeuge und deren Stil.
     pub(crate) fn annotation_bar(&mut self, ui: &mut egui::Ui) {
         let Some(d) = &mut self.document else { return };
+        if self.tool.is_form_tool() {
+            ui.horizontal(|ui| {
+                ui.label("Formular bearbeiten:");
+                for tool in Tool::FORM {
+                    if tool == Tool::FieldText {
+                        ui.separator(); // Auswählen | neue Felder
+                    }
+                    ui.selectable_value(&mut self.tool, tool, tool.label());
+                }
+                ui.separator();
+                if ui.button("Fertig").on_hover_text("Esc").clicked() {
+                    self.tool = Tool::TextSelect;
+                }
+            });
+            return;
+        }
         ui.horizontal(|ui| {
             ui.label("Kommentieren:");
             for tool in Tool::ANNOTATION {

@@ -47,7 +47,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 ## Meilensteine Phase 3 (Formulare)
 - [x] 3.1 Formularmodell, Werte-Commands, Speichern mit AP (core)
 - [x] 3.2 Formulare ausfüllen (UI)
-- [ ] 3.3 Formulare gestalten (Felder erstellen/bearbeiten)
+- [x] 3.3 Formulare gestalten (Felder erstellen/bearbeiten)
 - [ ] 3.4 AcroForm bei Einfügen/Extrahieren übernehmen + Abschluss
 
 ## Meilensteine Phase 2 (Seitenorganisation)
@@ -149,12 +149,19 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - `core::form` – `FormField`/`FieldKind`/`FieldValue`/`Widget`, `FormStore` (Dateireihenfolge = Tab-Reihenfolge);
   `import` (Feldbaum mit vererbten /FT /Ff /V /DA …, voller Name), `appearance` (`layout` = gemeinsame
   Textanordnung für Overlay und Datei, `build` = /AP-Streams, Helvetica WinAnsi)
-- `core::command::UpdateField` – Feld ändern (`::value` nur Wert, `mergeable` fürs Tippen)
-- `core::save::write_forms` – geänderte Felder: /V (+ /I bei Listen), Text-AP neu, Schalter nur /AS
-  (vorhandene Zustandsbilder bleiben, fehlende werden erzeugt)
+- `core::command::{AddField, RemoveField, UpdateField}` – Felder anlegen/löschen/ändern (`UpdateField::value`
+  nur Wert, `mergeable` fürs Tippen); `FormField::new` mit Standardwerten, `FormStore::unique_name`
+- `core::form_save` – neue Felder (Feld+Widget in einem Objekt, Optionsfelder als Feld mit /Kids) samt
+  /AcroForm (/Fields, /DR /Helv), geänderte nur mit geänderten Einträgen (Original-/DA bleibt), gelöschte aus
+  /Fields bzw. /Kids und /Annots; Schalter: vorhandene Zustandsbilder bleiben, solange das Aussehen gleich ist.
+  `FormChanges` liefert `save` neue/entfernte Widgets pro Seite; `after_save` übernimmt neue Objektnummern
 - `app::forms` – Ausfüllen (`FormUi`: Fokus als `FieldFocus`, Aufklappliste): `handle_form_input` (Klick/Cursor,
   hat Vorrang vor Textauswahl/Auswählen), `handle_form_keys` (Tab, Leertaste), `show_field_editor`
   (egui-TextEdit über dem Feld), `reset_form`; erste Änderung nach Fokuswechsel = neuer Undo-Schritt
+- `app::form_edit` – Modus „Formular bearbeiten“ (`Tool::FORM`): Felder aufziehen/klicken, auswählen, verschieben,
+  Größe am Anfasser ändern (Vorschau, 1 Undo-Schritt pro Zug), Entf löscht
+- `app::form_props` – Eigenschaften-Panel (ersetzt im Bearbeiten-Modus die Kommentare); Name/Optionsliste
+  werden erst übernommen, wenn gültig (`PropInputs`)
 - `app::form_draw` – zeichnet Widgets (Layout aus `core::form::appearance::layout`), Hervorhebung, Pflichtrahmen
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
 

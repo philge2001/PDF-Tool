@@ -165,6 +165,47 @@ pub struct FormField {
 }
 
 impl FormField {
+    /// Neues Feld mit einem Widget und üblichen Standardwerten (für den Formular-Editor).
+    pub fn new(kind: FieldKind, name: impl Into<String>, page: ObjectId, rect: Rect) -> Self {
+        let mut widget = Widget::new(page, rect);
+        widget.border = Some(Color::rgb(0.45, 0.45, 0.45));
+        let value = match kind {
+            FieldKind::CheckBox => {
+                widget.on_state = Some("Ja".into());
+                FieldValue::Toggle(None)
+            }
+            FieldKind::Radio => {
+                widget.on_state = Some("Option1".into());
+                FieldValue::Toggle(None)
+            }
+            FieldKind::Text { .. } => FieldValue::Text(String::new()),
+            FieldKind::Combo { .. } | FieldKind::List { .. } => FieldValue::Choice(Vec::new()),
+            FieldKind::PushButton | FieldKind::Signature => FieldValue::None,
+        };
+        Self {
+            id: FieldId(0),
+            name: name.into(),
+            tooltip: String::new(),
+            kind,
+            default: value.clone(),
+            value,
+            read_only: false,
+            required: false,
+            options: Vec::new(),
+            font_size: 0.0,
+            text_color: Color::BLACK,
+            align: Align::Left,
+            widgets: vec![widget],
+            source: None,
+        }
+    }
+
+    /// Stehen Feld und (einziges) Widget im selben PDF-Objekt? Dann kann kein zweites
+    /// Widget hinzukommen, ohne die Struktur umzubauen.
+    pub fn is_merged(&self) -> bool {
+        self.source.is_some() && self.widgets.first().and_then(|w| w.object_id) == self.source
+    }
+
     /// Angezeigter Text eines Exportwerts (bei Auswahlfeldern).
     pub fn display_of<'a>(&'a self, export: &'a str) -> &'a str {
         self.options
@@ -217,6 +258,27 @@ impl FormStore {
 
     pub fn by_name(&self, name: &str) -> Option<&FormField> {
         self.fields.iter().find(|f| f.name == name)
+    }
+
+    /// Freier Name der Form "Textfeld1", "Textfeld2" …
+    pub fn unique_name(&self, prefix: &str) -> String {
+        (1..)
+            .map(|i| format!("{prefix}{i}"))
+            .find(|n| self.by_name(n).is_none())
+            .unwrap_or_default()
+    }
+
+    /// Fügt ein Feld an einer Position ein (für Undo).
+    pub fn insert(&mut self, index: usize, f: FormField) {
+        self.next_id = self.next_id.max(f.id.0);
+        let index = index.min(self.fields.len());
+        self.fields.insert(index, f);
+    }
+
+    /// Entfernt ein Feld; liefert Position und Inhalt (für Undo).
+    pub fn remove(&mut self, id: FieldId) -> Option<(usize, FormField)> {
+        let i = self.fields.iter().position(|f| f.id == id)?;
+        Some((i, self.fields.remove(i)))
     }
 
     /// Ersetzt das Feld mit derselben ID und liefert die alte Fassung.

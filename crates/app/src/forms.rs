@@ -53,7 +53,7 @@ fn is_typable(f: &FormField) -> bool {
 
 impl OpenDocument {
     /// Oberstes ausfüllbares Widget unter `pos` (auf einer sichtbaren Seite).
-    fn field_at(&self, view: &ViewOutput, pos: Pos2) -> Option<FieldFocus> {
+    pub(crate) fn field_at(&self, view: &ViewOutput, pos: Pos2) -> Option<FieldFocus> {
         let (page, page_rect) = view.pages.iter().copied().find(|(_, r)| r.contains(pos))?;
         let info = self.doc.page(page).ok()?;
         let p = transform::screen_to_pdf(info, page_rect, pos);

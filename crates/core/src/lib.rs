@@ -10,6 +10,7 @@ pub mod document;
 pub mod error;
 pub mod font;
 pub mod form;
+mod form_save;
 pub mod geometry;
 pub mod page_export;
 pub mod page_import;
@@ -20,7 +21,8 @@ pub mod text;
 
 pub use annotation::{AnnotId, AnnotKind, Annotation, AnnotationStore};
 pub use command::{
-    AddAnnotation, Batch, Command, History, Model, RemoveAnnotation, UpdateAnnotation, UpdateField,
+    AddAnnotation, AddField, Batch, Command, History, Model, RemoveAnnotation, RemoveField,
+    UpdateAnnotation, UpdateField,
 };
 pub use document::{Document, PageId, PageInfo, RenderSnapshot};
 pub use error::{CoreError, Result};

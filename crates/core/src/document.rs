@@ -303,6 +303,15 @@ impl Document {
             .collect()
     }
 
+    pub(crate) fn imported_fields(&self) -> impl Iterator<Item = &FormField> {
+        self.imported_fields.values()
+    }
+
+    /// Neue ID für ein Formularfeld, das gleich per Command hinzugefügt wird.
+    pub fn allocate_field_id(&mut self) -> form::FieldId {
+        self.model.forms.allocate_id()
+    }
+
     /// Stand eines Formularfelds in der Datei (für `save`).
     pub(crate) fn imported_field(&self, id: ObjectId) -> Option<&FormField> {
         self.imported_fields.get(&id)
@@ -378,6 +387,17 @@ impl Document {
             .iter()
             .filter_map(|a| Some((a.source?.object_id, a.clone())))
             .collect();
+        // Neu angelegte Formularobjekte: Objektnummern ins Modell übernehmen.
+        for (id, object_id, widgets) in out.written_fields {
+            if let Some(f) = self.model.forms.get(id) {
+                let mut f = f.clone();
+                f.source = Some(object_id);
+                for (w, wid) in f.widgets.iter_mut().zip(widgets) {
+                    w.object_id = w.object_id.or(wid);
+                }
+                self.model.forms.replace(f);
+            }
+        }
         self.imported_fields = snapshot_fields(&self.model.forms);
         self.saved_pages = self.page_structure();
         // Die zusätzlichen Objekte stehen jetzt in der Datei.
