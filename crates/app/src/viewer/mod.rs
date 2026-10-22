@@ -147,6 +147,11 @@ impl Viewer {
         }
     }
 
+    /// Nach Neuladen im Worker: offene Aufträge gelten als verworfen.
+    pub fn reset_pending(&mut self) {
+        self.textures.reset_pending();
+    }
+
     // ---------- Navigation ----------
 
     pub fn scroll_to_page(&mut self, page: usize) {

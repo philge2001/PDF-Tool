@@ -40,6 +40,13 @@ impl TextCache {
         }
     }
 
+    /// Nach Neuladen im Worker: noch nicht gelieferte Texte erneut anfordern lassen.
+    pub fn reset_requested(&mut self) {
+        for (req, page) in self.requested.iter_mut().zip(&self.pages) {
+            *req = page.is_some();
+        }
+    }
+
     pub fn page_count(&self) -> usize {
         self.pages.len()
     }

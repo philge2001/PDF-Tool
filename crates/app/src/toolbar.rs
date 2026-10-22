@@ -1,4 +1,4 @@
-//! Obere Werkzeugleiste: Öffnen, Seitennavigation, Zoom.
+//! Obere Werkzeugleiste: Werkzeuge, Rückgängig/Wiederholen, Seitennavigation, Zoom.
 
 use crate::app::FolioApp;
 use crate::tools::Tool;
@@ -7,17 +7,7 @@ use eframe::egui;
 
 impl FolioApp {
     pub(crate) fn toolbar(&mut self, ui: &mut egui::Ui) {
-        let ctx = ui.ctx().clone();
         ui.horizontal(|ui| {
-            if ui.button("Öffnen…").on_hover_text("Strg+O").clicked() {
-                self.open_dialog(&ctx);
-            }
-            ui.toggle_value(&mut self.show_thumbnails, "Seiten")
-                .on_hover_text("Seitenleiste mit Miniaturen ein-/ausblenden");
-            ui.toggle_value(&mut self.show_comments, "Kommentare")
-                .on_hover_text("Kommentarliste ein-/ausblenden");
-
-            ui.separator();
             for tool in Tool::NAVIGATION {
                 ui.selectable_value(&mut self.tool, tool, tool.label());
             }

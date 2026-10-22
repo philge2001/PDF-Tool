@@ -16,6 +16,15 @@ impl FolioApp {
         if cmd(Key::O) {
             self.open_dialog(ctx);
         }
+        // Erst die Variante mit Umschalt prüfen: `consume_key(COMMAND, S)` würde auch
+        // Strg+Umschalt+S schlucken (Umschalt wird beim Vergleich ignoriert).
+        let save_as =
+            ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::S));
+        if save_as {
+            self.save(true);
+        } else if cmd(Key::S) {
+            self.save(false);
+        }
 
         let Some(d) = &mut self.document else { return };
 

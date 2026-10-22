@@ -1,6 +1,7 @@
 //! Die Haupt-App: hält Render-Service, geöffnetes Dokument und UI-Zustand.
 
 use crate::annot_draw;
+use crate::file_ops::PendingAction;
 use crate::search::SearchState;
 use crate::text_cache::TextCache;
 use crate::tools::create::Gesture;
@@ -49,6 +50,11 @@ pub struct FolioApp {
     pub(crate) show_comments: bool,
     pub(crate) tool: Tool,
     pub(crate) tool_settings: ToolSettings,
+    /// Aktion, die auf die Antwort "Änderungen speichern?" wartet.
+    pub(crate) pending: Option<PendingAction>,
+    /// Schließen nach der Rückfrage erlaubt.
+    pub(crate) allow_close: bool,
+    pub(crate) window_title: String,
 }
 
 impl FolioApp {
@@ -72,6 +78,9 @@ impl FolioApp {
             show_comments: true,
             tool: Tool::default(),
             tool_settings: ToolSettings::default(),
+            pending: None,
+            allow_close: false,
+            window_title: String::new(),
         };
         if let Some(path) = initial_file {
             app.open_path(&cc.egui_ctx, &path);
@@ -108,11 +117,7 @@ impl FolioApp {
                     page_input: None,
                     zoom_input: None,
                 });
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("{name} – FolioCraft")));
+                let _ = ctx; // Fenstertitel setzt `update_title` im nächsten Frame
                 tracing::info!(path = %path.display(), "Dokument geöffnet");
             }
             Err(e) => {
@@ -130,7 +135,7 @@ impl FolioApp {
             .add_filter("PDF", &["pdf"])
             .pick_file()
         {
-            self.open_path(ctx, &path);
+            self.request_open(ctx, path);
         }
     }
 
@@ -160,7 +165,7 @@ impl FolioApp {
                 .find(|p| !p.as_os_str().is_empty())
         });
         if let Some(path) = dropped {
-            self.open_path(ctx, &path);
+            self.request_open(ctx, path);
         }
     }
 
@@ -212,7 +217,7 @@ impl FolioApp {
 }
 
 /// Welche Annotationen der Renderer weglassen soll: alle, die wir selbst zeichnen.
-fn hidden_annots(doc: &Document) -> HiddenAnnots {
+pub(crate) fn hidden_annots(doc: &Document) -> HiddenAnnots {
     (0..doc.page_count())
         .map(|p| (p as u32, doc.managed_annot_indices(p)))
         .filter(|(_, v)| !v.is_empty())
@@ -321,9 +326,12 @@ impl eframe::App for FolioApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.poll_render(&ctx);
+        self.handle_close_request(&ctx);
         self.handle_dropped_files(&ctx);
         self.handle_shortcuts(&ctx);
+        self.update_title(&ctx);
 
+        egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
         if self.document.is_some() {
             egui::Panel::top("annotation_bar").show(ui, |ui| self.annotation_bar(ui));
@@ -376,6 +384,7 @@ impl eframe::App for FolioApp {
         } else {
             egui::CentralPanel::default().show(ui, |ui| self.empty_state(ui));
         }
+        self.unsaved_changes_dialog(&ctx);
         self.error_dialog(&ctx);
     }
 }

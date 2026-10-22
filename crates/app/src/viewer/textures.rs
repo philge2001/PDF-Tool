@@ -54,6 +54,12 @@ impl PageTextures {
         self.cache.contains(key)
     }
 
+    /// Der Worker hat alle offenen Aufträge verworfen (z. B. nach Neuladen).
+    pub fn reset_pending(&mut self) {
+        self.pending.clear();
+        self.last_wanted.clear();
+    }
+
     pub fn mark_pending(&mut self, key: RenderKey) {
         self.pending.insert(key);
     }
