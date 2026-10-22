@@ -102,6 +102,67 @@ fn write_page_tree(doc: &Document, inc: &mut IncrementalDocument) -> Result<()> 
     Ok(())
 }
 
+/// Schreibt bearbeitete Seiteninhalte: neuer Content Stream, Ressourcen als direktes
+/// Dictionary (bisherige plus eingebettete Ersatzschriften und neue Bilder).
+fn write_page_contents(doc: &Document, inc: &mut IncrementalDocument) -> Result<()> {
+    let pdf = doc.pdf();
+    for info in doc.pages() {
+        let page = info.object_id;
+        if !doc.content_changed(page) {
+            continue;
+        }
+        let Some(pc) = doc.model().page_content.get(&page) else {
+            continue;
+        };
+        let mut fonts = Vec::new();
+        for (name, sub) in &pc.fonts {
+            let id = sub.write(&mut |o| inc.new_document.add_object(o))?;
+            fonts.push((name.clone(), id));
+        }
+        let mut stream = lopdf::Stream::new(lopdf::Dictionary::new(), pc.content.clone());
+        let _ = stream.compress();
+        let content_id = inc.new_document.add_object(stream);
+
+        // Ressourcen auflösen und kopieren (sie können mit anderen Seiten geteilt sein).
+        let resolve = |o: &Object| -> lopdf::Dictionary {
+            pdf.dereference(o)
+                .ok()
+                .and_then(|(_, o)| o.as_dict().ok().cloned())
+                .unwrap_or_default()
+        };
+        let mut resources = inherited(pdf, page, b"Resources")
+            .map(resolve)
+            .unwrap_or_default();
+        let mut images = Vec::new();
+        for (name, img) in &pc.images {
+            let mut stream = img.image.clone();
+            if let Some(mask) = &img.smask {
+                let mask_id = inc.new_document.add_object(mask.clone());
+                stream.dict.set("SMask", mask_id);
+            }
+            images.push((name.clone(), inc.new_document.add_object(stream)));
+        }
+        for (category, entries) in [(&b"Font"[..], fonts), (b"XObject", images)] {
+            if entries.is_empty() {
+                continue;
+            }
+            let mut dict = resources.get(category).map(resolve).unwrap_or_default();
+            for (name, id) in entries {
+                dict.set(name, id);
+            }
+            resources.set(category, dict);
+        }
+        inc.opt_clone_object_to_new_document(page)?;
+        let dict = inc
+            .new_document
+            .get_object_mut(page)
+            .and_then(Object::as_dict_mut)?;
+        dict.set("Contents", content_id);
+        dict.set("Resources", resources);
+    }
+    Ok(())
+}
+
 /// Eindeutiger Name (/NM) für neue Annotationen.
 fn unique_name(id: AnnotId) -> String {
     let nanos = std::time::SystemTime::now()
@@ -128,6 +189,7 @@ pub(crate) fn incremental(doc: &Document) -> Result<SaveOutput> {
     inc.new_document.max_id = inc.new_document.max_id.max(reserved);
 
     write_page_tree(doc, &mut inc)?;
+    write_page_contents(doc, &mut inc)?;
     let forms = form_save::write(doc, &mut inc)?;
     // Widgets ausfüllbarer Felder – auch die gerade erst angelegten.
     let widgets: HashSet<ObjectId> = doc
@@ -201,9 +263,10 @@ pub(crate) fn incremental(doc: &Document) -> Result<SaveOutput> {
 
             let base = a.source.and_then(|s| pdf.get_dictionary(s.object_id).ok());
             let mut dict = export::to_dict(&a, info.object_id, base);
-            let ap_id = inc
-                .new_document
-                .add_object(appearance::to_stream(appearance::build(&a)));
+            let stream = appearance::to_stream(appearance::build(&a), &mut |o| {
+                inc.new_document.add_object(o)
+            })?;
+            let ap_id = inc.new_document.add_object(stream);
             dict.set("AP", dictionary! { "N" => ap_id });
             let obj_id = match a.source {
                 // Geändert: unter derselben Objektnummer neu schreiben (ersetzt das alte Objekt).

@@ -5,6 +5,16 @@ use crate::tools::Tool;
 use crate::viewer::{ZOOM_STEPS, ZoomMode};
 use eframe::egui;
 
+/// Dateiauswahl für PNG/JPEG; liefert die Bytes (Lesefehler werden protokolliert).
+fn pick_image() -> Option<Vec<u8>> {
+    let path = rfd::FileDialog::new()
+        .add_filter("Bilder", &["png", "jpg", "jpeg"])
+        .pick_file()?;
+    std::fs::read(&path)
+        .inspect_err(|e| tracing::error!(error = %e, path = %path.display(), "Bild lesen"))
+        .ok()
+}
+
 impl FolioApp {
     pub(crate) fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
@@ -21,6 +31,18 @@ impl FolioApp {
                     Tool::TextSelect
                 } else {
                     Tool::FormEdit
+                };
+            }
+            let content_mode = self.tool.is_content_tool();
+            if ui
+                .selectable_label(content_mode, "Inhalt bearbeiten")
+                .on_hover_text("Text der Seite ändern oder neuen Text hinzufügen")
+                .clicked()
+            {
+                self.tool = if content_mode {
+                    Tool::TextSelect
+                } else {
+                    Tool::EditText
                 };
             }
 
@@ -167,6 +189,66 @@ impl FolioApp {
                 if ui.button("Fertig").on_hover_text("Esc").clicked() {
                     self.tool = Tool::TextSelect;
                 }
+            });
+            return;
+        }
+        if self.tool.is_content_tool() {
+            ui.horizontal(|ui| {
+                ui.label("Inhalt bearbeiten:");
+                for tool in Tool::CONTENT {
+                    ui.selectable_value(&mut self.tool, tool, tool.label());
+                }
+                if self.tool == Tool::AddText {
+                    ui.separator();
+                    let s = &mut self.tool_settings;
+                    let mut rgb = s.color(Tool::AddText).to_rgb8();
+                    if ui
+                        .color_edit_button_srgb(&mut rgb)
+                        .on_hover_text("Textfarbe")
+                        .changed()
+                    {
+                        s.set_color(Tool::AddText, foliocraft_core::Color::from_rgb8(rgb));
+                    }
+                    ui.add(
+                        egui::DragValue::new(&mut s.font_size)
+                            .range(4.0..=144.0)
+                            .suffix(" pt"),
+                    )
+                    .on_hover_text("Schriftgröße (Noto Sans)");
+                }
+                if self.tool == Tool::EditImage {
+                    ui.separator();
+                    if ui
+                        .button("Bild einfügen…")
+                        .on_hover_text("PNG oder JPEG wählen, dann auf die Seite klicken")
+                        .clicked()
+                        && let Some(bytes) = pick_image()
+                    {
+                        d.start_image_insert(&bytes);
+                    }
+                    if d.content_edit.selected_image.is_some() {
+                        if ui.button("Ersetzen…").clicked()
+                            && let Some(bytes) = pick_image()
+                        {
+                            d.replace_selected_image(&bytes);
+                        }
+                        if ui.button("Löschen").on_hover_text("Entf").clicked() {
+                            d.delete_selected_image();
+                        }
+                    }
+                }
+                ui.separator();
+                if ui.button("Fertig").on_hover_text("Esc").clicked() {
+                    self.tool = Tool::TextSelect;
+                }
+                ui.weak(match self.tool {
+                    Tool::AddText => "Auf die Seite klicken, Text eingeben, Enter",
+                    Tool::EditImage if d.content_edit.placing_image.is_some() => {
+                        "Auf die Seite klicken, um das Bild zu platzieren (Esc bricht ab)"
+                    }
+                    Tool::EditImage => "Bild ziehen = verschieben, Anfasser unten rechts = Größe",
+                    _ => "Textblock anklicken, ändern, Enter",
+                });
             });
             return;
         }

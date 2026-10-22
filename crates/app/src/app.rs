@@ -26,7 +26,7 @@ pub struct OpenDocument {
     pub thumbs: Thumbnails,
     pub texts: TextCache,
     /// Letzter bekannter Stand der Seitenstruktur (siehe `sync_structure`).
-    pub structure: Vec<(foliocraft_core::PageId, u16)>,
+    pub structure: Vec<(foliocraft_core::PageId, u16, u64)>,
     pub search: SearchState,
     pub selection: Option<TextSelection>,
     /// Laufender Mauszug eines Zeichenwerkzeugs.
@@ -49,6 +49,8 @@ pub struct OpenDocument {
     pub prop_inputs: crate::form_props::PropInputs,
     /// Geprüfte Signaturen.
     pub signatures: crate::signatures::SigState,
+    /// Inhalt bearbeiten: Textblöcke, laufende Eingabe.
+    pub content_edit: crate::content_edit::ContentEdit,
 }
 
 pub struct FolioApp {
@@ -92,10 +94,39 @@ pub struct FolioApp {
     pub(crate) sanitize_dialog: Option<crate::redact::SanitizeDialog>,
 }
 
+/// Name der egui-Schriftfamilie für die eingebettete Noto Sans (Freitext-Overlay).
+pub const NOTO_FAMILY: &str = "noto";
+
+/// Macht die eingebaute Noto Sans in egui verfügbar: als eigene Familie (Freitext sieht im
+/// Overlay aus wie in der Datei) und als Ersatz für Zeichen, die der UI-Schrift fehlen.
+fn install_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert(
+        NOTO_FAMILY.to_owned(),
+        // `from_static`: die Bytes leben das ganze Programm (`&'static [u8]`), kein Kopieren.
+        std::sync::Arc::new(egui::FontData::from_static(
+            foliocraft_core::embedded_font::NOTO_SANS,
+        )),
+    );
+    fonts.families.insert(
+        egui::FontFamily::Name(NOTO_FAMILY.into()),
+        vec![NOTO_FAMILY.to_owned()],
+    );
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        fonts
+            .families
+            .entry(family)
+            .or_default()
+            .push(NOTO_FAMILY.to_owned());
+    }
+    ctx.set_fonts(fonts);
+}
+
 impl FolioApp {
     pub fn new(cc: &eframe::CreationContext<'_>, initial_file: Option<PathBuf>) -> Self {
         // egui würde Strg+Plus/Minus sonst für die UI-Vergrößerung nutzen – wir zoomen das Dokument.
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        install_fonts(&cc.egui_ctx);
 
         // Der Worker weckt die UI auf, wenn ein Bild fertig ist. `Context` ist intern ein
         // `Arc` – das Klonen ist billig und der Klon darf in den Worker-Thread wandern.
@@ -192,7 +223,11 @@ impl FolioApp {
         self.document = Some(OpenDocument {
             thumbs: Thumbnails::new(&sizes),
             texts: TextCache::new(id, sizes.len()),
-            structure: doc.pages().iter().map(|p| (p.id, p.rotation)).collect(),
+            structure: doc
+                .pages()
+                .iter()
+                .map(|p| (p.id, p.rotation, doc.content_stamp(p.object_id)))
+                .collect(),
             search: SearchState::default(),
             selection: None,
             gesture: None,
@@ -200,6 +235,7 @@ impl FolioApp {
             form_edit: Default::default(),
             prop_inputs: Default::default(),
             signatures: Default::default(),
+            content_edit: Default::default(),
             editor: None,
             selected: None,
             annot_drag: None,
@@ -389,6 +425,9 @@ impl OpenDocument {
     /// Annotationen einer Seite in ein beliebiges Rechteck zeichnen (auch für Miniaturen).
     pub fn undo(&mut self) {
         self.annot_drag = None;
+        self.content_edit.editing = None;
+        self.content_edit.selected_image = None;
+        self.content_edit.image_drag = None;
         self.gesture = None;
         if let Err(e) = self.doc.undo() {
             tracing::error!(error = %e, "Rückgängig fehlgeschlagen");
@@ -398,6 +437,9 @@ impl OpenDocument {
 
     pub fn redo(&mut self) {
         self.annot_drag = None;
+        self.content_edit.editing = None;
+        self.content_edit.selected_image = None;
+        self.content_edit.image_drag = None;
         self.gesture = None;
         if let Err(e) = self.doc.redo() {
             tracing::error!(error = %e, "Wiederholen fehlgeschlagen");
@@ -479,6 +521,17 @@ impl FolioApp {
                     self.tool = next;
                 }
             }
+            t if t.is_content_tool() => {
+                d.content_edit.style = (
+                    self.tool_settings.font_size,
+                    self.tool_settings.color(Tool::AddText),
+                );
+                if t == Tool::EditImage {
+                    d.handle_image_edit(ui, &view);
+                } else {
+                    d.handle_content_edit(ui, &view, t);
+                }
+            }
             Tool::Hand => {
                 let resp = &view.response;
                 if resp.dragged() {
@@ -503,6 +556,18 @@ impl FolioApp {
         d.paint_gesture_preview(ui, &view, tool, &self.tool_settings);
         d.paint_search_hits(ui, &view);
         d.paint_selection(ui, &view);
+        if tool == Tool::EditImage {
+            d.paint_image_edit(ui, &view);
+        }
+        if tool.is_content_tool() {
+            d.paint_content_edit(ui, &view, tool);
+        } else if d.content_edit.editing.is_some() {
+            // Modus verlassen: laufende Eingabe übernehmen.
+            d.commit_content_edit();
+        }
+        if let Some(e) = d.content_edit.error.take() {
+            self.error = Some(e);
+        }
         self.paint_sign_area(ui, &view);
     }
 }

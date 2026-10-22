@@ -110,6 +110,10 @@ pub struct FontInfo<'a> {
     encoding: Option<Encoding<'a>>,
     /// /BaseFont, z. B. "ABCDEF+Arial-BoldMT".
     pub base_font: String,
+    /// Schriftdatei eingebettet (/FontFile, /FontFile2, /FontFile3)?
+    pub embedded: bool,
+    /// Eigene Zuordnung Code -> Text (für Schriften, die erst im Modell existieren).
+    unicode: Option<HashMap<u32, String>>,
 }
 
 enum Widths {
@@ -203,6 +207,8 @@ impl<'a> FontInfo<'a> {
                 scale: 0.001,
                 encoding,
                 base_font,
+                embedded: has_font_file(desc.and_then(descriptor)),
+                unicode: None,
             };
         }
 
@@ -262,7 +268,39 @@ impl<'a> FontInfo<'a> {
             scale,
             encoding,
             base_font,
+            embedded: has_font_file(fd),
+            unicode: None,
         }
+    }
+
+    /// Eine Teilmenge der eingebauten Schrift, die (noch) nur im Modell existiert.
+    pub fn from_subset(font: &crate::embedded_font::SubsetFont) -> Self {
+        let (ascent, descent) = crate::embedded_font::ascent_descent();
+        Self {
+            two_byte: true,
+            widths: Widths::Cid {
+                default: 0.0,
+                map: font.widths().map(|(g, w)| (u32::from(g), w)).collect(),
+            },
+            exact: true,
+            ascent: ascent / 1000.0,
+            descent: descent / 1000.0,
+            scale: 0.001,
+            encoding: None,
+            base_font: "NotoSans-Regular".into(),
+            embedded: true,
+            unicode: Some(
+                font.texts()
+                    .map(|(g, t)| (u32::from(g), t.to_owned()))
+                    .collect(),
+            ),
+        }
+    }
+
+    /// Teilmengen-Schrift ("ABCDEF+Name")? Dann enthält sie nur die benutzten Glyphen.
+    pub fn is_subset(&self) -> bool {
+        let b = self.base_font.as_bytes();
+        b.len() > 7 && b[6] == b'+' && b[..6].iter().all(u8::is_ascii_uppercase)
     }
 
     /// Ganz ohne Schrift (z. B. `Tf` mit unbekanntem Namen): grob geschätzt.
@@ -276,6 +314,8 @@ impl<'a> FontInfo<'a> {
             scale: 0.001,
             encoding: None,
             base_font: String::new(),
+            embedded: false,
+            unicode: None,
         }
     }
 
@@ -325,6 +365,13 @@ impl<'a> FontInfo<'a> {
     }
 
     pub fn to_unicode(&self, bytes: &[u8]) -> String {
+        if let Some(map) = &self.unicode {
+            return self
+                .codes(bytes)
+                .into_iter()
+                .filter_map(|(_, _, c)| map.get(&c).map(String::as_str))
+                .collect();
+        }
         self.encoding
             .as_ref()
             .and_then(|e| e.bytes_to_string(bytes).ok())
@@ -334,6 +381,14 @@ impl<'a> FontInfo<'a> {
     pub fn is_two_byte(&self) -> bool {
         self.two_byte
     }
+}
+
+fn has_font_file(fd: Option<&Dictionary>) -> bool {
+    fd.is_some_and(|fd| {
+        [&b"FontFile"[..], b"FontFile2", b"FontFile3"]
+            .iter()
+            .any(|k| fd.has(k))
+    })
 }
 
 /// /W: [c [w1 w2 …]] oder [c_first c_last w].
@@ -391,6 +446,8 @@ pub struct Glyph {
     pub rect: Rect,
     /// Vorschub in Textraum-Einheiten (w0·Tfs + Tc + Tw), ohne horizontale Skalierung.
     pub advance: f32,
+    /// Abstand vom Anfang der Textausgabe (x im Textraum, inkl. `Tz`).
+    pub x: f32,
 }
 
 /// Eine Textausgabe-Operation mit ihren Zeichen.
@@ -411,6 +468,23 @@ pub struct TextShow {
     /// Umfassendes Rechteck aller Zeichen (bei `exact == false` großzügig geschätzt).
     pub bounds: Rect,
     pub two_byte: bool,
+    /// Textmatrix × CTM beim Start (Textraum -> Seite, ohne Schriftgröße).
+    pub matrix: Matrix,
+    /// Gesamtvorschub in x-Richtung des Textraums (inkl. TJ-Verschiebungen und `Tz`).
+    pub width: f32,
+    /// Hochstellung (`Ts`) – die Grundlinie liegt bei y = rise im Textraum.
+    pub rise: f32,
+}
+
+impl TextShow {
+    /// Anfang der Grundlinie auf der Seite.
+    pub fn origin(&self) -> Point {
+        self.matrix.apply(Point::new(0.0, self.rise))
+    }
+    /// Ende der Grundlinie auf der Seite (nach dem letzten Vorschub).
+    pub fn end(&self) -> Point {
+        self.matrix.apply(Point::new(self.width, self.rise))
+    }
 }
 
 impl TextShow {
@@ -550,10 +624,24 @@ pub fn interpret(
     resources: Option<&Dictionary>,
     ctm: Matrix,
 ) -> Interpreted {
+    interpret_with(pdf, ops, resources, ctm, None, None)
+}
+
+/// Wie [`interpret`], mit zusätzlichen Schriften aus dem Modell.
+pub fn interpret_with<'a>(
+    pdf: &'a PdfDoc,
+    ops: Vec<Operation>,
+    resources: Option<&'a Dictionary>,
+    ctm: Matrix,
+    extra_fonts: Option<&'a ExtraFonts>,
+    extra_images: Option<&'a ExtraImages>,
+) -> Interpreted {
     let mut it = Interp {
         pdf,
         resources,
         fonts: HashMap::new(),
+        extra_fonts,
+        extra_images,
     };
     let items = it.run(&ops, ctm);
     Interpreted { ops, items }
@@ -564,6 +652,34 @@ struct Interp<'a> {
     resources: Option<&'a Dictionary>,
     /// Schriften nach Ressourcenname (einmal geladen). `Rc` = geteilter Besitz ohne Kopie.
     fonts: HashMap<Vec<u8>, Rc<FontInfo<'a>>>,
+    /// Schriften und Bilder, die nur im Modell existieren (Vorrang vor den Ressourcen).
+    extra_fonts: Option<&'a ExtraFonts>,
+    extra_images: Option<&'a ExtraImages>,
+}
+
+/// Ressourcenname -> neues Bild-XObject, das noch nicht in der Datei steht.
+pub type ExtraImages = std::collections::BTreeMap<Vec<u8>, crate::image_edit::NewImage>;
+
+/// Ressourcenname -> eingebettete Teilmenge, die noch nicht in der Datei steht.
+pub type ExtraFonts = std::collections::BTreeMap<Vec<u8>, crate::embedded_font::SubsetFont>;
+
+/// Lädt die Schrift `name` aus den Ressourcen (oder `extra`).
+pub fn load_font<'a>(
+    pdf: &'a PdfDoc,
+    resources: Option<&'a Dictionary>,
+    extra: Option<&'a ExtraFonts>,
+    name: &[u8],
+) -> FontInfo<'a> {
+    if let Some(sub) = extra.and_then(|e| e.get(name)) {
+        return FontInfo::from_subset(sub);
+    }
+    let found = resources
+        .and_then(|r| deref_dict(pdf, r.get(b"Font").ok()?))
+        .and_then(|fonts| deref_dict(pdf, fonts.get(name).ok()?));
+    match found {
+        Some(d) => FontInfo::load(pdf, d),
+        None => FontInfo::unknown(),
+    }
 }
 
 impl<'a> Interp<'a> {
@@ -578,13 +694,7 @@ impl<'a> Interp<'a> {
         if let Some(f) = self.fonts.get(name) {
             return f.clone();
         }
-        let info = match self
-            .resource(b"Font", name)
-            .and_then(|(o, _)| o.as_dict().ok())
-        {
-            Some(d) => FontInfo::load(self.pdf, d),
-            None => FontInfo::unknown(),
-        };
+        let info = load_font(self.pdf, self.resources, self.extra_fonts, name);
         let rc = Rc::new(info);
         self.fonts.insert(name.to_vec(), rc.clone());
         rc
@@ -709,6 +819,15 @@ impl<'a> Interp<'a> {
                     let Some(name) = a.first().and_then(|o| o.as_name().ok()) else {
                         continue;
                     };
+                    if self.extra_images.is_some_and(|e| e.contains_key(name)) {
+                        items.push(Item::Image {
+                            op: i,
+                            name: Some(name.to_vec()),
+                            matrix: gs.ctm,
+                            bounds: gs.ctm.apply_rect(Rect::new(0.0, 0.0, 1.0, 1.0)),
+                        });
+                        continue;
+                    }
                     let Some((obj, id)) = self.resource(b"XObject", name) else {
                         continue;
                     };
@@ -778,6 +897,8 @@ impl<'a> Interp<'a> {
         let font = self.font(&gs.font);
         let size = gs.size;
         let th = gs.h_scale;
+        let start = *tm;
+        let mut x = 0.0;
         let mut glyphs = Vec::new();
         // Für ungenaue Breiten: Obergrenze, falls jedes Zeichen 1 em breit wäre.
         let mut worst = *tm;
@@ -812,7 +933,9 @@ impl<'a> Interp<'a> {
                             text,
                             rect: r,
                             advance,
+                            x,
                         });
+                        x += advance * th;
                         *tm = Matrix::translate(advance * th, 0.0).then(tm);
                         if !font.exact {
                             let wtrm = Matrix([size * th, 0.0, 0.0, size, 0.0, gs.rise])
@@ -830,6 +953,7 @@ impl<'a> Interp<'a> {
                     // TJ-Zahl: Verschiebung in Tausendstel Textraum-Einheiten (positiv = nach links).
                     let n = other.as_float().unwrap_or(0.0);
                     let tx = -n / 1000.0 * size * th;
+                    x += tx;
                     *tm = Matrix::translate(tx, 0.0).then(tm);
                     if !font.exact {
                         // Für die Obergrenze nur nach rechts verschieben.
@@ -859,6 +983,9 @@ impl<'a> Interp<'a> {
             exact: font.exact,
             bounds,
             two_byte: font.two_byte,
+            matrix: start.then(&gs.ctm),
+            width: x,
+            rise: gs.rise,
         }
     }
 }

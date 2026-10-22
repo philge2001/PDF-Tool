@@ -5,15 +5,18 @@
 //! Matrix = Identität) – dadurch sind keine Umrechnungen nötig.
 
 use super::{AnnotKind, Annotation, NOTE_SIZE, arrow_size};
-use crate::font;
+use crate::embedded_font::{self, SubsetFont};
 use crate::geometry::{Point, Rect};
-use lopdf::{Dictionary, dictionary};
+use lopdf::{Dictionary, Object, ObjectId, dictionary};
 use std::fmt::Write as _;
 
 pub struct Appearance {
     pub bbox: Rect,
     pub content: Vec<u8>,
     pub resources: Dictionary,
+    /// Benötigte Schrift-Teilmenge (Freitext), Ressourcenname `/FcNoto`. Die Schriftobjekte
+    /// legt erst [`to_stream`] an – `build` selbst bleibt ohne Seiteneffekte.
+    pub font: Option<SubsetFont>,
 }
 
 /// Zahl kompakt formatieren (max. 3 Nachkommastellen, ohne überflüssige Nullen).
@@ -30,6 +33,7 @@ pub fn build(a: &Annotation) -> Appearance {
     let mut s = String::new();
     let mut gs = dictionary! { "Type" => "ExtGState", "CA" => a.opacity, "ca" => a.opacity };
     let mut resources = Dictionary::new();
+    let mut font = None;
 
     s.push_str("/GS0 gs\n");
     match &a.kind {
@@ -184,9 +188,10 @@ pub fn build(a: &Annotation) -> Appearance {
             }
         }
         AnnotKind::FreeText { rect, font_size } => {
-            resources.set("Font", dictionary! { "Helv" => helvetica_dict() });
+            // Unicode-Schrift (eingebettete Teilmenge): beliebige Zeichen, nicht nur WinAnsi.
+            let mut subset = SubsetFont::new();
             let pad = 2.0;
-            let lines = font::wrap(&a.contents, *font_size, rect.width() - 2.0 * pad);
+            let lines = embedded_font::wrap(&a.contents, *font_size, rect.width() - 2.0 * pad);
             let leading = font_size * 1.2;
             // Ausschneiden auf das Rechteck, damit überlanger Text nicht herausragt.
             let _ = writeln!(
@@ -199,7 +204,7 @@ pub fn build(a: &Annotation) -> Appearance {
             );
             let _ = writeln!(
                 s,
-                "BT /Helv {} Tf {rgb} rg {} TL {} {} Td",
+                "BT /FcNoto {} Tf {rgb} rg {} TL {} {} Td",
                 n(*font_size),
                 n(leading),
                 n(rect.x0 + pad),
@@ -209,10 +214,15 @@ pub fn build(a: &Annotation) -> Appearance {
                 if i > 0 {
                     s.push_str("T* ");
                 }
-                s.push_str(&pdf_literal(&font::winansi_encode(line)));
-                s.push_str(" Tj\n");
+                let hex: String = subset
+                    .encode(line)
+                    .iter()
+                    .map(|b| format!("{b:02X}"))
+                    .collect();
+                let _ = writeln!(s, "<{hex}> Tj");
             }
             s.push_str("ET Q\n");
+            font = Some(subset);
         }
     }
     resources.set("ExtGState", dictionary! { "GS0" => gs });
@@ -221,6 +231,7 @@ pub fn build(a: &Annotation) -> Appearance {
         bbox: a.bounds(),
         content: s.into_bytes(),
         resources,
+        font,
     }
 }
 
@@ -316,8 +327,15 @@ pub(crate) fn pdf_literal(bytes: &[u8]) -> String {
     out
 }
 
-/// Das fertige Form-XObject als lopdf-Stream.
-pub fn to_stream(ap: Appearance) -> lopdf::Stream {
+/// Das fertige Form-XObject als lopdf-Stream. `add` legt Hilfsobjekte an (Schrift).
+pub fn to_stream(
+    mut ap: Appearance,
+    add: &mut dyn FnMut(Object) -> ObjectId,
+) -> crate::Result<lopdf::Stream> {
+    if let Some(font) = ap.font.take() {
+        let id = font.write(add)?;
+        ap.resources.set("Font", dictionary! { "FcNoto" => id });
+    }
     let b = ap.bbox;
     let dict = dictionary! {
         "Type" => "XObject",
@@ -325,7 +343,7 @@ pub fn to_stream(ap: Appearance) -> lopdf::Stream {
         "BBox" => vec![b.x0.into(), b.y0.into(), b.x1.into(), b.y1.into()],
         "Resources" => ap.resources,
     };
-    lopdf::Stream::new(dict, ap.content)
+    Ok(lopdf::Stream::new(dict, ap.content))
 }
 
 /// Inhalt als Text (für Tests).
@@ -374,9 +392,14 @@ mod tests {
             },
             Color::BLACK,
         );
-        a.contents = "Grüße (Test)".into();
-        let text = content_text(&a);
-        assert!(text.contains(r"(Gr\374\337e \(Test\)) Tj"), "{text}");
+        a.contents = "Grüße (Test) Привет".into();
+        let ap = build(&a);
+        let text = String::from_utf8_lossy(&ap.content).into_owned();
+        // 2 Byte pro Zeichen (Glyphennummern der Teilmenge), Hex-kodiert.
+        assert!(text.contains("/FcNoto 12 Tf"), "{text}");
+        let hex = text.split('<').nth(1).unwrap().split('>').next().unwrap();
+        assert_eq!(hex.len(), "Grüße (Test) Привет".chars().count() * 4);
+        assert!(ap.font.is_some());
     }
 
     #[test]

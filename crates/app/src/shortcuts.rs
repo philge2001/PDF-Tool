@@ -82,6 +82,8 @@ impl FolioApp {
         if ctx.input(|i| i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace)) {
             if self.tool.is_form_tool() {
                 d.delete_selected_field();
+            } else if self.tool.is_content_tool() {
+                d.delete_selected_image();
             } else {
                 d.delete_selected();
             }
@@ -93,7 +95,11 @@ impl FolioApp {
         }
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
             // Esc der Reihe nach: laufenden Zug abbrechen, Auswahl aufheben, zurück zur Textauswahl.
-            let had_something = d.form.focus.take().is_some()
+            let had_something = d.content_edit.editing.take().is_some()
+                || d.content_edit.placing_image.take().is_some()
+                || d.content_edit.image_drag.take().is_some()
+                || d.content_edit.selected_image.take().is_some()
+                || d.form.focus.take().is_some()
                 || d.form_edit.selected.take().is_some()
                 || d.gesture.take().is_some()
                 || d.annot_drag.take().is_some()

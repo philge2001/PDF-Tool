@@ -3,7 +3,7 @@
 Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 „FolioCraft“ ist ein Arbeitstitel. Lizenz: MIT OR Apache-2.0.
 
-**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare), Phase 4 (Signaturen) und Phase 5 (Schwärzen & Bereinigen) abgeschlossen.
+**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare), Phase 4 (Signaturen), Phase 5 (Schwärzen & Bereinigen) und Phase 6 (Text und Bilder bearbeiten) abgeschlossen.
 
 ## Funktionen (Phase 1)
 
@@ -64,6 +64,16 @@ Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 - „Dokument bereinigen“: Metadaten, JavaScript, eingebettete Dateien, ausgeblendete Ebenen, Kommentare,
   Formulardaten – mit Anzeige, was gefunden wurde
 - Warnung, wenn signierte Dokumente betroffen sind
+
+## Funktionen (Phase 6 – Text und Bilder bearbeiten)
+
+- Freitext mit vollem Unicode (Umlaute, Kyrillisch, Griechisch, Sonderzeichen): eingebettet wird nur die
+  benötigte Teilmenge der Schrift Noto Sans, Kopieren und Suchen liefern den richtigen Text
+- „Inhalt bearbeiten“ → „Text bearbeiten“: Textblock anklicken, ändern, Enter. Die Originalschrift bleibt,
+  fehlende Zeichen kommen aus Noto Sans; der Rest der Seite bleibt an seinem Platz. Rückgängig machbar.
+- „Text hinzufügen“: auf die Seite klicken, Text eingeben (Farbe und Größe in der Leiste)
+- „Bilder“: Bild anklicken und ziehen (verschieben), Anfasser unten rechts (Größe, Seitenverhältnis bleibt),
+  „Ersetzen…“, „Löschen“ (Entf), „Bild einfügen…“ (PNG mit Transparenz oder JPEG, Klick platziert)
 
 ## Bedienung
 
@@ -159,8 +169,17 @@ cargo run -p foliocraft-sign --example sign_check -- datei.pdf [vertraut.pem]   
 cargo run -p foliocraft-sign --example sign_demo -- in.pdf out.pdf [id.p12 passwort]              # signieren (ohne ID: Testzertifikat)
 cargo run -p foliocraft-core --example form_fill -- tests/fixtures/form.pdf                        # Formularfelder auflisten
 cargo run -p foliocraft-core --example form_fill -- in.pdf out.pdf "person.name=Erika" agb=an     # Formular füllen
+cargo run -p foliocraft-core --example text_edit_demo -- in.pdf                                   # Textblöcke von Seite 1
+cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "Lorem=Neuer Text" "+72,500=Hallo"  # bearbeiten/hinzufügen
+cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "!bild.png@300,400,120" "#0=foto.jpg" "-#1"  # Bilder
 ```
 
 ## Projektstruktur
 
 Siehe [CLAUDE.md](CLAUDE.md) für Architektur und Konventionen.
+
+## Mitgelieferte Schrift
+
+`assets/fonts/NotoSans-Regular.ttf` – Noto Sans, © The Noto Project Authors, unter der
+SIL Open Font License 1.1 (`assets/fonts/OFL.txt`). Sie wird in das Programm eingebaut und als
+Teilmenge in PDFs eingebettet; die OFL erlaubt das ausdrücklich.

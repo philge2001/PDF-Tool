@@ -110,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             font_size: 14.0,
         },
         Color::rgb(0.6, 0.0, 0.6),
-        "Freitext mit Umlauten: Grüße aus Köln! Dieser Text ist lang genug, um umgebrochen zu werden.",
+        "Freitext mit Unicode: Grüße aus Köln, Привет, Ωμέγα € – dieser Text ist lang genug für einen Umbruch.",
     );
 
     doc.save_as(&output)?;

@@ -3,11 +3,13 @@
 mod annot_draw;
 mod app;
 mod comments;
+mod content_edit;
 mod file_ops;
 mod form_draw;
 mod form_edit;
 mod form_props;
 mod forms;
+mod image_tool;
 mod jobs;
 mod menu;
 mod page_dialogs;

@@ -18,7 +18,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 ## Workspace
 | Crate | Pfad | Aufgabe | Darf abhängen von |
 |---|---|---|---|
-| foliocraft-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg |
+| foliocraft-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg, ttf-parser, subsetter, png |
 | foliocraft-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
 | foliocraft-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore |
 | foliocraft-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, eframe, rfd, der, ureq |
@@ -47,6 +47,11 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Kommentare und UI-Texte auf Deutsch, Bezeichner auf Englisch.
 - Tests für core: Roundtrip „erstellen → speichern → neu laden → vergleichen“ mit den Fixtures.
 - Fixtures in `tests/fixtures/` werden ausschließlich per `gen_fixtures` erzeugt.
+
+## Meilensteine Phase 6 (Text und Bilder bearbeiten)
+- [x] 6.1 Schriften einbetten (Noto Sans als Teilmenge, Unicode-Freitext)
+- [x] 6.2 Text bearbeiten (Textblöcke, Originalschrift, Ersatzschrift, neuer Text)
+- [x] 6.3 Bilder bearbeiten + Abschluss
 
 ## Meilensteine Phase 5 (Schwärzen & Bereinigen)
 - [x] 5.1 Content-Stream-Interpreter (core)
@@ -91,13 +96,18 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 
 ## Bekannte Einschränkungen
 - Overlay vs. Datei: Hervorhebungen im Overlay halbtransparent (egui kann kein Multiply),
-  Freitext im Overlay mit egui-Schrift (Zeilenumbrüche identisch) und auf gedrehten Seiten nicht mitgedreht.
+  Freitext im Overlay mit derselben Noto Sans wie in der Datei, auf gedrehten Seiten aber nicht mitgedreht.
 - Importierte Annotationen mit exotischer Darstellung (z. B. Wolkenrand) werden vereinfacht neu gezeichnet.
 - Gelöschte Seiten sind nach inkrementellem Speichern nicht mehr erreichbar, ihre Bytes stehen aber
   noch in der Datei – „Schwärzen → Dokument bereinigen“ schreibt die Datei komplett neu.
 - Dokumente werden im UI-Thread geladen (lopdf); sehr große Dateien (> 100 MB) blockieren kurz.
 - Verschlüsselte PDFs mit Benutzerpasswort werden noch nicht unterstützt (Passwortdialog fehlt).
 - Annotationen auf gedrehten Seiten: Geometrie korrekt, Freitext-Overlay nicht mitgedreht.
+- Text bearbeiten: blockweise (eine Zeile/ein Lauf), kein Umbruch über Zeilen; Kerning des Blocks geht verloren;
+  aus eingebetteten Teilmengen nur Zeichen, die auf der Seite schon vorkommen (Rest in Noto Sans, kein CJK);
+  der Seiteninhalt wird neu kodiert (ein Stream); eingefügte, ungespeicherte Seiten erst nach dem Speichern.
+- Bilder bearbeiten: nur Bilder direkt im Seiteninhalt (nicht in Formular-XObjects); Zeichenreihenfolge bleibt;
+  PNG-Farbprofile/Gamma werden ignoriert.
 - Formularfelder im Overlay mit egui-Schrift; eigene Erscheinungsbilder von Kontrollkästchen/Optionsfeldern
   (z. B. Kreuz statt Häkchen) zeigt FolioCraft vereinfacht – in der Datei bleiben sie erhalten.
   Felder auf gedrehten Seiten: Text nicht mitgedreht. Formular-JavaScript (Berechnungen, Formate) wird nicht ausgeführt.
@@ -107,7 +117,8 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   DocMDP-Berechtigungen werden angezeigt, aber Änderungen danach nicht darauf geprüft. Digitale IDs nur als
   PKCS#12-Datei (kein Windows-Zertifikatspeicher, keine Smartcards). Vertrauen nur über selbst
   hinterlegte Zertifikate (keine eingebaute Liste von Stammzertifikaten).
-- FreeText/Notizen nutzen Helvetica (WinAnsi): Westeuropäische Zeichen gehen, CJK/Kyrillisch noch nicht.
+- Freitext nutzt die eingebettete Noto Sans (Latein, Kyrillisch, Griechisch); CJK fehlt der Schrift.
+  Formularfelder und sichtbare Signaturen nutzen weiterhin Helvetica (WinAnsi).
 
 ## Wichtige Module
 - `core::document` – `Document::open`, `PageInfo` (CropBox, /Rotate, Umrechnung PDF ↔ Anzeige)
@@ -142,6 +153,22 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   `FontInfo` (/Widths, CID /W+/DW, Type3 /FontMatrix, Helvetica/Courier ohne /Widths; sonst `exact = false`
   und `TextShow::bounds` als großzügige Obergrenze). Ops kommen von `lopdf::content::Content::decode`
   (inkl. Inline-Bildern als `BI` mit Stream-Operand)
+- `core::embedded_font` – Noto Sans (`assets/fonts`, OFL, per `include_bytes!` eingebaut): Breiten, Umbruch,
+  `SubsetFont` (Text -> 2-Byte-Glyphencodes, `write` = Type0/CIDFontType2 + /W + ToUnicode als Teilmenge).
+  Die App registriert dieselbe Schrift als egui-Familie `app::NOTO_FAMILY` (Freitext-Overlay)
+- `core::text_edit` – `PageContent` (bearbeiteter Inhalt einer Seite in `Model::page_content`, mit
+  Noto-Teilmengen als `ExtraFonts` und `stamp` aus `Model::content_epoch`), `ReplacePageContent`-Command,
+  `Document::text_blocks`/`edit_text_block`/`add_text`/`content_stamp`. Blöcke = gleiche Schrift/Größe/Grundlinie
+  (Ersatzschrift-Läufe gehören dazu); beim Bearbeiten bleibt der Vorschub erhalten (Ausgleichs-TJ),
+  Originalschrift nur mit sicher enthaltenen Codes. `save::write_page_contents` schreibt Stream + Ressourcen
+- `core::image_edit` – `PageImage` (Do/Inline-Bild, Matrix, Bounds, Stempel), `Document::page_images`/
+  `transform_image` (q cm … Q; vorhandene Klammer wird angepasst)/`delete_image`/`replace_image` (Seitenverhältnis,
+  zentriert)/`insert_image`; `NewImage::from_bytes` (PNG → Flate + /SMask, JPEG → DCTDecode). Neue Bilder liegen
+  bis zum Speichern in `PageContent::images` (Interpreter: `ExtraImages`), danach nur noch in der Datei
+- `app::image_tool` – Werkzeug „Bilder“: auswählen, ziehen, Anfasser (gleichmäßig skalieren), Ersetzen/Löschen/
+  Einfügen (Klick platziert); Auswahl wird nach Änderungen über die Bildmitte wiedergefunden
+- `app::content_edit` – Modus „Inhalt bearbeiten“ (`Tool::EditText`/`AddText`): Blöcke pro Seite gecacht
+  (nach Stempel), Eingabefeld über dem Block; `sync_structure` erkennt Inhaltsänderungen am Stempel
 - `core::font` (Helvetica-Breiten, WinAnsi, Umbruch), `core::pdf_string` (Textstrings), `core::date`
 - `core::text` – `PageText`/`CharBox` (Zeichen + Rechteck im PDF-Raum), `find`, `range_rects`, `char_at`
 - `render::worker` – Textextraktion (`extract_text`, Event `Text`), eigene Warteschlange:

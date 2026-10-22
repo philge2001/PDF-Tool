@@ -39,6 +39,12 @@ pub enum Tool {
     FieldRadio,
     FieldCombo,
     FieldList,
+    /// Inhalt bearbeiten: Textblock anklicken und ändern.
+    EditText,
+    /// Inhalt bearbeiten: neuen Text auf die Seite setzen.
+    AddText,
+    /// Inhalt bearbeiten: Bilder auswählen, verschieben, skalieren, ersetzen, löschen.
+    EditImage,
 }
 
 impl Tool {
@@ -64,6 +70,9 @@ impl Tool {
             Tool::FieldRadio => "Optionsfeld",
             Tool::FieldCombo => "Kombinationsfeld",
             Tool::FieldList => "Listenfeld",
+            Tool::EditText => "Text bearbeiten",
+            Tool::AddText => "Text hinzufügen",
+            Tool::EditImage => "Bilder",
         }
     }
 
@@ -92,6 +101,13 @@ impl Tool {
     /// Gehört das Werkzeug zum Modus "Formular bearbeiten"?
     pub fn is_form_tool(self) -> bool {
         Self::FORM.contains(&self)
+    }
+
+    pub const CONTENT: [Tool; 3] = [Tool::EditText, Tool::AddText, Tool::EditImage];
+
+    /// Gehört das Werkzeug zum Modus "Inhalt bearbeiten"?
+    pub fn is_content_tool(self) -> bool {
+        Self::CONTENT.contains(&self)
     }
 
     pub const REDACT: [Tool; 2] = [Tool::RedactText, Tool::RedactArea];
