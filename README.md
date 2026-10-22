@@ -65,6 +65,11 @@ Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
   Formulardaten – mit Anzeige, was gefunden wurde
 - Warnung, wenn signierte Dokumente betroffen sind
 
+## Funktionen (Phase 6 – Text und Bilder bearbeiten, in Arbeit)
+
+- Freitext mit vollem Unicode (Umlaute, Kyrillisch, Griechisch, Sonderzeichen): eingebettet wird nur die
+  benötigte Teilmenge der Schrift Noto Sans, Kopieren und Suchen liefern den richtigen Text
+
 ## Bedienung
 
 | Aktion | Tastenkürzel |
@@ -164,3 +169,9 @@ cargo run -p foliocraft-core --example form_fill -- in.pdf out.pdf "person.name=
 ## Projektstruktur
 
 Siehe [CLAUDE.md](CLAUDE.md) für Architektur und Konventionen.
+
+## Mitgelieferte Schrift
+
+`assets/fonts/NotoSans-Regular.ttf` – Noto Sans, © The Noto Project Authors, unter der
+SIL Open Font License 1.1 (`assets/fonts/OFL.txt`). Sie wird in das Programm eingebaut und als
+Teilmenge in PDFs eingebettet; die OFL erlaubt das ausdrücklich.

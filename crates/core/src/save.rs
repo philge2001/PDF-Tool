@@ -201,9 +201,10 @@ pub(crate) fn incremental(doc: &Document) -> Result<SaveOutput> {
 
             let base = a.source.and_then(|s| pdf.get_dictionary(s.object_id).ok());
             let mut dict = export::to_dict(&a, info.object_id, base);
-            let ap_id = inc
-                .new_document
-                .add_object(appearance::to_stream(appearance::build(&a)));
+            let stream = appearance::to_stream(appearance::build(&a), &mut |o| {
+                inc.new_document.add_object(o)
+            })?;
+            let ap_id = inc.new_document.add_object(stream);
             dict.set("AP", dictionary! { "N" => ap_id });
             let obj_id = match a.source {
                 // Geändert: unter derselben Objektnummer neu schreiben (ersetzt das alte Objekt).

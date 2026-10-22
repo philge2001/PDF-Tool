@@ -10,7 +10,7 @@ use eframe::egui::{
 };
 use foliocraft_core::annotation::appearance::arrow_head;
 use foliocraft_core::annotation::{NOTE_SIZE, arrow_size};
-use foliocraft_core::{AnnotKind, Annotation, Color, PageInfo, Point, font};
+use foliocraft_core::{AnnotKind, Annotation, Color, PageInfo, Point};
 
 pub fn color32(c: Color, alpha: f32) -> Color32 {
     let [r, g, b] = c.to_rgb8();
@@ -117,8 +117,16 @@ pub fn paint(painter: &egui::Painter, info: &PageInfo, page_rect: Rect, a: &Anno
         AnnotKind::FreeText { rect, font_size } => {
             let sr = rect_to_screen(*rect);
             let pad = 2.0;
-            let lines = font::wrap(&a.contents, *font_size, rect.width() - 2.0 * pad);
-            let fid = FontId::proportional((font_size * scale).max(1.0));
+            // Gleicher Umbruch wie in der Datei (Breiten der eingebetteten Schrift).
+            let lines = foliocraft_core::embedded_font::wrap(
+                &a.contents,
+                *font_size,
+                rect.width() - 2.0 * pad,
+            );
+            let fid = FontId::new(
+                (font_size * scale).max(1.0),
+                egui::FontFamily::Name(crate::app::NOTO_FAMILY.into()),
+            );
             let leading = font_size * 1.2 * scale;
             let painter = painter.with_clip_rect(sr.intersect(painter.clip_rect()));
             for (i, line) in lines.iter().enumerate() {

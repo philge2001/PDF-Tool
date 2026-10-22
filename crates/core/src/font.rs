@@ -95,6 +95,17 @@ pub fn text_width(text: &str, font_size: f32) -> f32 {
 /// Bricht Text in Zeilen um, die höchstens `max_width` breit sind. Harte Umbrüche (`\n`)
 /// bleiben erhalten; zu lange Wörter werden notfalls mitten im Wort getrennt.
 pub fn wrap(text: &str, font_size: f32, max_width: f32) -> Vec<String> {
+    wrap_with(text, font_size, max_width, &char_width)
+}
+
+/// Wie [`wrap`], aber mit beliebiger Breitenfunktion (z. B. der eingebetteten Unicode-Schrift).
+pub fn wrap_with(
+    text: &str,
+    font_size: f32,
+    max_width: f32,
+    char_width: &dyn Fn(char, f32) -> f32,
+) -> Vec<String> {
+    let text_width = |s: &str, size: f32| -> f32 { s.chars().map(|c| char_width(c, size)).sum() };
     let mut lines = Vec::new();
     for paragraph in text.split('\n') {
         let mut line = String::new();

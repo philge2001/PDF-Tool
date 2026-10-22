@@ -92,10 +92,39 @@ pub struct FolioApp {
     pub(crate) sanitize_dialog: Option<crate::redact::SanitizeDialog>,
 }
 
+/// Name der egui-Schriftfamilie für die eingebettete Noto Sans (Freitext-Overlay).
+pub const NOTO_FAMILY: &str = "noto";
+
+/// Macht die eingebaute Noto Sans in egui verfügbar: als eigene Familie (Freitext sieht im
+/// Overlay aus wie in der Datei) und als Ersatz für Zeichen, die der UI-Schrift fehlen.
+fn install_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert(
+        NOTO_FAMILY.to_owned(),
+        // `from_static`: die Bytes leben das ganze Programm (`&'static [u8]`), kein Kopieren.
+        std::sync::Arc::new(egui::FontData::from_static(
+            foliocraft_core::embedded_font::NOTO_SANS,
+        )),
+    );
+    fonts.families.insert(
+        egui::FontFamily::Name(NOTO_FAMILY.into()),
+        vec![NOTO_FAMILY.to_owned()],
+    );
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        fonts
+            .families
+            .entry(family)
+            .or_default()
+            .push(NOTO_FAMILY.to_owned());
+    }
+    ctx.set_fonts(fonts);
+}
+
 impl FolioApp {
     pub fn new(cc: &eframe::CreationContext<'_>, initial_file: Option<PathBuf>) -> Self {
         // egui würde Strg+Plus/Minus sonst für die UI-Vergrößerung nutzen – wir zoomen das Dokument.
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        install_fonts(&cc.egui_ctx);
 
         // Der Worker weckt die UI auf, wenn ein Bild fertig ist. `Context` ist intern ein
         // `Arc` – das Klonen ist billig und der Klon darf in den Worker-Thread wandern.

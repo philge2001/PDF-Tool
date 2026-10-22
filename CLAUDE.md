@@ -18,7 +18,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 ## Workspace
 | Crate | Pfad | Aufgabe | Darf abhängen von |
 |---|---|---|---|
-| foliocraft-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg |
+| foliocraft-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg, ttf-parser, subsetter |
 | foliocraft-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
 | foliocraft-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore |
 | foliocraft-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, eframe, rfd, der, ureq |
@@ -47,6 +47,11 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Kommentare und UI-Texte auf Deutsch, Bezeichner auf Englisch.
 - Tests für core: Roundtrip „erstellen → speichern → neu laden → vergleichen“ mit den Fixtures.
 - Fixtures in `tests/fixtures/` werden ausschließlich per `gen_fixtures` erzeugt.
+
+## Meilensteine Phase 6 (Text und Bilder bearbeiten)
+- [x] 6.1 Schriften einbetten (Noto Sans als Teilmenge, Unicode-Freitext)
+- [ ] 6.2 Text bearbeiten (Zeilenblöcke, Originalschrift, Ersatzschrift, neuer Text)
+- [ ] 6.3 Bilder bearbeiten + Abschluss
 
 ## Meilensteine Phase 5 (Schwärzen & Bereinigen)
 - [x] 5.1 Content-Stream-Interpreter (core)
@@ -91,7 +96,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 
 ## Bekannte Einschränkungen
 - Overlay vs. Datei: Hervorhebungen im Overlay halbtransparent (egui kann kein Multiply),
-  Freitext im Overlay mit egui-Schrift (Zeilenumbrüche identisch) und auf gedrehten Seiten nicht mitgedreht.
+  Freitext im Overlay mit derselben Noto Sans wie in der Datei, auf gedrehten Seiten aber nicht mitgedreht.
 - Importierte Annotationen mit exotischer Darstellung (z. B. Wolkenrand) werden vereinfacht neu gezeichnet.
 - Gelöschte Seiten sind nach inkrementellem Speichern nicht mehr erreichbar, ihre Bytes stehen aber
   noch in der Datei – „Schwärzen → Dokument bereinigen“ schreibt die Datei komplett neu.
@@ -107,7 +112,8 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   DocMDP-Berechtigungen werden angezeigt, aber Änderungen danach nicht darauf geprüft. Digitale IDs nur als
   PKCS#12-Datei (kein Windows-Zertifikatspeicher, keine Smartcards). Vertrauen nur über selbst
   hinterlegte Zertifikate (keine eingebaute Liste von Stammzertifikaten).
-- FreeText/Notizen nutzen Helvetica (WinAnsi): Westeuropäische Zeichen gehen, CJK/Kyrillisch noch nicht.
+- Freitext nutzt die eingebettete Noto Sans (Latein, Kyrillisch, Griechisch); CJK fehlt der Schrift.
+  Formularfelder und sichtbare Signaturen nutzen weiterhin Helvetica (WinAnsi).
 
 ## Wichtige Module
 - `core::document` – `Document::open`, `PageInfo` (CropBox, /Rotate, Umrechnung PDF ↔ Anzeige)
@@ -142,6 +148,9 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   `FontInfo` (/Widths, CID /W+/DW, Type3 /FontMatrix, Helvetica/Courier ohne /Widths; sonst `exact = false`
   und `TextShow::bounds` als großzügige Obergrenze). Ops kommen von `lopdf::content::Content::decode`
   (inkl. Inline-Bildern als `BI` mit Stream-Operand)
+- `core::embedded_font` – Noto Sans (`assets/fonts`, OFL, per `include_bytes!` eingebaut): Breiten, Umbruch,
+  `SubsetFont` (Text -> 2-Byte-Glyphencodes, `write` = Type0/CIDFontType2 + /W + ToUnicode als Teilmenge).
+  Die App registriert dieselbe Schrift als egui-Familie `app::NOTO_FAMILY` (Freitext-Overlay)
 - `core::font` (Helvetica-Breiten, WinAnsi, Umbruch), `core::pdf_string` (Textstrings), `core::date`
 - `core::text` – `PageText`/`CharBox` (Zeichen + Rechteck im PDF-Raum), `find`, `range_rects`, `char_at`
 - `render::worker` – Textextraktion (`extract_text`, Event `Text`), eigene Warteschlange:

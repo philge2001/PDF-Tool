@@ -12,6 +12,8 @@ lopdf.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 zune-jpeg.workspace = true
+ttf-parser.workspace = true
+subsetter.workspace = true
 
 [lints]
 workspace = true
