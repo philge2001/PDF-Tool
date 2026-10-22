@@ -82,6 +82,8 @@ pub struct FolioApp {
     pub(crate) trust: foliocraft_sign::TrustStore,
     pub(crate) trust_version: u64,
     pub(crate) show_signatures: bool,
+    pub(crate) sign_dialog: Option<crate::sign_ui::SignDialog>,
+    pub(crate) cert_dialog: Option<crate::sign_ui::CertDialog>,
 }
 
 impl FolioApp {
@@ -126,6 +128,8 @@ impl FolioApp {
             trust: Default::default(),
             trust_version: 0,
             show_signatures: false,
+            sign_dialog: None,
+            cert_dialog: None,
         };
         app.rebuild_trust();
         if let Some(path) = initial_file {
@@ -407,18 +411,24 @@ impl OpenDocument {
 impl FolioApp {
     /// Hauptansicht: Seiten zeichnen, Werkzeug-Interaktion, Overlays.
     fn document_view(&mut self, ui: &mut egui::Ui) {
+        // Vor dem Ausleihen von `self.document` abfragen (beides sind Teile von `self`).
+        let placing = self.is_placing_signature();
         let Some(d) = &mut self.document else { return };
         let view = d.viewer.show(ui);
         let tool = self.tool;
         // Formularfelder lassen sich mit den beiden Auswahlwerkzeugen ausfüllen. Liegt die Maus
         // über einem Feld, bekommt das Werkzeug den Klick nicht.
-        let fill_forms = matches!(tool, Tool::TextSelect | Tool::Select);
+        let fill_forms = !placing && matches!(tool, Tool::TextSelect | Tool::Select);
         let over_field = fill_forms && d.handle_form_input(ui, &view);
         if fill_forms {
             d.handle_form_keys(ui.ctx(), &view);
         }
+        if placing {
+            self.handle_sign_placement(ui, &view);
+        }
+        let Some(d) = &mut self.document else { return };
         match tool {
-            _ if over_field => {}
+            _ if over_field || placing => {}
             Tool::Select => {
                 d.handle_annotation_select(ui, &view, true);
             }
@@ -468,6 +478,7 @@ impl FolioApp {
         d.paint_gesture_preview(ui, &view, tool, &self.tool_settings);
         d.paint_search_hits(ui, &view);
         d.paint_selection(ui, &view);
+        self.paint_sign_area(ui, &view);
     }
 }
 
@@ -587,6 +598,8 @@ impl eframe::App for FolioApp {
         self.merge_dialog_ui(&ctx);
         self.extract_dialog_ui(&ctx);
         self.split_dialog_ui(&ctx);
+        self.sign_dialog_ui(&ctx);
+        self.cert_dialog_ui(&ctx);
         self.job_ui(&ctx);
         self.info_dialog(&ctx);
         self.unsaved_changes_dialog(&ctx);

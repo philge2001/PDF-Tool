@@ -90,7 +90,7 @@ pub(crate) fn write(doc: &Document, inc: &mut IncrementalDocument) -> Result<For
     }
 
     if !top_added.is_empty() || !top_removed.is_empty() {
-        update_acroform(doc, inc, &top_added, &top_removed)?;
+        update_acroform(doc.pdf(), inc, &top_added, &top_removed, None)?;
     }
     Ok(ch)
 }
@@ -467,7 +467,7 @@ fn is_ref(o: &Object, id: ObjectId) -> bool {
     o.as_reference().is_ok_and(|r| r == id)
 }
 
-fn dict_mut(inc: &mut IncrementalDocument, id: ObjectId) -> Result<&mut Dictionary> {
+pub(crate) fn dict_mut(inc: &mut IncrementalDocument, id: ObjectId) -> Result<&mut Dictionary> {
     Ok(inc
         .new_document
         .get_object_mut(id)
@@ -484,7 +484,7 @@ fn parent_of(pdf: &lopdf::Document, id: ObjectId) -> Option<ObjectId> {
 }
 
 /// Ändert die /Kids eines Felds (steht /Kids als eigenes Objekt, wird es direkt eingetragen).
-fn edit_kids(
+pub(crate) fn edit_kids(
     inc: &mut IncrementalDocument,
     field: ObjectId,
     f: impl FnOnce(&mut Vec<Object>),
@@ -497,7 +497,7 @@ fn edit_kids(
 }
 
 /// Ein Array-Eintrag eines Objekts, Verweise aufgelöst (aus dem neuen oder alten Stand).
-fn resolved_array(inc: &IncrementalDocument, id: ObjectId, key: &[u8]) -> Vec<Object> {
+pub(crate) fn resolved_array(inc: &IncrementalDocument, id: ObjectId, key: &[u8]) -> Vec<Object> {
     let get = |id: ObjectId| {
         inc.new_document
             .get_object(id)
@@ -519,13 +519,15 @@ fn resolved_array(inc: &IncrementalDocument, id: ObjectId, key: &[u8]) -> Vec<Ob
 
 /// Trägt neue Felder in /AcroForm /Fields ein (legt /AcroForm bei Bedarf an) und
 /// entfernt gelöschte. Sorgt außerdem für die Schrift /Helv in /DR, die /DA benutzt.
-fn update_acroform(
-    doc: &Document,
+/// `sig_flags`: bei Signaturen 3 (SignaturesExist | AppendOnly) – sagt Readern, dass sie
+/// nur noch inkrementell speichern dürfen.
+pub(crate) fn update_acroform(
+    pdf: &lopdf::Document,
     inc: &mut IncrementalDocument,
     added: &[ObjectId],
     removed: &HashSet<ObjectId>,
+    sig_flags: Option<i64>,
 ) -> Result<()> {
-    let pdf = doc.pdf();
     let root = pdf
         .trailer
         .get(b"Root")
@@ -581,6 +583,9 @@ fn update_acroform(
     af.set("DR", dr);
     if !af.has(b"DA") {
         af.set("DA", Object::string_literal("/Helv 0 Tf 0 g"));
+    }
+    if let Some(flags) = sig_flags {
+        af.set("SigFlags", flags);
     }
     Ok(())
 }

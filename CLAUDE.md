@@ -20,7 +20,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 |---|---|---|---|
 | foliocraft-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing |
 | foliocraft-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
-| foliocraft-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2) |
+| foliocraft-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore |
 | foliocraft-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, eframe, rfd, der |
 
 ## Architekturregeln
@@ -50,7 +50,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 
 ## Meilensteine Phase 4 (Signaturen)
 - [x] 4.1 Signaturen prüfen (sign-Crate, Panel, Vertrauensspeicher)
-- [ ] 4.2 Signieren PAdES B-B (PKCS#12, Platzhalter, CMS)
+- [x] 4.2 Signieren PAdES B-B (PKCS#12, Platzhalter, CMS)
 - [ ] 4.3 Zeitstempel (PAdES B-T) + Abschluss
 
 ## Meilensteine Phase 3 (Formulare)
@@ -180,6 +180,15 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - `sign::cert` – `CertInfo`, `TrustStore` (PEM aus den Einstellungen), `build_chain` → `Trust` (Trusted/Unknown/Invalid)
 - `sign::verify` – `verify_document` → `SignatureReport` (ByteRange-Prüfung, CMS, messageDigest, Signatur,
   Kette, spätere Revisionen, DocMDP); `Status` für die Ampel
+- `core::signature_prep` – PDF-Teil des Signierens ohne Kryptografie: `prepare_signature` (Revision mit
+  Feld/Widget/Darstellung, /SigFlags 3, Platzhalter für /Contents und /ByteRange – ByteRange wird sofort
+  eingetragen, Länge bleibt gleich), `PreparedSignature::{signed_parts, finish}`, `empty_signature_fields`
+- `sign::signer` – `Signer` (Schlüssel + Zertifikat + Kette): `from_pkcs12`, `to_pkcs12`, `self_signed`
+  (Profil Leaf mit sich selbst als Aussteller, EKU E-Mail + Dokumentsignatur), `PrivateKey::sign_prehashed`
+- `sign::create` – `build_cms` (PAdES B-B: contentType, messageDigest, signing-certificate-v2; keine
+  signingTime), `sign_pdf` (SubFilter ETSI.CAdES.detached, 24 KB Platz)
+- `app::sign_ui` – Dialog „Dokument signieren“ (ID-Datei, Passwort nur im Speicher, Grund/Ort/Kontakt,
+  sichtbar = Bereich aufziehen, unsichtbar, vorhandenes Feld), Ergebnis als neue Datei; „Testzertifikat erstellen“
 - `app::signatures` – `SigState` (neu prüfen bei neuen Bytes/Vertrauensstand), Hinweisleiste, Panel
   (Details, Zertifikate, „vertrauen“, „Signierte Fassung speichern“), Vertrauensspeicher in den Einstellungen
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
@@ -194,6 +203,8 @@ Datei-/Ordnerdialoge (rfd über xdg-portal) funktionieren im Container nicht –
 PDFium liegt lokal in `pdfium/lib` (gitignored).
 `cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf` schreibt jeden Annotationstyp –
 zur Gegenprobe mit anderen Readern (z. B. `pdftoppm -png out.pdf x`).
+`cargo run -p foliocraft-sign --example sign_demo -- in.pdf out.pdf [id.p12 pw] [rsa]` signiert (ohne ID mit Testzertifikat).
+Gegenprobe: `pdfsig out.pdf`; CMS mit `openssl cms -verify -binary -inform DER -content daten.bin`.
 `cargo run -p foliocraft-sign --example sign_check -- datei.pdf [vertraut.pem]` prüft Signaturen (Gegenprobe: `pdfsig`).
 Unabhängig signierte Test-PDFs: OpenSSL (`openssl cms -sign -binary -outform DER`) über die ByteRange.
 `cargo run -p foliocraft-core --example form_fill -- in.pdf [out.pdf name=Wert …]` listet/füllt Formularfelder. Screenshots über Xvfb + xdotool + ImageMagick `import`.

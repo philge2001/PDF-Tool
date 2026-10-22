@@ -33,13 +33,15 @@ rfd = "0.17"
 # Bewusst der stabile 0.2/0.7/0.9/0.13-Stand: die nächste Generation ist noch Release-Candidate.
 cms = "0.2.3"                                                # CMS/PKCS#7 SignedData lesen und bauen
 x509-cert = { version = "0.2.5", features = ["builder"] }   # Zertifikate lesen, Testzertifikate bauen
-der = { version = "0.7", features = ["oid", "std"] }        # ASN.1-DER-Kodierung
+der = { version = "0.7", features = ["oid", "std", "derive"] } # ASN.1-DER-Kodierung
 spki = "0.7"                                                 # öffentliche Schlüssel aus Zertifikaten
 rsa = { version = "0.9", features = ["sha2"] }              # RSA-Signaturen (PKCS#1 v1.5)
 p256 = "0.13"                                                # ECDSA mit Kurve P-256
 p384 = "0.13"                                                # ECDSA mit Kurve P-384
 sha1 = { version = "0.10", features = ["oid"] }             # SHA-1 nur zum PRÜFEN alter Signaturen
 sha2 = { version = "0.10", features = ["oid"] }             # SHA-256/384/512
+rand_core = { version = "0.6", features = ["getrandom"] }  # sichere Zufallszahlen (Schlüssel, Seriennummern)
+p12-keystore = "0.2.1"                                       # PKCS#12-Dateien (.p12/.pfx) lesen/schreiben
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

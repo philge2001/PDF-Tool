@@ -182,6 +182,21 @@ impl FolioApp {
                     }
                 });
             });
+            ui.menu_button("Signieren", |ui| {
+                if ui
+                    .add_enabled(self.document.is_some(), Button::new("Dokument signieren…"))
+                    .clicked()
+                {
+                    self.open_sign_dialog();
+                    ui.close();
+                }
+                if ui.button("Testzertifikat erstellen…").clicked() {
+                    self.open_cert_dialog();
+                    ui.close();
+                }
+                ui.separator();
+                ui.checkbox(&mut self.show_signatures, "Signatur-Panel");
+            });
             ui.menu_button("Ansicht", |ui| {
                 ui.checkbox(&mut self.show_thumbnails, "Seitenleiste");
                 ui.checkbox(&mut self.show_comments, "Kommentare");

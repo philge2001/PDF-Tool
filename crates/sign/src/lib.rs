@@ -4,8 +4,12 @@
 //! reines Rust (RustCrypto) und ohne PDFium testbar.
 
 pub mod cert;
+pub mod create;
 pub mod crypto;
+pub mod signer;
 pub mod verify;
 
 pub use cert::{CertInfo, Trust, TrustStore};
+pub use create::sign_pdf;
+pub use signer::{KeyKind, Signer, SignerError};
 pub use verify::{Integrity, SignatureReport, Status, unsigned_fields, verify_document};
