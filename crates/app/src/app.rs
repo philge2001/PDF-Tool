@@ -89,6 +89,7 @@ pub struct FolioApp {
     /// Ergebnis-Dokument eines laufenden Jobs (z. B. Schwärzen) und sein Pfad.
     pub(crate) pending_doc: Option<(crate::redact::DocSlot, Option<PathBuf>)>,
     pub(crate) redact_confirm: bool,
+    pub(crate) sanitize_dialog: Option<crate::redact::SanitizeDialog>,
 }
 
 impl FolioApp {
@@ -138,6 +139,7 @@ impl FolioApp {
             open_after_job: None,
             pending_doc: None,
             redact_confirm: false,
+            sanitize_dialog: None,
         };
         app.rebuild_trust();
         if let Some(path) = initial_file {
@@ -625,6 +627,7 @@ impl eframe::App for FolioApp {
         self.extract_dialog_ui(&ctx);
         self.split_dialog_ui(&ctx);
         self.redact_confirm_ui(&ctx);
+        self.sanitize_dialog_ui(&ctx);
         self.sign_dialog_ui(&ctx);
         self.cert_dialog_ui(&ctx);
         self.job_ui(&ctx);

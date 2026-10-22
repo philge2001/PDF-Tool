@@ -638,6 +638,87 @@ fn content_mix(path: &Path) {
     b.finish(path);
 }
 
+/// Alles, was "Dokument bereinigen" finden und entfernen soll: Dokumentinfo, XMP, JavaScript
+/// (Öffnen-Aktion + Namensbaum), eingebettete Datei, ausgeblendete Ebene, Kommentar,
+/// Formularwert.
+fn sanitize(path: &Path) {
+    let mut b = Builder::new();
+    let font = b.font_id;
+    let doc = &mut b.doc;
+    let visible = doc
+        .add_object(dictionary! { "Type" => "OCG", "Name" => Object::string_literal("Sichtbar") });
+    let hidden = doc
+        .add_object(dictionary! { "Type" => "OCG", "Name" => Object::string_literal("Versteckt") });
+    let content = b"/OC /Vis BDC BT /F1 14 Tf 72 760 Td (Sichtbarer Text) Tj ET EMC\n\
+                    /OC /Hid BDC BT /F1 14 Tf 72 730 Td (Geheime Ebene) Tj ET EMC\n"
+        .to_vec();
+    let page = b.raw_page(
+        A4,
+        content,
+        dictionary! {
+            "Font" => dictionary! { "F1" => font },
+            "Properties" => dictionary! { "Vis" => visible, "Hid" => hidden },
+        },
+    );
+    let doc = &mut b.doc;
+    let xmp = doc.add_object(Stream::new(
+        dictionary! { "Type" => "Metadata", "Subtype" => "XML" },
+        b"<x:xmpmeta xmlns:x='adobe:ns:meta/'><dc:creator>Erika Interna</dc:creator></x:xmpmeta>"
+            .to_vec(),
+    ));
+    let js = doc.add_object(dictionary! {
+        "S" => "JavaScript", "JS" => Object::string_literal("app.alert('Hallo aus JavaScript');"),
+    });
+    let file = doc.add_object(Stream::new(
+        dictionary! { "Type" => "EmbeddedFile" },
+        b"Interne Kalkulation: 4711 EUR".to_vec(),
+    ));
+    let filespec = doc.add_object(dictionary! {
+        "Type" => "Filespec", "F" => Object::string_literal("kalkulation.txt"),
+        "EF" => dictionary! { "F" => file },
+    });
+    let field = b.annotate(
+        page,
+        dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "FT" => "Tx", "T" => Object::string_literal("kunde"),
+            "V" => Object::string_literal("Geheimkunde GmbH"),
+            "DA" => Object::string_literal("/Helv 10 Tf 0 g"),
+            "Rect" => vec![72.into(), 600.into(), 300.into(), 620.into()], "P" => page,
+        },
+    );
+    let note = dictionary! {
+        "Type" => "Annot", "Subtype" => "Text", "Contents" => Object::string_literal("Interner Kommentar"),
+        "Rect" => vec![400.into(), 700.into(), 420.into(), 720.into()],
+    };
+    b.annotate(page, note);
+    let info = b.doc.add_object(dictionary! {
+        "Author" => Object::string_literal("Erika Interna"),
+        "Title" => Object::string_literal("Vertraulich"),
+    });
+    b.doc.trailer.set("Info", info);
+    b.catalog_extra.set("Metadata", xmp);
+    b.catalog_extra.set("OpenAction", js);
+    b.catalog_extra.set(
+        "Names",
+        dictionary! {
+            "JavaScript" => dictionary! { "Names" => vec![Object::string_literal("start"), js.into()] },
+            "EmbeddedFiles" => dictionary! { "Names" => vec![Object::string_literal("kalkulation.txt"), filespec.into()] },
+        },
+    );
+    b.catalog_extra.set(
+        "OCProperties",
+        dictionary! {
+            "OCGs" => vec![Object::from(visible), hidden.into()],
+            "D" => dictionary! { "OFF" => vec![Object::from(hidden)] },
+        },
+    );
+    b.catalog_extra.set(
+        "AcroForm",
+        dictionary! { "Fields" => vec![Object::from(field)] },
+    );
+    b.finish(path);
+}
+
 /// Viele Seiten für Performance-Tests (wird nicht eingecheckt).
 fn big(path: &Path, pages: usize) {
     let mut b = Builder::new();
@@ -675,4 +756,5 @@ fn main() {
     nested_tree(&dir.join("nested_tree.pdf"));
     form(&dir.join("form.pdf"));
     content_mix(&dir.join("content_mix.pdf"));
+    sanitize(&dir.join("sanitize.pdf"));
 }

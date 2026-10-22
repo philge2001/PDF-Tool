@@ -218,6 +218,11 @@ impl FolioApp {
                     }
                     ui.close();
                 }
+                ui.separator();
+                if ui.button("Dokument bereinigen…").clicked() {
+                    self.open_sanitize_dialog();
+                    ui.close();
+                }
             });
             ui.menu_button("Signieren", |ui| {
                 if ui

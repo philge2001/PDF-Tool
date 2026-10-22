@@ -160,3 +160,163 @@ impl FolioApp {
         }
     }
 }
+
+// ---------- Bereinigen ----------
+
+use foliocraft_core::sanitize::{Findings, SanitizeOptions};
+
+pub struct SanitizeDialog {
+    findings: Findings,
+    opts: SanitizeOptions,
+    /// Aktueller Stand des Dokuments (inkl. ungespeicherter Änderungen).
+    bytes: Vec<u8>,
+}
+
+impl FolioApp {
+    pub(crate) fn open_sanitize_dialog(&mut self) {
+        let Some(d) = &self.document else { return };
+        let result = d
+            .doc
+            .to_bytes()
+            .and_then(|b| Ok((foliocraft_core::sanitize::inspect(&b)?, b)));
+        match result {
+            Ok((findings, bytes)) => {
+                self.sanitize_dialog = Some(SanitizeDialog {
+                    findings,
+                    opts: SanitizeOptions::default(),
+                    bytes,
+                })
+            }
+            Err(e) => self.error = Some(format!("Dokument konnte nicht untersucht werden:\n{e}")),
+        }
+    }
+
+    pub(crate) fn sanitize_dialog_ui(&mut self, ctx: &egui::Context) {
+        let Some(dlg) = &mut self.sanitize_dialog else {
+            return;
+        };
+        let mut open = true;
+        let mut run = false;
+        let signed = self
+            .document
+            .as_ref()
+            .is_some_and(|d| d.doc.has_signatures());
+        egui::Window::new("Dokument bereinigen")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .pivot(egui::Align2::CENTER_CENTER)
+            .default_pos(ctx.content_rect().center())
+            .show(ctx, |ui| {
+                ui.label("Entfernt versteckte oder vergessene Informationen. Gefunden:");
+                ui.add_space(4.0);
+                let f = &dlg.findings;
+                let o = &mut dlg.opts;
+                let row =
+                    |ui: &mut egui::Ui, flag: &mut bool, count: usize, label: &str, hint: &str| {
+                        ui.add_enabled_ui(count > 0, |ui| {
+                            ui.checkbox(flag, format!("{label} ({count})"))
+                                .on_hover_text(hint);
+                        });
+                        if count == 0 {
+                            *flag = false;
+                        }
+                    };
+                row(
+                    ui,
+                    &mut o.metadata,
+                    f.metadata,
+                    "Metadaten",
+                    "Dokumentinfo (Autor, Titel, Programm …), XMP-Metadaten, private Programmdaten",
+                );
+                row(
+                    ui,
+                    &mut o.javascript,
+                    f.javascript,
+                    "JavaScript und automatische Aktionen",
+                    "Skripte, Aktionen beim Öffnen, Zusatzaktionen von Seiten und Feldern",
+                );
+                row(
+                    ui,
+                    &mut o.embedded_files,
+                    f.embedded_files,
+                    "Eingebettete Dateien",
+                    "Dateianhänge des Dokuments und Dateianhang-Kommentare",
+                );
+                row(
+                    ui,
+                    &mut o.hidden_layers,
+                    f.hidden_layers,
+                    "Ausgeblendete Ebenen",
+                    "Inhalte von Ebenen, die standardmäßig nicht angezeigt werden",
+                );
+                row(
+                    ui,
+                    &mut o.comments,
+                    f.comments,
+                    "Kommentare",
+                    "Alle Kommentare und Markierungen (Formularfelder und Links bleiben)",
+                );
+                row(
+                    ui,
+                    &mut o.form_data,
+                    f.form_values,
+                    "Formulardaten",
+                    "Eingetragene Werte in Formularfeldern (die Felder selbst bleiben)",
+                );
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(
+                        "Immer: alte Revisionen und nicht mehr benutzte Objekte werden entfernt \
+                         (die Datei wird komplett neu geschrieben).",
+                    )
+                    .weak(),
+                );
+                if signed {
+                    ui.colored_label(
+                        crate::signatures::RED,
+                        "Achtung: Das Dokument ist signiert. Alle Signaturen werden ungültig.",
+                    );
+                }
+                ui.add_space(6.0);
+                if ui.button("Bereinigen").clicked() {
+                    run = true;
+                }
+            });
+        if !open {
+            self.sanitize_dialog = None;
+        }
+        if run {
+            self.start_sanitize(ctx);
+        }
+    }
+
+    fn start_sanitize(&mut self, ctx: &egui::Context) {
+        if self.job.is_some() {
+            return;
+        }
+        let Some(dlg) = self.sanitize_dialog.take() else {
+            return;
+        };
+        let path = self
+            .document
+            .as_ref()
+            .and_then(|d| d.doc.path().map(PathBuf::from));
+        let slot: DocSlot = Arc::new(Mutex::new(None));
+        let out = slot.clone();
+        let job = crate::jobs::Job::spawn("Bereinigen", ctx, move |c| {
+            c.progress(0.2, "Dokument wird bereinigt …");
+            let (result, done) = foliocraft_core::sanitize::sanitize_pdf(&dlg.bytes, dlg.opts)
+                .map_err(|e| format!("Bereinigen fehlgeschlagen:\n{e}"))?;
+            if let Ok(mut s) = out.lock() {
+                *s = Some(result);
+            }
+            Ok(format!(
+                "{}\n\nNoch nicht gespeichert – zum Übernehmen speichern (Strg+S).",
+                done.join("\n")
+            ))
+        });
+        self.pending_doc = Some((slot, path));
+        self.job = Some(job);
+    }
+}

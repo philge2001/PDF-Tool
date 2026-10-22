@@ -121,10 +121,7 @@ impl Document {
 }
 
 /// Schwärzt `bytes` in den Bereichen (pro Seitenobjekt) und schreibt die Datei komplett neu.
-pub fn redact_pdf(
-    bytes: &[u8],
-    areas: &RedactionAreas,
-) -> Result<(Vec<u8>, RedactionReport)> {
+pub fn redact_pdf(bytes: &[u8], areas: &RedactionAreas) -> Result<(Vec<u8>, RedactionReport)> {
     let mut pdf = lopdf::Document::load_mem(bytes)?;
     let mut report = RedactionReport::default();
     let mut removed_widgets = HashSet::new();

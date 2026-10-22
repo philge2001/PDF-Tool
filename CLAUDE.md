@@ -52,7 +52,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - [x] 5.1 Content-Stream-Interpreter (core)
 - [x] 5.2 Schwärzungen markieren (Redact-Annotationen, UI)
 - [x] 5.3 Schwärzungen anwenden + komplett neu schreiben
-- [ ] 5.4 Bereinigen + Abschluss
+- [x] 5.4 Bereinigen + Abschluss
 
 ## Meilensteine Phase 4 (Signaturen)
 - [x] 4.1 Signaturen prüfen (sign-Crate, Panel, Vertrauensspeicher)
@@ -94,7 +94,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   Freitext im Overlay mit egui-Schrift (Zeilenumbrüche identisch) und auf gedrehten Seiten nicht mitgedreht.
 - Importierte Annotationen mit exotischer Darstellung (z. B. Wolkenrand) werden vereinfacht neu gezeichnet.
 - Gelöschte Seiten sind nach inkrementellem Speichern nicht mehr erreichbar, ihre Bytes stehen aber
-  noch in der Datei (vollständiges Neuschreiben folgt in Phase 5).
+  noch in der Datei – „Schwärzen → Dokument bereinigen“ schreibt die Datei komplett neu.
 - Dokumente werden im UI-Thread geladen (lopdf); sehr große Dateien (> 100 MB) blockieren kurz.
 - Verschlüsselte PDFs mit Benutzerpasswort werden noch nicht unterstützt (Passwortdialog fehlt).
 - Annotationen auf gedrehten Seiten: Geometrie korrekt, Freitext-Overlay nicht mitgedreht.
@@ -222,8 +222,13 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   rekursiv als Kopie, ersetzte Originale aus den Ressourcen entfernt, Annotationen/Widgets im Bereich und
   alle /Redact raus (Felder aus /AcroForm), schwarze Kästen; danach `rewrite` (prune, ohne /Prev).
   `Document::{redaction_input, has_signatures, replacement}`
+- `core::sanitize` – `inspect` → `Findings`, `sanitize_pdf(bytes, SanitizeOptions)`: Metadaten (Info, XMP, PieceInfo),
+  JavaScript (/OpenAction, /AA, /Names/JavaScript, /JS), eingebettete Dateien (+ FileAttachment), ausgeblendete
+  Ebenen (BDC /OC-Abschnitte, XObjects/Annotationen mit /OC, dann /OCProperties weg), Kommentare, Formulardaten
+  (/V, /DV, /XFA, Text-AP, Schalter Off); immer `redact::rewrite`
 - `AnnotKind::Redact { quads }` – Schwärzungs-Markierung (/Redact, /QuadPoints, /IC schwarz), Vorschau rot
-- `app::redact` – Rückfrage (Signaturwarnung), Schwärzen als Job, Ergebnis per `pending_doc`/`DocSlot` als
+- `app::redact` – zusätzlich Dialog „Dokument bereinigen“ (Fundstellen je Option, Job wie beim Schwärzen);
+  Rückfrage (Signaturwarnung), Schwärzen als Job, Ergebnis per `pending_doc`/`DocSlot` als
   ungespeicherte Fassung (`Document::replacement`); `redact_search_hits` (alle Suchtreffer → Redact, 1 Undo-Schritt), `pending_redactions`;
   Werkzeuge `Tool::RedactText` (wie Hervorheben) und `Tool::RedactArea` (Rechteck), Menü „Schwärzen“
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
@@ -240,6 +245,8 @@ PDFium liegt lokal in `pdfium/lib` (gitignored).
 zur Gegenprobe mit anderen Readern (z. B. `pdftoppm -png out.pdf x`).
 `cargo run -p foliocraft-core --example redact_demo -- in.pdf out.pdf 1:x0,y0,x1,y1 …` schwärzt Bereiche
 (Gegenprobe: `pdftotext`, `pdftoppm`).
+`cargo run -p foliocraft-core --example sanitize_demo -- in.pdf [out.pdf]` zeigt/entfernt versteckte Inhalte
+(Gegenprobe: `pdfinfo`, `pdfdetach -list`, `pdftotext`).
 `cargo run -p foliocraft-core --example content_dump -- datei.pdf [Seite]` zeigt die Interpreter-Ergebnisse
 (Gegenprobe: `pdftotext -bbox`, gleiche x-Positionen).
 `cargo run -p foliocraft-sign --example sign_demo -- in.pdf out.pdf [id.p12 pw] [rsa]` signiert (ohne ID mit Testzertifikat).

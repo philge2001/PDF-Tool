@@ -3,7 +3,7 @@
 Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 „FolioCraft“ ist ein Arbeitstitel. Lizenz: MIT OR Apache-2.0.
 
-**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare) und Phase 4 (Signaturen) abgeschlossen.
+**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare), Phase 4 (Signaturen) und Phase 5 (Schwärzen & Bereinigen) abgeschlossen.
 
 ## Funktionen (Phase 1)
 
@@ -52,6 +52,18 @@ Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 - „Testzertifikat erstellen“: selbst ausgestellte digitale ID zum Ausprobieren
 - Signieren ist inkrementell: vorhandene Signaturen bleiben gültig; Ausfüllen/Kommentieren nach dem
   Signieren wird als „danach geändert“ angezeigt
+
+## Funktionen (Phase 5 – Schwärzen & Bereinigen)
+
+- Schwärzungen markieren: „Text schwärzen“ (wie Hervorheben), „Bereich schwärzen“ (Rechteck aufziehen),
+  „Alle Treffer schwärzen“ in der Suche – zunächst als rot umrandete Vorschau, rückgängig machbar
+- „Schwärzungen anwenden“ entfernt die Inhalte **wirklich**: Zeichen aus dem Text (der Rest bleibt an seiner
+  Stelle), Grafik, Bildpixel (auch in JPEG-Scans), Inhalte von Formular-XObjects, Kommentare und Formularfelder
+  im Bereich, Ersatztexte für Screenreader; dazu schwarze Kästen. Die Datei wird komplett neu geschrieben,
+  alte Revisionen verschwinden.
+- „Dokument bereinigen“: Metadaten, JavaScript, eingebettete Dateien, ausgeblendete Ebenen, Kommentare,
+  Formulardaten – mit Anzeige, was gefunden wurde
+- Warnung, wenn signierte Dokumente betroffen sind
 
 ## Bedienung
 
@@ -141,6 +153,8 @@ Alle Dateien in `tests/fixtures/` sind selbst erzeugt:
 cargo run -p foliocraft-core --example gen_fixtures                    # Fixtures neu erzeugen
 cargo run -p foliocraft-core --example gen_fixtures -- big 500 big.pdf # 500-Seiten-PDF für Performance-Tests
 cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf     # jeden Annotationstyp schreiben (Gegenprobe in anderen Readern)
+cargo run -p foliocraft-core --example redact_demo -- in.pdf out.pdf 1:x0,y0,x1,y1                # Bereich schwärzen
+cargo run -p foliocraft-core --example sanitize_demo -- in.pdf [out.pdf]                           # versteckte Inhalte zeigen/entfernen
 cargo run -p foliocraft-sign --example sign_check -- datei.pdf [vertraut.pem]                     # Signaturen prüfen
 cargo run -p foliocraft-sign --example sign_demo -- in.pdf out.pdf [id.p12 passwort]              # signieren (ohne ID: Testzertifikat)
 cargo run -p foliocraft-core --example form_fill -- tests/fixtures/form.pdf                        # Formularfelder auflisten
