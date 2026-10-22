@@ -283,3 +283,277 @@ mod tests {
         assert!(err.contains("gibt-es-nicht.pdf"), "{err}");
     }
 }
+
+// ---------- Extrahieren & Teilen ----------
+
+/// Dialog "Seiten extrahieren".
+pub struct ExtractDialog {
+    ranges: String,
+    delete_after: bool,
+    error: Option<String>,
+}
+
+/// Dialog "Dokument teilen".
+pub struct SplitDialog {
+    by_ranges: bool,
+    every: usize,
+    ranges: String,
+    error: Option<String>,
+}
+
+/// Indizes (0-basiert) -> "1-3, 5" (1-basiert), für Vorgabewerte in Eingabefeldern.
+pub fn format_ranges(pages: &[usize]) -> String {
+    let mut parts = Vec::new();
+    let mut i = 0;
+    while i < pages.len() {
+        let start = pages[i];
+        let mut end = start;
+        while i + 1 < pages.len() && pages[i + 1] == end + 1 {
+            i += 1;
+            end = pages[i];
+        }
+        parts.push(if start == end {
+            format!("{}", start + 1)
+        } else {
+            format!("{}-{}", start + 1, end + 1)
+        });
+        i += 1;
+    }
+    parts.join(", ")
+}
+
+impl FolioApp {
+    fn document_stem(&self) -> String {
+        self.document
+            .as_ref()
+            .and_then(|d| d.doc.path())
+            .and_then(|p| p.file_stem())
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Dokument".into())
+    }
+
+    pub(crate) fn open_extract_dialog(&mut self) {
+        let Some(d) = &self.document else { return };
+        self.extract_dialog = Some(ExtractDialog {
+            ranges: format_ranges(&d.target_pages()),
+            delete_after: false,
+            error: None,
+        });
+    }
+
+    pub(crate) fn open_split_dialog(&mut self) {
+        self.split_dialog = Some(SplitDialog {
+            by_ranges: false,
+            every: 1,
+            ranges: String::new(),
+            error: None,
+        });
+    }
+
+    pub(crate) fn extract_dialog_ui(&mut self, ctx: &egui::Context) {
+        let (Some(dlg), Some(d)) = (&mut self.extract_dialog, &self.document) else {
+            return;
+        };
+        let n = d.doc.page_count();
+        let mut open = true;
+        let mut confirmed = false;
+        egui::Window::new("Seiten extrahieren")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Seiten:");
+                    ui.text_edit_singleline(&mut dlg.ranges)
+                        .on_hover_text(format!("z. B. 1-3, 5 (Dokument hat {n} Seiten)"));
+                });
+                ui.checkbox(&mut dlg.delete_after, "Danach aus diesem Dokument löschen");
+                if let Some(e) = &dlg.error {
+                    ui.colored_label(ui.visuals().error_fg_color, e);
+                }
+                ui.add_space(6.0);
+                confirmed = ui.button("Extrahieren…").clicked();
+            });
+        if !open {
+            self.extract_dialog = None;
+            return;
+        }
+        if !confirmed {
+            return;
+        }
+
+        let pages = match parse_page_ranges(&dlg.ranges, n) {
+            Ok(p) => p,
+            Err(e) => {
+                dlg.error = Some(e.to_string());
+                return;
+            }
+        };
+        if dlg.delete_after && pages.len() >= n {
+            dlg.error = Some("Es können nicht alle Seiten gelöscht werden.".into());
+            return;
+        }
+        let delete_after = dlg.delete_after;
+        let Some(target) = rfd::FileDialog::new()
+            .add_filter("PDF", &["pdf"])
+            .set_file_name(format!("{}_Auszug.pdf", self.document_stem()))
+            .save_file()
+        else {
+            return; // abgebrochen – Dialog bleibt offen
+        };
+        let Some(d) = &mut self.document else { return };
+        let snapshot = match d.doc.snapshot_pdf() {
+            Ok(s) => s,
+            Err(e) => {
+                self.error = Some(format!("Extrahieren nicht möglich:\n{e}"));
+                return;
+            }
+        };
+        if delete_after {
+            // Die Momentaufnahme oben enthält die Seiten noch – Löschen ist ein normaler,
+            // rückgängig machbarer Schritt im aktuellen Dokument.
+            d.apply_page_action(crate::pages::PageAction::Delete(pages.clone()));
+        }
+        let count = pages.len();
+        self.extract_dialog = None;
+        self.job = Some(crate::jobs::Job::spawn(
+            "Seiten extrahieren",
+            ctx,
+            move |job| {
+                job.progress(0.1, "Seiten kopieren …");
+                let bytes =
+                    foliocraft_core::extract_pages(&snapshot, &pages).map_err(|e| e.to_string())?;
+                job.progress(0.8, "Datei schreiben …");
+                std::fs::write(&target, bytes)
+                    .map_err(|e| format!("„{}“: {e}", target.display()))?;
+                Ok(format!(
+                    "{count} Seite(n) nach „{}“ extrahiert.",
+                    target.display()
+                ))
+            },
+        ));
+    }
+
+    pub(crate) fn split_dialog_ui(&mut self, ctx: &egui::Context) {
+        let (Some(dlg), Some(d)) = (&mut self.split_dialog, &self.document) else {
+            return;
+        };
+        let n = d.doc.page_count();
+        let mut open = true;
+        let mut confirmed = false;
+        egui::Window::new("Dokument teilen")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.radio_value(&mut dlg.by_ranges, false, "Alle N Seiten eine neue Datei");
+                ui.add_enabled_ui(!dlg.by_ranges, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.add_space(20.0);
+                        ui.label("N =");
+                        ui.add(egui::DragValue::new(&mut dlg.every).range(1..=n.max(1)));
+                    });
+                });
+                ui.radio_value(&mut dlg.by_ranges, true, "Nach Bereichen");
+                ui.add_enabled_ui(dlg.by_ranges, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.add_space(20.0);
+                        ui.add(
+                            egui::TextEdit::singleline(&mut dlg.ranges).hint_text("1-3; 4-6; 7-"),
+                        )
+                        .on_hover_text(
+                            "Eine Datei pro Bereich, getrennt durch Semikolon: 1-3; 4-6; 7-",
+                        );
+                    });
+                });
+                if let Some(e) = &dlg.error {
+                    ui.colored_label(ui.visuals().error_fg_color, e);
+                }
+                ui.add_space(6.0);
+                confirmed = ui.button("Teilen…").clicked();
+            });
+        if !open {
+            self.split_dialog = None;
+            return;
+        }
+        if !confirmed {
+            return;
+        }
+
+        let groups = if dlg.by_ranges {
+            match foliocraft_core::split_by_ranges(&dlg.ranges, n) {
+                Ok(g) => g,
+                Err(e) => {
+                    dlg.error = Some(e.to_string());
+                    return;
+                }
+            }
+        } else {
+            foliocraft_core::split_every(n, dlg.every)
+        };
+        let Some(folder) = rfd::FileDialog::new().pick_folder() else {
+            return;
+        };
+        let stem = self.document_stem();
+        let width = groups.len().to_string().len();
+        let targets: Vec<PathBuf> = (1..=groups.len())
+            .map(|i| folder.join(format!("{stem}_Teil{i:0width$}.pdf")))
+            .collect();
+        if let Some(existing) = targets.iter().find(|p| p.exists()) {
+            if let Some(dlg) = &mut self.split_dialog {
+                dlg.error = Some(format!(
+                    "„{}“ gibt es schon – bitte anderen Ordner wählen.",
+                    existing.display()
+                ));
+            }
+            return;
+        }
+        let Some(d) = &self.document else { return };
+        let snapshot = match d.doc.snapshot_pdf() {
+            Ok(s) => s,
+            Err(e) => {
+                self.error = Some(format!("Teilen nicht möglich:\n{e}"));
+                return;
+            }
+        };
+        self.split_dialog = None;
+        let total = groups.len();
+        self.job = Some(crate::jobs::Job::spawn(
+            "Dokument teilen",
+            ctx,
+            move |job| {
+                for (i, (pages, target)) in groups.iter().zip(&targets).enumerate() {
+                    if job.cancelled() {
+                        return Err(format!(
+                            "Abgebrochen – {i} von {total} Dateien geschrieben."
+                        ));
+                    }
+                    job.progress(
+                        i as f32 / total as f32,
+                        format!("Datei {} von {total} …", i + 1),
+                    );
+                    let bytes = foliocraft_core::extract_pages(&snapshot, pages)
+                        .map_err(|e| e.to_string())?;
+                    std::fs::write(target, bytes)
+                        .map_err(|e| format!("„{}“: {e}", target.display()))?;
+                }
+                Ok(format!(
+                    "{total} Dateien in „{}“ geschrieben.",
+                    folder.display()
+                ))
+            },
+        ));
+    }
+}
+
+#[cfg(test)]
+mod range_tests {
+    use super::format_ranges;
+
+    #[test]
+    fn formats_ranges() {
+        assert_eq!(format_ranges(&[0, 1, 2, 4, 6, 7]), "1-3, 5, 7-8");
+        assert_eq!(format_ranges(&[3]), "4");
+        assert_eq!(format_ranges(&[]), "");
+    }
+}

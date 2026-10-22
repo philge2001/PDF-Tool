@@ -133,6 +133,13 @@ impl FolioApp {
                     self.insert_blank_page();
                 }
                 ui.separator();
+                if ui.button("Seiten extrahieren…").clicked() {
+                    self.open_extract_dialog();
+                }
+                if ui.button("Dokument teilen…").clicked() {
+                    self.open_split_dialog();
+                }
+                ui.separator();
                 let Some(d) = &mut self.document else { return };
                 let target = d.target_pages();
                 let n = d.doc.page_count();

@@ -4,6 +4,7 @@ mod annot_draw;
 mod app;
 mod comments;
 mod file_ops;
+mod jobs;
 mod menu;
 mod page_dialogs;
 mod pages;

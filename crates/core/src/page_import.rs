@@ -74,25 +74,26 @@ impl Command for InsertPages {
 }
 
 /// Vergibt fortlaufend neue Objektnummern und kopiert Objekte aus einer Quell-PDF.
-struct Copier<'a> {
-    source: &'a lopdf::Document,
-    next_id: u32,
+/// Wird auch von `page_export` genutzt.
+pub(crate) struct Copier<'a> {
+    pub source: &'a lopdf::Document,
+    pub next_id: u32,
     /// alt -> neu (verhindert Mehrfachkopien und Endlosschleifen bei Zyklen)
-    mapped: HashMap<ObjectId, ObjectId>,
-    out: BTreeMap<ObjectId, Object>,
+    pub mapped: HashMap<ObjectId, ObjectId>,
+    pub out: BTreeMap<ObjectId, Object>,
     /// Seiten der Quelle, die NICHT mitkopiert werden (Verweise darauf werden zu null).
-    foreign_pages: HashSet<ObjectId>,
+    pub foreign_pages: HashSet<ObjectId>,
 }
 
 impl Copier<'_> {
-    fn fresh_id(&mut self) -> ObjectId {
+    pub fn fresh_id(&mut self) -> ObjectId {
         let id = (self.next_id, 0);
         self.next_id += 1;
         id
     }
 
     /// Kopiert ein Objekt rekursiv und gibt die Kopie (mit umgeschriebenen Verweisen) zurück.
-    fn copy(&mut self, obj: &Object) -> Object {
+    pub fn copy(&mut self, obj: &Object) -> Object {
         match obj {
             Object::Reference(id) => match self.copy_ref(*id) {
                 Some(new) => Object::Reference(new),
@@ -110,7 +111,7 @@ impl Copier<'_> {
         }
     }
 
-    fn copy_dict(&mut self, d: &Dictionary, skip: &[&[u8]]) -> Dictionary {
+    pub fn copy_dict(&mut self, d: &Dictionary, skip: &[&[u8]]) -> Dictionary {
         let mut out = Dictionary::new();
         for (k, v) in d.iter() {
             if !skip.contains(&k.as_slice()) {

@@ -44,7 +44,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - [x] 2.1 Seitenmodell & Seiten-Commands (core)
 - [x] 2.2 Seiten-UI (Mehrfachauswahl, Kontextmenü, Drag & Drop)
 - [x] 2.3 Einfügen, Zusammenführen, Leerseite
-- [ ] 2.4 Extrahieren & Teilen, Hintergrund-Jobs
+- [x] 2.4 Extrahieren & Teilen, Hintergrund-Jobs
 
 ## Meilensteine Phase 1
 - [x] M0 Grundgerüst
@@ -95,6 +95,8 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   ins Modell übernommen), `prepare_blank_page`, `InsertPages`-Command, `parse_page_ranges("1-3, 5, 8-")`.
   Neue Objekte liegen bis zum Speichern in `Model::extra_objects`; Objektnummern vergibt ein
   nur hochzählender Zähler (`next_object_id`)
+- `core::page_export` – `extract_pages` (neue, eigenständige PDF nur mit den gewünschten Seiten, aus
+  `Document::snapshot_pdf` = aktueller Stand inkl. ungespeicherter Änderungen), `split_every`, `split_by_ranges`
 - `Document::render_snapshot` – Bytes des aktuellen Stands + Ausblendliste für den Renderer
   (nach strukturellen Änderungen, ohne zu speichern)
 - `core::save` – inkrementelles Speichern: Seitenbaum (bei neuer Reihenfolge flach unter der Wurzel,
@@ -127,8 +129,11 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   Texturen/Text per `PageId` auf neue Indizes um, lädt den Worker mit `render_snapshot` und NEUER DocId),
   `new_doc_id`, `target_pages` (Auswahl in der Seitenleiste oder aktuelle Seite)
 - `app::viewer::thumbnails` – zusätzlich Mehrfachauswahl (als `PageId`), Kontextmenü, Drag & Drop (`ThumbAction`)
-- `app::page_dialogs` – Dialoge „Seiten aus Datei einfügen“ und „Dateien zusammenführen“
+- `app::page_dialogs` – Dialoge „Seiten aus Datei einfügen“, „Dateien zusammenführen“, „Seiten extrahieren“,
+  „Dokument teilen“
   (Ergebnis = neues unbenanntes Dokument, `adopt_document` zeigt es über eine Momentaufnahme an)
+- `app::jobs` – Hintergrund-Jobs (`Job::spawn`, Fortschritt, Abbrechen, modales Fortschrittsfenster);
+  höchstens ein Job gleichzeitig (`FolioApp::job`), Ergebnis als Info- oder Fehlerdialog
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
 
 ## Tastenkürzel
@@ -136,6 +141,7 @@ Strg+O öffnen · Strg+S speichern · Strg+Umschalt+S speichern unter · Strg+Z/
 Strg+Mausrad zoomt um den Mauszeiger · Bild↑/↓ Seite · Pos1/Ende · Pfeiltasten scrollen
 
 ## Testen im Container (ohne Bildschirm)
+Datei-/Ordnerdialoge (rfd über xdg-portal) funktionieren im Container nicht – Logik dahinter per Test absichern.
 PDFium liegt lokal in `pdfium/lib` (gitignored).
 `cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf` schreibt jeden Annotationstyp –
 zur Gegenprobe mit anderen Readern (z. B. `pdftoppm -png out.pdf x`). Screenshots über Xvfb + xdotool + ImageMagick `import`.

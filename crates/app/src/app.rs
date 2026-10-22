@@ -63,6 +63,12 @@ pub struct FolioApp {
     pub(crate) show_settings_window: bool,
     pub(crate) insert_dialog: Option<crate::page_dialogs::InsertDialog>,
     pub(crate) merge_dialog: Option<crate::page_dialogs::MergeDialog>,
+    pub(crate) extract_dialog: Option<crate::page_dialogs::ExtractDialog>,
+    pub(crate) split_dialog: Option<crate::page_dialogs::SplitDialog>,
+    /// Laufender Hintergrund-Job (höchstens einer gleichzeitig).
+    pub(crate) job: Option<crate::jobs::Job>,
+    /// Erfolgsmeldung, die als Dialog angezeigt wird.
+    pub(crate) info: Option<String>,
 }
 
 impl FolioApp {
@@ -100,6 +106,10 @@ impl FolioApp {
             show_settings_window: false,
             insert_dialog: None,
             merge_dialog: None,
+            extract_dialog: None,
+            split_dialog: None,
+            job: None,
+            info: None,
         };
         if let Some(path) = initial_file {
             app.open_path(&cc.egui_ctx, &path);
@@ -262,6 +272,38 @@ impl FolioApp {
                 self.request_open(&ctx, path);
             }
         });
+    }
+
+    /// Fortschritt des laufenden Jobs; nach dem Ende Erfolgs- bzw. Fehlermeldung.
+    fn job_ui(&mut self, ctx: &egui::Context) {
+        let Some(job) = &self.job else { return };
+        match job.poll() {
+            None => job.show(ctx),
+            Some(result) => {
+                tracing::info!(job = %job.title, ?result, "Job beendet");
+                match result {
+                    Ok(msg) => self.info = Some(msg),
+                    Err(msg) => self.error = Some(msg),
+                }
+                self.job = None;
+            }
+        }
+    }
+
+    fn info_dialog(&mut self, ctx: &egui::Context) {
+        let Some(msg) = &self.info else { return };
+        let mut close = false;
+        egui::Window::new("Fertig")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.label(msg);
+                close = ui.button("OK").clicked();
+            });
+        if close {
+            self.info = None;
+        }
     }
 
     fn error_dialog(&mut self, ctx: &egui::Context) {
@@ -473,6 +515,10 @@ impl eframe::App for FolioApp {
         self.settings_window(&ctx);
         self.insert_dialog_ui(&ctx);
         self.merge_dialog_ui(&ctx);
+        self.extract_dialog_ui(&ctx);
+        self.split_dialog_ui(&ctx);
+        self.job_ui(&ctx);
+        self.info_dialog(&ctx);
         self.unsaved_changes_dialog(&ctx);
         self.error_dialog(&ctx);
     }
