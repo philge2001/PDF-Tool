@@ -6,10 +6,11 @@ pub mod select;
 pub mod text_select;
 
 use foliocraft_core::Color;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Das aktive Werkzeug.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum Tool {
     /// Text markieren und kopieren.
     #[default]

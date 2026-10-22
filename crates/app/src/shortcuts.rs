@@ -21,9 +21,9 @@ impl FolioApp {
         let save_as =
             ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::S));
         if save_as {
-            self.save(true);
+            self.save_document(true);
         } else if cmd(Key::S) {
-            self.save(false);
+            self.save_document(false);
         }
 
         let Some(d) = &mut self.document else { return };

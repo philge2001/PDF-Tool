@@ -3,7 +3,39 @@
 Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 „FolioCraft“ ist ein Arbeitstitel. Lizenz: MIT OR Apache-2.0.
 
-**Stand:** Phase 1 (Viewer + Annotationen) in Arbeit.
+**Stand:** Phase 1 (Viewer + Annotationen) abgeschlossen.
+
+## Funktionen (Phase 1)
+
+- PDF öffnen (Dialog, Drag & Drop, Kommandozeile, „Zuletzt geöffnet“), flüssiges Scrollen auch bei 500+ Seiten
+- Zoom (Strg+Mausrad um den Mauszeiger, Prozentfeld, Seitenbreite, Ganze Seite), Seitenleiste mit Miniaturen
+- Textsuche mit Trefferhervorhebung, Text auswählen und kopieren
+- Annotationen: Hervorheben, Unterstreichen, Durchstreichen, Notiz, Freitext, Freihand, Rechteck, Ellipse, Pfeil
+- Annotationen auswählen, verschieben, löschen, Farbe ändern; Kommentar-Panel mit direkter Bearbeitung
+- Rückgängig/Wiederholen für alle Änderungen
+- Speichern als standardkonforme PDF-Annotationen mit Appearance Streams (sichtbar in anderen Readern),
+  **inkrementell** – der Originalinhalt der Datei bleibt Byte für Byte erhalten
+- Helles/dunkles Design, Einstellungen (Autorname) werden gespeichert
+
+## Bedienung
+
+| Aktion | Tastenkürzel |
+|---|---|
+| Öffnen / Speichern / Speichern unter | Strg+O / Strg+S / Strg+Umschalt+S |
+| Suchen (weiter / zurück / schließen) | Strg+F (Enter, F3 / Umschalt+Enter, Umschalt+F3 / Esc) |
+| Kopieren | Strg+C |
+| Rückgängig / Wiederholen | Strg+Z / Strg+Y oder Strg+Umschalt+Z |
+| Annotation löschen | Entf |
+| Zoomen | Strg+Mausrad, Strg+Plus/Minus |
+| 100 % / Seitenbreite / Ganze Seite | Strg+1 / Strg+2 / Strg+0 |
+| Seite vor/zurück, Anfang/Ende | Bild↓/Bild↑, Pos1/Ende |
+| Abbrechen / zurück zur Textauswahl | Esc |
+
+Annotationswerkzeuge stehen in der Leiste „Kommentieren“. Markup-Werkzeuge (Hervorheben usw.)
+wirken auf markierten Text: entweder erst Text markieren und dann das Werkzeug anklicken, oder
+Werkzeug wählen und über den Text ziehen. Doppelklick auf eine Notiz oder einen Freitext bearbeitet ihn.
+
+**Bekannte Einschränkungen:** siehe [CLAUDE.md](CLAUDE.md#bekannte-einschränkungen).
 
 ## Bauen
 
@@ -69,6 +101,7 @@ Alle Dateien in `tests/fixtures/` sind selbst erzeugt:
 ```bash
 cargo run -p foliocraft-core --example gen_fixtures                    # Fixtures neu erzeugen
 cargo run -p foliocraft-core --example gen_fixtures -- big 500 big.pdf # 500-Seiten-PDF für Performance-Tests
+cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf     # jeden Annotationstyp schreiben (Gegenprobe in anderen Readern)
 ```
 
 ## Projektstruktur

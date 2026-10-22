@@ -36,7 +36,7 @@ impl OpenDocument {
 
 impl FolioApp {
     /// Speichert das Dokument. `force_dialog` = "Speichern unter". Gibt `true` bei Erfolg zurück.
-    pub(crate) fn save(&mut self, force_dialog: bool) -> bool {
+    pub(crate) fn save_document(&mut self, force_dialog: bool) -> bool {
         let Some(d) = &mut self.document else {
             return false;
         };
@@ -60,6 +60,7 @@ impl FolioApp {
                 if let Ok(render) = &self.render {
                     d.reload_renderer(render);
                 }
+                self.settings.add_recent(&target);
                 true
             }
             Err(e) => {
@@ -131,7 +132,7 @@ impl FolioApp {
         let proceed = match choice {
             Choice::None => return,
             Choice::Cancel => false,
-            Choice::Save => self.save(false), // bei Fehler/Abbruch im Dialog: nicht fortfahren
+            Choice::Save => self.save_document(false), // bei Fehler/Abbruch im Dialog: nicht fortfahren
             Choice::Discard => true,
         };
         let action = self.pending.take();

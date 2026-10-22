@@ -6,6 +6,7 @@ mod comments;
 mod file_ops;
 mod menu;
 mod search;
+mod settings;
 mod shortcuts;
 mod text_cache;
 mod toolbar;

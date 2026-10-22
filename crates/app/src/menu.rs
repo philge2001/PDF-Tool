@@ -2,7 +2,7 @@
 
 use crate::app::FolioApp;
 use crate::viewer::ZoomMode;
-use eframe::egui::{self, Button};
+use eframe::egui::{self, Button, ThemePreference};
 
 impl FolioApp {
     pub(crate) fn menu_bar(&mut self, ui: &mut egui::Ui) {
@@ -21,7 +21,7 @@ impl FolioApp {
                     .add_enabled(dirty, Button::new("Speichern").shortcut_text("Strg+S"))
                     .clicked()
                 {
-                    self.save(false);
+                    self.save_document(false);
                 }
                 if ui
                     .add_enabled(
@@ -30,7 +30,39 @@ impl FolioApp {
                     )
                     .clicked()
                 {
-                    self.save(true);
+                    self.save_document(true);
+                }
+                ui.separator();
+                ui.menu_button("Zuletzt geöffnet", |ui| {
+                    if self.settings.recent_files.is_empty() {
+                        ui.label("(leer)");
+                    }
+                    let mut open = None;
+                    for path in &self.settings.recent_files {
+                        let name = path
+                            .file_name()
+                            .map(|n| n.to_string_lossy())
+                            .unwrap_or_default();
+                        if ui
+                            .button(name)
+                            .on_hover_text(path.display().to_string())
+                            .clicked()
+                        {
+                            open = Some(path.clone());
+                        }
+                    }
+                    if let Some(path) = open {
+                        self.request_open(&ctx, path);
+                    }
+                    if !self.settings.recent_files.is_empty() {
+                        ui.separator();
+                        if ui.button("Liste leeren").clicked() {
+                            self.settings.recent_files.clear();
+                        }
+                    }
+                });
+                if ui.button("Einstellungen…").clicked() {
+                    self.show_settings_window = true;
                 }
                 ui.separator();
                 if ui.button("Beenden").clicked() {
@@ -88,6 +120,9 @@ impl FolioApp {
             ui.menu_button("Ansicht", |ui| {
                 ui.checkbox(&mut self.show_thumbnails, "Seitenleiste");
                 ui.checkbox(&mut self.show_comments, "Kommentare");
+                ui.separator();
+                ui.label("Design");
+                self.theme_radios(ui);
                 if let Some(d) = &mut self.document {
                     ui.separator();
                     if ui
@@ -111,5 +146,43 @@ impl FolioApp {
                 }
             });
         });
+    }
+
+    fn theme_radios(&mut self, ui: &mut egui::Ui) {
+        let before = self.settings.theme;
+        ui.radio_value(
+            &mut self.settings.theme,
+            ThemePreference::System,
+            "Wie System",
+        );
+        ui.radio_value(&mut self.settings.theme, ThemePreference::Light, "Hell");
+        ui.radio_value(&mut self.settings.theme, ThemePreference::Dark, "Dunkel");
+        if self.settings.theme != before {
+            ui.ctx().set_theme(self.settings.theme);
+        }
+    }
+
+    /// Fenster "Einstellungen".
+    pub(crate) fn settings_window(&mut self, ctx: &egui::Context) {
+        let mut open = self.show_settings_window;
+        egui::Window::new("Einstellungen")
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                egui::Grid::new("settings_grid")
+                    .num_columns(2)
+                    .spacing([12.0, 8.0])
+                    .show(ui, |ui| {
+                        ui.label("Autorname");
+                        ui.text_edit_singleline(&mut self.tool_settings.author)
+                            .on_hover_text("Wird in neuen Kommentaren als Autor (/T) gespeichert");
+                        ui.end_row();
+                        ui.label("Design");
+                        ui.vertical(|ui| self.theme_radios(ui));
+                        ui.end_row();
+                    });
+            });
+        self.show_settings_window = open;
     }
 }

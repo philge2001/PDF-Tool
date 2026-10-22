@@ -50,12 +50,22 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - [x] M6 Annotationswerkzeuge (UI)
 - [x] M7 Bearbeiten, Kommentar-Panel, Undo/Redo-Shortcuts
 - [x] M8 Speichern in der App
-- [ ] M9 Zuletzt geöffnet, Dark/Light Mode
+- [x] M9 Zuletzt geöffnet, Dark/Light Mode
+
+## Vorbereitung späterer Phasen
+- Phase 2 (Seiten): neue Commands auf `core::command::Model` (z. B. Seitenreihenfolge im Modell),
+  Speichern über `IncrementalDocument` wie in `core::save`.
+- Phase 3 (Formulare): Widget-Annotationen sind heute "fremd" und werden von PDFium gerendert.
+- Phase 4 (Signaturen): inkrementelles Speichern erhält bestehende Signaturen bereits.
+- Phase 5/6 (Schwärzen, Text bearbeiten): Content-Stream-Änderungen in core, PDFium nur zum Rendern.
 
 ## Bekannte Einschränkungen
 - Overlay vs. Datei: Hervorhebungen im Overlay halbtransparent (egui kann kein Multiply),
   Freitext im Overlay mit egui-Schrift (Zeilenumbrüche identisch) und auf gedrehten Seiten nicht mitgedreht.
 - Importierte Annotationen mit exotischer Darstellung (z. B. Wolkenrand) werden vereinfacht neu gezeichnet.
+- Dokumente werden im UI-Thread geladen (lopdf); sehr große Dateien (> 100 MB) blockieren kurz.
+- Verschlüsselte PDFs mit Benutzerpasswort werden noch nicht unterstützt (Passwortdialog fehlt).
+- Annotationen auf gedrehten Seiten: Geometrie korrekt, Freitext-Overlay nicht mitgedreht.
 - FreeText/Notizen nutzen Helvetica (WinAnsi): Westeuropäische Zeichen gehen, CJK/Kyrillisch noch nicht.
 
 ## Wichtige Module
@@ -92,6 +102,8 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - `app::file_ops` – Speichern/Speichern unter, Rückfrage bei ungespeicherten Änderungen
   (`PendingAction`), Fenstertitel mit `*`; nach dem Speichern lädt der Worker neu (`reload_renderer`)
 - `app::menu` – Menüleiste Datei/Bearbeiten/Ansicht
+- `app::settings` – dauerhafte Einstellungen (serde + eframe-Persistenz, Schlüssel `foliocraft_settings`):
+  zuletzt geöffnet, Design, Panels, Werkzeugstil, Autor
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
 
 ## Tastenkürzel

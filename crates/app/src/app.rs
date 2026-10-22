@@ -3,6 +3,7 @@
 use crate::annot_draw;
 use crate::file_ops::PendingAction;
 use crate::search::SearchState;
+use crate::settings::{STORAGE_KEY, Settings};
 use crate::text_cache::TextCache;
 use crate::tools::create::Gesture;
 use crate::tools::editor::TextEditor;
@@ -55,6 +56,9 @@ pub struct FolioApp {
     /// Schließen nach der Rückfrage erlaubt.
     pub(crate) allow_close: bool,
     pub(crate) window_title: String,
+    /// Dauerhafte Einstellungen (werden beim Beenden gespeichert).
+    pub(crate) settings: Settings,
+    pub(crate) show_settings_window: bool,
 }
 
 impl FolioApp {
@@ -69,18 +73,28 @@ impl FolioApp {
         if let Err(e) = &render {
             tracing::error!("{e}");
         }
+        // Gespeicherte Einstellungen laden (beim ersten Start: Standardwerte).
+        let mut settings: Settings = cc
+            .storage
+            .and_then(|s| eframe::get_value(s, STORAGE_KEY))
+            .unwrap_or_default();
+        settings.prune_missing();
+        cc.egui_ctx.set_theme(settings.theme);
+
         let mut app = Self {
             render,
             next_doc_id: 1,
             document: None,
             error: None,
-            show_thumbnails: true,
-            show_comments: true,
+            show_thumbnails: settings.show_thumbnails,
+            show_comments: settings.show_comments,
             tool: Tool::default(),
-            tool_settings: ToolSettings::default(),
+            tool_settings: settings.tool_settings(),
             pending: None,
             allow_close: false,
             window_title: String::new(),
+            settings,
+            show_settings_window: false,
         };
         if let Some(path) = initial_file {
             app.open_path(&cc.egui_ctx, &path);
@@ -118,13 +132,15 @@ impl FolioApp {
                     zoom_input: None,
                 });
                 let _ = ctx; // Fenstertitel setzt `update_title` im nächsten Frame
+                self.settings.add_recent(path);
                 tracing::info!(path = %path.display(), "Dokument geöffnet");
             }
             Err(e) => {
                 self.error = Some(format!(
                     "„{}“ konnte nicht geöffnet werden:\n{e}",
                     path.display()
-                ))
+                ));
+                self.settings.prune_missing(); // z. B. verschobene Datei aus "Zuletzt geöffnet"
             }
         }
     }
@@ -192,10 +208,39 @@ impl FolioApp {
         });
     }
 
-    fn empty_state(&self, ui: &mut egui::Ui) {
-        ui.centered_and_justified(|ui| match &self.render {
-            Ok(_) => ui.heading("PDF hierher ziehen oder mit Strg+O öffnen"),
-            Err(e) => ui.label(egui::RichText::new(e).color(ui.visuals().error_fg_color)),
+    fn empty_state(&mut self, ui: &mut egui::Ui) {
+        if let Err(e) = &self.render {
+            ui.centered_and_justified(|ui| {
+                ui.label(egui::RichText::new(e).color(ui.visuals().error_fg_color))
+            });
+            return;
+        }
+        let ctx = ui.ctx().clone();
+        ui.vertical_centered(|ui| {
+            ui.add_space(ui.available_height() * 0.25);
+            ui.heading("PDF hierher ziehen oder mit Strg+O öffnen");
+            if self.settings.recent_files.is_empty() {
+                return;
+            }
+            ui.add_space(24.0);
+            ui.label(egui::RichText::new("Zuletzt geöffnet").strong());
+            let mut open = None;
+            for path in &self.settings.recent_files {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy())
+                    .unwrap_or_default();
+                if ui
+                    .link(name)
+                    .on_hover_text(path.display().to_string())
+                    .clicked()
+                {
+                    open = Some(path.clone());
+                }
+            }
+            if let Some(path) = open {
+                self.request_open(&ctx, path);
+            }
         });
     }
 
@@ -323,6 +368,14 @@ impl FolioApp {
 }
 
 impl eframe::App for FolioApp {
+    /// Wird von eframe regelmäßig und beim Beenden aufgerufen.
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        self.settings.show_thumbnails = self.show_thumbnails;
+        self.settings.show_comments = self.show_comments;
+        self.settings.store_tool_settings(&self.tool_settings);
+        eframe::set_value(storage, STORAGE_KEY, &self.settings);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.poll_render(&ctx);
@@ -372,8 +425,14 @@ impl eframe::App for FolioApp {
             }
         }
         if self.document.is_some() {
+            // Grauer Hintergrund hinter den (weißen) Seiten – im hellen Design sonst unsichtbar.
+            let backdrop = if ui.visuals().dark_mode {
+                ui.visuals().extreme_bg_color
+            } else {
+                egui::Color32::from_gray(190)
+            };
             egui::CentralPanel::default()
-                .frame(egui::Frame::NONE.fill(ui.visuals().extreme_bg_color))
+                .frame(egui::Frame::NONE.fill(backdrop))
                 .show(ui, |ui| self.document_view(ui));
             if let Some(d) = &mut self.document {
                 d.show_editor(&ctx);
@@ -384,6 +443,7 @@ impl eframe::App for FolioApp {
         } else {
             egui::CentralPanel::default().show(ui, |ui| self.empty_state(ui));
         }
+        self.settings_window(&ctx);
         self.unsaved_changes_dialog(&ctx);
         self.error_dialog(&ctx);
     }
