@@ -48,6 +48,12 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Tests für core: Roundtrip „erstellen → speichern → neu laden → vergleichen“ mit den Fixtures.
 - Fixtures in `tests/fixtures/` werden ausschließlich per `gen_fixtures` erzeugt.
 
+## Meilensteine Phase 5 (Schwärzen & Bereinigen)
+- [x] 5.1 Content-Stream-Interpreter (core)
+- [ ] 5.2 Schwärzungen markieren (Redact-Annotationen, UI)
+- [ ] 5.3 Schwärzungen anwenden + komplett neu schreiben
+- [ ] 5.4 Bereinigen + Abschluss
+
 ## Meilensteine Phase 4 (Signaturen)
 - [x] 4.1 Signaturen prüfen (sign-Crate, Panel, Vertrauensspeicher)
 - [x] 4.2 Signieren PAdES B-B (PKCS#12, Platzhalter, CMS)
@@ -128,6 +134,12 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   geerbte MediaBox/CropBox/Resources werden in die Seite übernommen), pro Seite fremde Einträge +
   verwaltete Annotationen; unveränderte behalten ihren Verweis, geänderte werden unter derselben
   Objektnummer neu geschrieben
+- `core::content` – Content-Stream-Interpreter: `interpret_page`/`interpret_form` → `Interpreted { ops, items }`;
+  `Item::{Text(TextShow), Path, Image, Form, Shading}` mit Rechtecken im PDF-Raum und Op-Indizes;
+  `Glyph { at: GlyphRef{op, part, start, len}, rect, advance }`; `Matrix` (PDF-Reihenfolge, `then`);
+  `FontInfo` (/Widths, CID /W+/DW, Type3 /FontMatrix, Helvetica/Courier ohne /Widths; sonst `exact = false`
+  und `TextShow::bounds` als großzügige Obergrenze). Ops kommen von `lopdf::content::Content::decode`
+  (inkl. Inline-Bildern als `BI` mit Stream-Operand)
 - `core::font` (Helvetica-Breiten, WinAnsi, Umbruch), `core::pdf_string` (Textstrings), `core::date`
 - `core::text` – `PageText`/`CharBox` (Zeichen + Rechteck im PDF-Raum), `find`, `range_rects`, `char_at`
 - `render::worker` – Textextraktion (`extract_text`, Event `Text`), eigene Warteschlange:
@@ -212,6 +224,8 @@ Datei-/Ordnerdialoge (rfd über xdg-portal) funktionieren im Container nicht –
 PDFium liegt lokal in `pdfium/lib` (gitignored).
 `cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf` schreibt jeden Annotationstyp –
 zur Gegenprobe mit anderen Readern (z. B. `pdftoppm -png out.pdf x`).
+`cargo run -p foliocraft-core --example content_dump -- datei.pdf [Seite]` zeigt die Interpreter-Ergebnisse
+(Gegenprobe: `pdftotext -bbox`, gleiche x-Positionen).
 `cargo run -p foliocraft-sign --example sign_demo -- in.pdf out.pdf [id.p12 pw] [rsa]` signiert (ohne ID mit Testzertifikat).
 Zeitstempel: `--tsa-openssl tsa.cnf` (lokale OpenSSL-TSA, `openssl ts -reply`) oder `--tsa-http URL`.
 Öffentliche TSAs sind aus dem Container nicht erreichbar (Netzwerkregel).
