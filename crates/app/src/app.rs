@@ -86,6 +86,10 @@ pub struct FolioApp {
     pub(crate) cert_dialog: Option<crate::sign_ui::CertDialog>,
     /// Nach erfolgreichem Job diese Datei öffnen (z. B. frisch signierte Fassung).
     pub(crate) open_after_job: Option<PathBuf>,
+    /// Ergebnis-Dokument eines laufenden Jobs (z. B. Schwärzen) und sein Pfad.
+    pub(crate) pending_doc: Option<(crate::redact::DocSlot, Option<PathBuf>)>,
+    pub(crate) redact_confirm: bool,
+    pub(crate) sanitize_dialog: Option<crate::redact::SanitizeDialog>,
 }
 
 impl FolioApp {
@@ -133,6 +137,9 @@ impl FolioApp {
             sign_dialog: None,
             cert_dialog: None,
             open_after_job: None,
+            pending_doc: None,
+            redact_confirm: false,
+            sanitize_dialog: None,
         };
         app.rebuild_trust();
         if let Some(path) = initial_file {
@@ -313,13 +320,17 @@ impl FolioApp {
                 let open = self.open_after_job.take();
                 match result {
                     Ok(msg) => {
+                        self.take_pending_doc();
                         if let Some(path) = open {
                             self.open_path(ctx, &path);
                             self.show_signatures = true;
                         }
                         self.info = Some(msg);
                     }
-                    Err(msg) => self.error = Some(msg),
+                    Err(msg) => {
+                        self.pending_doc = None;
+                        self.error = Some(msg);
+                    }
                 }
             }
         }
@@ -445,7 +456,11 @@ impl FolioApp {
             // Im Textmodus kann man Annotationen anklicken (auswählen, Doppelklick = bearbeiten);
             // Ziehen markiert weiterhin Text.
             Tool::TextSelect if d.handle_annotation_select(ui, &view, false) => {}
-            Tool::TextSelect | Tool::Highlight | Tool::Underline | Tool::StrikeOut => {
+            Tool::TextSelect
+            | Tool::Highlight
+            | Tool::Underline
+            | Tool::StrikeOut
+            | Tool::RedactText => {
                 // Text der sichtbaren Seiten vorab laden, damit Auswahl sofort geht.
                 if let Ok(render) = &self.render {
                     for &(page, _) in &view.pages {
@@ -551,6 +566,9 @@ impl eframe::App for FolioApp {
             }
             if d.search.open {
                 egui::Panel::top("searchbar").show(ui, |ui| d.search_bar(ui));
+                if std::mem::take(&mut d.search.redact_all) {
+                    d.redact_search_hits(&self.tool_settings);
+                }
             }
             if let Ok(render) = &self.render {
                 d.update_search(render);
@@ -608,6 +626,8 @@ impl eframe::App for FolioApp {
         self.merge_dialog_ui(&ctx);
         self.extract_dialog_ui(&ctx);
         self.split_dialog_ui(&ctx);
+        self.redact_confirm_ui(&ctx);
+        self.sanitize_dialog_ui(&ctx);
         self.sign_dialog_ui(&ctx);
         self.cert_dialog_ui(&ctx);
         self.job_ui(&ctx);

@@ -5,6 +5,7 @@
 
 pub mod annotation;
 pub mod command;
+pub mod content;
 pub mod date;
 pub mod document;
 pub mod error;
@@ -16,6 +17,9 @@ pub mod page_export;
 pub mod page_import;
 pub mod page_ops;
 pub mod pdf_string;
+pub mod raster;
+pub mod redact;
+pub mod sanitize;
 mod save;
 pub mod signature_prep;
 pub mod text;

@@ -28,6 +28,9 @@ pub struct SearchState {
     /// Beim ersten Treffer automatisch dorthin springen.
     jump_to_first: bool,
     focus_field: bool,
+    /// "Alle Treffer schwärzen" wurde geklickt (ausgeführt von der App, die die
+    /// Werkzeugeinstellungen kennt).
+    pub redact_all: bool,
 }
 
 impl SearchState {
@@ -244,6 +247,17 @@ impl OpenDocument {
                 format!("{cur} von {}{more}", s.hits.len())
             };
             ui.label(status);
+            let complete = s.searched_count >= n && !s.hits.is_empty();
+            if ui
+                .add_enabled(complete, egui::Button::new("Alle Treffer schwärzen"))
+                .on_hover_text(
+                    "Markiert jeden Treffer zum Schwärzen (wird erst beim Anwenden entfernt)",
+                )
+                .on_disabled_hover_text("Erst wenn die Suche alle Seiten durchsucht hat")
+                .clicked()
+            {
+                self.search.redact_all = true;
+            }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui

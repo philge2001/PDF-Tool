@@ -49,6 +49,21 @@ pub fn build(a: &Annotation) -> Appearance {
                 );
             }
         }
+        AnnotKind::Redact { quads } => {
+            // Vorschau: Umriss in der Annotationsfarbe (der Inhalt bleibt sichtbar).
+            let _ = writeln!(s, "{rgb} RG 1 w");
+            for q in quads {
+                let r = q.bounds();
+                let _ = writeln!(
+                    s,
+                    "{} {} {} {} re S",
+                    n(r.x0 + 0.5),
+                    n(r.y0 + 0.5),
+                    n(r.width() - 1.0),
+                    n(r.height() - 1.0)
+                );
+            }
+        }
         AnnotKind::Underline { quads } | AnnotKind::StrikeOut { quads } => {
             let strike = matches!(a.kind, AnnotKind::StrikeOut { .. });
             let _ = writeln!(s, "{rgb} RG");

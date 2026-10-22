@@ -167,6 +167,15 @@ impl Document {
         self.path = None;
     }
 
+    /// Erzeugt ein Dokument aus neu geschriebenen Bytes (z. B. nach dem Schwärzen), das zur
+    /// bisherigen Datei gehört, aber noch nicht gespeichert ist.
+    pub fn replacement(bytes: Vec<u8>, path: Option<PathBuf>) -> Result<Self> {
+        let mut doc = Self::from_bytes(bytes)?;
+        doc.path = path;
+        doc.history.mark_unsaved();
+        Ok(doc)
+    }
+
     pub fn bytes(&self) -> &Arc<Vec<u8>> {
         &self.bytes
     }

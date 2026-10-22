@@ -91,6 +91,20 @@ impl Builder {
         id
     }
 
+    /// Seite mit frei geschriebenem Inhalt (rohe Content-Stream-Bytes) und Ressourcen.
+    fn raw_page(&mut self, size: (f32, f32), content: Vec<u8>, resources: Dictionary) -> ObjectId {
+        let content_id = self.doc.add_object(Stream::new(Dictionary::new(), content));
+        let id = self.doc.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => self.pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), size.0.into(), size.1.into()],
+            "Contents" => content_id,
+            "Resources" => resources,
+        });
+        self.kids.push(id.into());
+        id
+    }
+
     /// Hängt eine Annotation an eine Seite an.
     fn annotate(&mut self, page_id: ObjectId, annot: Dictionary) -> ObjectId {
         let annot_id = self.doc.add_object(annot);
@@ -550,6 +564,161 @@ fn form(path: &Path) {
     b.finish(path);
 }
 
+/// Alles, was der Content-Interpreter können muss: Kerning (TJ), Abstände, gedrehter und
+/// unsichtbarer Text, Zeilen-Operatoren (' und "), Vektorgrafik, Bild, Inline-Bild,
+/// Formular-XObject und (Seite 2) eine CID-Schrift mit /W-Breiten.
+fn content_mix(path: &Path) {
+    let mut b = Builder::new();
+    let font = b.font_id;
+    // 4x4-Graustufenbild (unkomprimiert, 8 Bit).
+    let pixels: Vec<u8> = (0..16).map(|i| (i * 16) as u8).collect();
+    let image = b.doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => 4, "Height" => 4,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+        },
+        pixels,
+    ));
+    let form = b.doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Form",
+            "BBox" => vec![0.into(), 0.into(), 200.into(), 20.into()],
+            "Resources" => dictionary! { "Font" => dictionary! { "F1" => font } },
+        },
+        b"BT /F1 10 Tf 0 5 Td (Im Formular-XObject) Tj ET".to_vec(),
+    ));
+    let mut c: Vec<u8> = Vec::new();
+    c.extend_from_slice(
+        b"BT /F1 12 Tf 72 760 Td (Geheim: 4711-0815) Tj ET\n\
+          BT /F1 12 Tf 72 730 Td [(Ke) 120 (rning) -250 (TJ-Test)] TJ ET\n\
+          q BT /F1 11 Tf 2 Tc 5 Tw 120 Tz 72 700 Td (Abstand Test) Tj ET Q\n\
+          BT /F1 14 Tf 0.7071 0.7071 -0.7071 0.7071 300 600 Tm (Gedreht 45) Tj ET\n\
+          q BT 3 Tr /F1 12 Tf 72 640 Td (Unsichtbar OCR) Tj ET Q\n\
+          BT /F1 12 Tf 14 TL 72 610 Td (Zeile eins) Tj (Zeile zwei) ' 1 0 (Zeile drei) \" ET\n\
+          0 0 1 rg 72 500 100 50 re f\n\
+          1 0 0 RG 2 w 200 500 m 300 550 l S\n\
+          q 100 0 0 60 350 480 cm /Im1 Do Q\n\
+          q 40 0 0 40 480 480 cm BI /W 2 /H 2 /CS /G /BPC 8 ID ",
+    );
+    c.extend_from_slice(&[0x00, 0x55, 0xAA, 0xFF]);
+    c.extend_from_slice(b" EI Q\nq 1 0 0 1 72 420 cm /Fm1 Do Q\n");
+    b.raw_page(
+        A4,
+        c,
+        dictionary! {
+            "Font" => dictionary! { "F1" => font },
+            "XObject" => dictionary! { "Im1" => image, "Fm1" => form },
+        },
+    );
+
+    // Seite 2: Type0-Schrift (Identity-H), Breiten aus /W. Nicht eingebettet – es geht nur
+    // um die Geometrie; Reader zeigen hier eine Ersatzschrift.
+    let cid = b.doc.add_object(dictionary! {
+        "Type" => "Font", "Subtype" => "CIDFontType2", "BaseFont" => "Helvetica",
+        "CIDSystemInfo" => dictionary! {
+            "Registry" => Object::string_literal("Adobe"),
+            "Ordering" => Object::string_literal("Identity"),
+            "Supplement" => 0,
+        },
+        "DW" => 1000,
+        "W" => vec![
+            Object::from(36), vec![Object::from(600), 700.into(), 800.into()].into(),
+            Object::from(40), Object::from(42), Object::from(333),
+        ],
+    });
+    let type0 = b.doc.add_object(dictionary! {
+        "Type" => "Font", "Subtype" => "Type0", "BaseFont" => "Helvetica",
+        "Encoding" => "Identity-H", "DescendantFonts" => vec![Object::from(cid)],
+    });
+    b.raw_page(
+        A4,
+        b"BT /F2 20 Tf 100 700 Td <0024002500260028002A0001> Tj ET".to_vec(),
+        dictionary! { "Font" => dictionary! { "F2" => type0 } },
+    );
+    b.finish(path);
+}
+
+/// Alles, was "Dokument bereinigen" finden und entfernen soll: Dokumentinfo, XMP, JavaScript
+/// (Öffnen-Aktion + Namensbaum), eingebettete Datei, ausgeblendete Ebene, Kommentar,
+/// Formularwert.
+fn sanitize(path: &Path) {
+    let mut b = Builder::new();
+    let font = b.font_id;
+    let doc = &mut b.doc;
+    let visible = doc
+        .add_object(dictionary! { "Type" => "OCG", "Name" => Object::string_literal("Sichtbar") });
+    let hidden = doc
+        .add_object(dictionary! { "Type" => "OCG", "Name" => Object::string_literal("Versteckt") });
+    let content = b"/OC /Vis BDC BT /F1 14 Tf 72 760 Td (Sichtbarer Text) Tj ET EMC\n\
+                    /OC /Hid BDC BT /F1 14 Tf 72 730 Td (Geheime Ebene) Tj ET EMC\n"
+        .to_vec();
+    let page = b.raw_page(
+        A4,
+        content,
+        dictionary! {
+            "Font" => dictionary! { "F1" => font },
+            "Properties" => dictionary! { "Vis" => visible, "Hid" => hidden },
+        },
+    );
+    let doc = &mut b.doc;
+    let xmp = doc.add_object(Stream::new(
+        dictionary! { "Type" => "Metadata", "Subtype" => "XML" },
+        b"<x:xmpmeta xmlns:x='adobe:ns:meta/'><dc:creator>Erika Interna</dc:creator></x:xmpmeta>"
+            .to_vec(),
+    ));
+    let js = doc.add_object(dictionary! {
+        "S" => "JavaScript", "JS" => Object::string_literal("app.alert('Hallo aus JavaScript');"),
+    });
+    let file = doc.add_object(Stream::new(
+        dictionary! { "Type" => "EmbeddedFile" },
+        b"Interne Kalkulation: 4711 EUR".to_vec(),
+    ));
+    let filespec = doc.add_object(dictionary! {
+        "Type" => "Filespec", "F" => Object::string_literal("kalkulation.txt"),
+        "EF" => dictionary! { "F" => file },
+    });
+    let field = b.annotate(
+        page,
+        dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "FT" => "Tx", "T" => Object::string_literal("kunde"),
+            "V" => Object::string_literal("Geheimkunde GmbH"),
+            "DA" => Object::string_literal("/Helv 10 Tf 0 g"),
+            "Rect" => vec![72.into(), 600.into(), 300.into(), 620.into()], "P" => page,
+        },
+    );
+    let note = dictionary! {
+        "Type" => "Annot", "Subtype" => "Text", "Contents" => Object::string_literal("Interner Kommentar"),
+        "Rect" => vec![400.into(), 700.into(), 420.into(), 720.into()],
+    };
+    b.annotate(page, note);
+    let info = b.doc.add_object(dictionary! {
+        "Author" => Object::string_literal("Erika Interna"),
+        "Title" => Object::string_literal("Vertraulich"),
+    });
+    b.doc.trailer.set("Info", info);
+    b.catalog_extra.set("Metadata", xmp);
+    b.catalog_extra.set("OpenAction", js);
+    b.catalog_extra.set(
+        "Names",
+        dictionary! {
+            "JavaScript" => dictionary! { "Names" => vec![Object::string_literal("start"), js.into()] },
+            "EmbeddedFiles" => dictionary! { "Names" => vec![Object::string_literal("kalkulation.txt"), filespec.into()] },
+        },
+    );
+    b.catalog_extra.set(
+        "OCProperties",
+        dictionary! {
+            "OCGs" => vec![Object::from(visible), hidden.into()],
+            "D" => dictionary! { "OFF" => vec![Object::from(hidden)] },
+        },
+    );
+    b.catalog_extra.set(
+        "AcroForm",
+        dictionary! { "Fields" => vec![Object::from(field)] },
+    );
+    b.finish(path);
+}
+
 /// Viele Seiten für Performance-Tests (wird nicht eingecheckt).
 fn big(path: &Path, pages: usize) {
     let mut b = Builder::new();
@@ -586,4 +755,6 @@ fn main() {
     with_annotations(&dir.join("with_annotations.pdf"));
     nested_tree(&dir.join("nested_tree.pdf"));
     form(&dir.join("form.pdf"));
+    content_mix(&dir.join("content_mix.pdf"));
+    sanitize(&dir.join("sanitize.pdf"));
 }

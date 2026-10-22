@@ -35,6 +35,19 @@ pub fn paint(painter: &egui::Painter, info: &PageInfo, page_rect: Rect, a: &Anno
                 painter.rect_filled(rect_to_screen(q.bounds()), 0.0, fill);
             }
         }
+        AnnotKind::Redact { quads } => {
+            // Vorschau der Schwärzung: rote Kontur, leicht abgedunkelt.
+            for q in quads {
+                let r = rect_to_screen(q.bounds());
+                painter.rect_filled(r, 0.0, Color32::from_black_alpha(60));
+                painter.rect_stroke(
+                    r,
+                    0.0,
+                    Stroke::new(1.5, color32(a.color, 1.0)),
+                    StrokeKind::Inside,
+                );
+            }
+        }
         AnnotKind::Underline { quads } | AnnotKind::StrikeOut { quads } => {
             let strike = matches!(a.kind, AnnotKind::StrikeOut { .. });
             for q in quads {
