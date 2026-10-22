@@ -26,6 +26,8 @@ zune-jpeg = { version = "0.5.15", default-features = false, features = ["std"] }
 # Schriften lesen (Glyphen, Breiten) und als Teilmenge einbetten (Phase 6).
 ttf-parser = "0.25"
 subsetter = "0.2.6"
+# PNG lesen (reines Rust) – Bilder einfügen/ersetzen (Phase 6).
+png = "0.18"
 # Ohne `image`-Feature: wir brauchen nur rohe RGBA-Bytes, keine image-Crate.
 pdfium-render = { version = "0.9.4", default-features = false, features = ["pdfium_latest", "thread_safe"] }
 # glow (OpenGL) statt wgpu: schnellerer Build, weniger Abhängigkeiten, reicht für 2D.

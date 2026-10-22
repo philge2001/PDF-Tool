@@ -624,7 +624,7 @@ pub fn interpret(
     resources: Option<&Dictionary>,
     ctm: Matrix,
 ) -> Interpreted {
-    interpret_with(pdf, ops, resources, ctm, None)
+    interpret_with(pdf, ops, resources, ctm, None, None)
 }
 
 /// Wie [`interpret`], mit zusätzlichen Schriften aus dem Modell.
@@ -634,12 +634,14 @@ pub fn interpret_with<'a>(
     resources: Option<&'a Dictionary>,
     ctm: Matrix,
     extra_fonts: Option<&'a ExtraFonts>,
+    extra_images: Option<&'a ExtraImages>,
 ) -> Interpreted {
     let mut it = Interp {
         pdf,
         resources,
         fonts: HashMap::new(),
         extra_fonts,
+        extra_images,
     };
     let items = it.run(&ops, ctm);
     Interpreted { ops, items }
@@ -650,9 +652,13 @@ struct Interp<'a> {
     resources: Option<&'a Dictionary>,
     /// Schriften nach Ressourcenname (einmal geladen). `Rc` = geteilter Besitz ohne Kopie.
     fonts: HashMap<Vec<u8>, Rc<FontInfo<'a>>>,
-    /// Schriften, die nur im Modell existieren (Vorrang vor den Ressourcen).
+    /// Schriften und Bilder, die nur im Modell existieren (Vorrang vor den Ressourcen).
     extra_fonts: Option<&'a ExtraFonts>,
+    extra_images: Option<&'a ExtraImages>,
 }
+
+/// Ressourcenname -> neues Bild-XObject, das noch nicht in der Datei steht.
+pub type ExtraImages = std::collections::BTreeMap<Vec<u8>, crate::image_edit::NewImage>;
 
 /// Ressourcenname -> eingebettete Teilmenge, die noch nicht in der Datei steht.
 pub type ExtraFonts = std::collections::BTreeMap<Vec<u8>, crate::embedded_font::SubsetFont>;
@@ -813,6 +819,15 @@ impl<'a> Interp<'a> {
                     let Some(name) = a.first().and_then(|o| o.as_name().ok()) else {
                         continue;
                     };
+                    if self.extra_images.is_some_and(|e| e.contains_key(name)) {
+                        items.push(Item::Image {
+                            op: i,
+                            name: Some(name.to_vec()),
+                            matrix: gs.ctm,
+                            bounds: gs.ctm.apply_rect(Rect::new(0.0, 0.0, 1.0, 1.0)),
+                        });
+                        continue;
+                    }
                     let Some((obj, id)) = self.resource(b"XObject", name) else {
                         continue;
                     };

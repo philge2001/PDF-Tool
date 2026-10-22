@@ -195,6 +195,30 @@ fn add_text_on_rotated_page() {
     );
     block(&blocks, "Zweite Zeile");
 
+    // Zweimal hinzufügen: Die angehängten Inhalte müssen sauber getrennt sein.
+    let mut twice = fixture("rotated.pdf");
+    twice
+        .add_text(0, Point::new(50.0, 50.0), "Eins", 10.0, Color::BLACK)
+        .unwrap();
+    twice
+        .add_text(0, Point::new(50.0, 80.0), "Zwei", 10.0, Color::BLACK)
+        .unwrap();
+    let content = twice.page_content(0).unwrap().content;
+    assert!(
+        !content.windows(2).any(|w| w == b"Qq"),
+        "Operatoren zusammengeklebt"
+    );
+    let texts: Vec<String> = reload(&twice)
+        .text_blocks(0)
+        .unwrap()
+        .into_iter()
+        .map(|b| b.text)
+        .collect();
+    assert!(
+        texts.contains(&"Eins".to_string()) && texts.contains(&"Zwei".to_string()),
+        "{texts:?}"
+    );
+
     // Neuer Text lässt sich anschließend bearbeiten (dieselbe Ersatzschrift).
     let mut saved = saved;
     let b = block(&saved.text_blocks(0).unwrap(), "Zweite").clone();

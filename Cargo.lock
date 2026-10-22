@@ -1567,6 +1567,7 @@ name = "foliocraft-core"
 version = "0.1.0"
 dependencies = [
  "lopdf",
+ "png",
  "subsetter",
  "thiserror 2.0.21",
  "tracing",

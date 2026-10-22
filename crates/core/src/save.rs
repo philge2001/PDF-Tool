@@ -103,7 +103,7 @@ fn write_page_tree(doc: &Document, inc: &mut IncrementalDocument) -> Result<()> 
 }
 
 /// Schreibt bearbeitete Seiteninhalte: neuer Content Stream, Ressourcen als direktes
-/// Dictionary (bisherige plus eingebettete Ersatzschriften).
+/// Dictionary (bisherige plus eingebettete Ersatzschriften und neue Bilder).
 fn write_page_contents(doc: &Document, inc: &mut IncrementalDocument) -> Result<()> {
     let pdf = doc.pdf();
     for info in doc.pages() {
@@ -133,12 +133,24 @@ fn write_page_contents(doc: &Document, inc: &mut IncrementalDocument) -> Result<
         let mut resources = inherited(pdf, page, b"Resources")
             .map(resolve)
             .unwrap_or_default();
-        if !fonts.is_empty() {
-            let mut font_dict = resources.get(b"Font").map(resolve).unwrap_or_default();
-            for (name, id) in fonts {
-                font_dict.set(name, id);
+        let mut images = Vec::new();
+        for (name, img) in &pc.images {
+            let mut stream = img.image.clone();
+            if let Some(mask) = &img.smask {
+                let mask_id = inc.new_document.add_object(mask.clone());
+                stream.dict.set("SMask", mask_id);
             }
-            resources.set("Font", font_dict);
+            images.push((name.clone(), inc.new_document.add_object(stream)));
+        }
+        for (category, entries) in [(&b"Font"[..], fonts), (b"XObject", images)] {
+            if entries.is_empty() {
+                continue;
+            }
+            let mut dict = resources.get(category).map(resolve).unwrap_or_default();
+            for (name, id) in entries {
+                dict.set(name, id);
+            }
+            resources.set(category, dict);
         }
         inc.opt_clone_object_to_new_document(page)?;
         let dict = inc

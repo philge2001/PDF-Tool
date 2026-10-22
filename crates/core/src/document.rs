@@ -420,6 +420,11 @@ impl Document {
         }
         self.imported_fields = snapshot_fields(&self.model.forms);
         self.saved_pages = self.page_structure();
+        // Neue Bilder stehen jetzt in der Datei (die Ressourcen der Seite verweisen darauf).
+        // Aus dem Modell nehmen, damit sie beim nächsten Speichern nicht erneut angehängt werden.
+        for pc in self.model.page_content.values_mut() {
+            pc.images.clear();
+        }
         self.saved_content = self
             .model
             .page_content

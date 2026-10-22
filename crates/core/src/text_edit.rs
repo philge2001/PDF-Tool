@@ -39,6 +39,8 @@ pub struct PageContent {
     pub content: Vec<u8>,
     /// Zusätzliche Schriften (Ressourcenname -> Noto-Teilmenge).
     pub fonts: ExtraFonts,
+    /// Neue Bilder (Ressourcenname -> Bild-XObject).
+    pub images: content::ExtraImages,
     /// Alter Inhalt steht in `q … Q`: Dahinter gilt wieder der normale Benutzerraum.
     pub isolated: bool,
     /// Änderungsstempel (0 = Inhalt aus der Datei); siehe `Model::content_epoch`.
@@ -373,6 +375,30 @@ fn shift_op(width: f32, size: f32, th: f32) -> Option<Operation> {
     ))
 }
 
+/// Schließt den bisherigen Inhalt in `q … Q` ein (einmalig): Ein offener Grafikzustand
+/// (z. B. `cm` ohne `Q`) würde sonst neu angehängte Inhalte verschieben.
+pub(crate) fn isolate(pc: &mut PageContent) {
+    if pc.isolated {
+        return;
+    }
+    let mut c = b"q\n".to_vec();
+    c.extend_from_slice(&pc.content);
+    c.extend_from_slice(b"\nQ\n");
+    pc.content = c;
+    pc.isolated = true;
+}
+
+/// Hängt Operationen an den Inhalt an. Vorher ein Zeilenumbruch: lopdf schreibt hinter die
+/// letzte Operation kein Trennzeichen, sonst würde z. B. aus `Q` und `q` der Operator `Qq`.
+pub(crate) fn append_ops(pc: &mut PageContent, ops: Vec<Operation>) -> Result<()> {
+    if pc.content.last().is_some_and(|b| !b.is_ascii_whitespace()) {
+        pc.content.push(b'\n');
+    }
+    pc.content
+        .extend_from_slice(&Content { operations: ops }.encode()?);
+    Ok(())
+}
+
 /// Ressourcenname der Ersatzschrift: vorhandener Eintrag oder ein freier Name.
 fn fallback_name(
     pc: &PageContent,
@@ -425,7 +451,11 @@ impl Document {
         })
     }
 
-    fn interpret_content<'a>(&'a self, page: ObjectId, pc: &'a PageContent) -> Result<Interpreted> {
+    pub(crate) fn interpret_content<'a>(
+        &'a self,
+        page: ObjectId,
+        pc: &'a PageContent,
+    ) -> Result<Interpreted> {
         let ops = Content::decode(&pc.content)?.operations;
         Ok(content::interpret_with(
             self.pdf(),
@@ -433,6 +463,7 @@ impl Document {
             content::page_resources(self.pdf(), page),
             Matrix::IDENTITY,
             Some(&pc.fonts),
+            Some(&pc.images),
         ))
     }
 
@@ -642,15 +673,7 @@ impl Document {
             )));
         }
         let mut after = before.clone();
-        if !after.isolated {
-            // Alten Inhalt einschließen: Ein offener Grafikzustand (z. B. `cm` ohne `Q`)
-            // würde sonst den neuen Text verschieben.
-            let mut c = b"q\n".to_vec();
-            c.extend_from_slice(&after.content);
-            c.extend_from_slice(b"\nQ\n");
-            after.content = c;
-            after.isolated = true;
-        }
+        isolate(&mut after);
         let name = fallback_name(
             &after,
             content::page_resources(self.pdf(), page),
@@ -687,9 +710,7 @@ impl Document {
         }
         ops.push(Operation::new("ET", vec![]));
         ops.push(Operation::new("Q", vec![]));
-        after
-            .content
-            .extend_from_slice(&Content { operations: ops }.encode()?);
+        append_ops(&mut after, ops)?;
         self.execute(Box::new(ReplacePageContent::new(
             page,
             before,
