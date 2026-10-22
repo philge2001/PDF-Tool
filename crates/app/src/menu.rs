@@ -2,6 +2,7 @@
 
 use crate::app::FolioApp;
 use crate::pages::PageAction;
+use crate::tools::Tool;
 use crate::viewer::ZoomMode;
 use eframe::egui::{self, Button, ThemePreference};
 
@@ -181,6 +182,34 @@ impl FolioApp {
                         ui.close();
                     }
                 });
+            });
+            ui.menu_button("Schwärzen", |ui| {
+                if self.document.is_none() {
+                    ui.label("Kein Dokument");
+                    return;
+                }
+                for tool in Tool::REDACT {
+                    if ui
+                        .selectable_label(self.tool == tool, tool.label())
+                        .clicked()
+                    {
+                        self.tool = tool;
+                        ui.close();
+                    }
+                }
+                let pending = self.document.as_ref().map_or(0, |d| d.pending_redactions());
+                ui.label(egui::RichText::new(format!("{pending} Schwärzung(en) markiert")).weak());
+                ui.separator();
+                if ui
+                    .button("Suchtreffer schwärzen…")
+                    .on_hover_text("Öffnet die Suche; dort „Alle Treffer schwärzen“")
+                    .clicked()
+                {
+                    if let Some(d) = &mut self.document {
+                        d.search.open();
+                    }
+                    ui.close();
+                }
             });
             ui.menu_button("Signieren", |ui| {
                 if ui

@@ -50,7 +50,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 
 ## Meilensteine Phase 5 (Schwärzen & Bereinigen)
 - [x] 5.1 Content-Stream-Interpreter (core)
-- [ ] 5.2 Schwärzungen markieren (Redact-Annotationen, UI)
+- [x] 5.2 Schwärzungen markieren (Redact-Annotationen, UI)
 - [ ] 5.3 Schwärzungen anwenden + komplett neu schreiben
 - [ ] 5.4 Bereinigen + Abschluss
 
@@ -212,6 +212,9 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   Signieren läuft als Job (`open_after_job`), Zeitstempel per `ureq` (`http_tsa`)
 - `app::signatures` – `SigState` (neu prüfen bei neuen Bytes/Vertrauensstand), Hinweisleiste, Panel
   (Details, Zertifikate, „vertrauen“, „Signierte Fassung speichern“), Vertrauensspeicher in den Einstellungen
+- `AnnotKind::Redact { quads }` – Schwärzungs-Markierung (/Redact, /QuadPoints, /IC schwarz), Vorschau rot
+- `app::redact` – `redact_search_hits` (alle Suchtreffer → Redact, 1 Undo-Schritt), `pending_redactions`;
+  Werkzeuge `Tool::RedactText` (wie Hervorheben) und `Tool::RedactArea` (Rechteck), Menü „Schwärzen“
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
 
 ## Tastenkürzel

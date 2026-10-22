@@ -61,6 +61,11 @@ pub enum AnnotKind {
         rect: Rect,
         font_size: f32,
     },
+    /// Zum Schwärzen markierter Bereich (/Redact) – erst beim Anwenden wird der Inhalt
+    /// darunter wirklich entfernt. Ein Viereck pro Bereich bzw. Textzeile.
+    Redact {
+        quads: Vec<Quad>,
+    },
 }
 
 impl AnnotKind {
@@ -76,6 +81,7 @@ impl AnnotKind {
             AnnotKind::Circle { .. } => "Circle",
             AnnotKind::Line { .. } => "Line",
             AnnotKind::FreeText { .. } => "FreeText",
+            AnnotKind::Redact { .. } => "Redact",
         }
     }
 
@@ -94,6 +100,7 @@ impl AnnotKind {
             } => "Pfeil",
             AnnotKind::Line { .. } => "Linie",
             AnnotKind::FreeText { .. } => "Freitext",
+            AnnotKind::Redact { .. } => "Schwärzung",
         }
     }
 
@@ -106,7 +113,7 @@ impl AnnotKind {
 }
 
 /// Alle Subtypen, die FolioCraft selbst verwaltet (importiert, zeichnet, speichert).
-pub const MANAGED_SUBTYPES: [&str; 9] = [
+pub const MANAGED_SUBTYPES: [&str; 10] = [
     "Highlight",
     "Underline",
     "StrikeOut",
@@ -116,6 +123,7 @@ pub const MANAGED_SUBTYPES: [&str; 9] = [
     "Circle",
     "Line",
     "FreeText",
+    "Redact",
 ];
 
 /// Herkunft einer importierten Annotation in der PDF-Datei.
@@ -170,7 +178,8 @@ impl Annotation {
         match &self.kind {
             AnnotKind::Highlight { quads }
             | AnnotKind::Underline { quads }
-            | AnnotKind::StrikeOut { quads } => {
+            | AnnotKind::StrikeOut { quads }
+            | AnnotKind::Redact { quads } => {
                 Rect::bounding(quads.iter().flat_map(|q| q.points)).unwrap_or_default()
             }
             AnnotKind::Note { pos } => {
@@ -202,7 +211,8 @@ impl Annotation {
         match &mut self.kind {
             AnnotKind::Highlight { quads }
             | AnnotKind::Underline { quads }
-            | AnnotKind::StrikeOut { quads } => {
+            | AnnotKind::StrikeOut { quads }
+            | AnnotKind::Redact { quads } => {
                 for q in quads.iter_mut() {
                     *q = q.translate(dx, dy);
                 }
@@ -228,7 +238,8 @@ impl Annotation {
         match &self.kind {
             AnnotKind::Highlight { quads }
             | AnnotKind::Underline { quads }
-            | AnnotKind::StrikeOut { quads } => {
+            | AnnotKind::StrikeOut { quads }
+            | AnnotKind::Redact { quads } => {
                 quads.iter().any(|q| q.bounds().expand(tol).contains(p))
             }
             AnnotKind::Ink { strokes, width } => strokes.iter().any(|s| {

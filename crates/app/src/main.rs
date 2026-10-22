@@ -12,6 +12,7 @@ mod jobs;
 mod menu;
 mod page_dialogs;
 mod pages;
+mod redact;
 mod search;
 mod settings;
 mod shortcuts;

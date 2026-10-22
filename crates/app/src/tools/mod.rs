@@ -28,6 +28,10 @@ pub enum Tool {
     Rectangle,
     Ellipse,
     Arrow,
+    /// Markierten Text zum Schwärzen vormerken.
+    RedactText,
+    /// Bereich zum Schwärzen aufziehen.
+    RedactArea,
     /// Formular bearbeiten: Felder auswählen, verschieben, Größe ändern.
     FormEdit,
     FieldText,
@@ -52,6 +56,8 @@ impl Tool {
             Tool::Rectangle => "Rechteck",
             Tool::Ellipse => "Ellipse",
             Tool::Arrow => "Pfeil",
+            Tool::RedactText => "Text schwärzen",
+            Tool::RedactArea => "Bereich schwärzen",
             Tool::FormEdit => "Auswählen",
             Tool::FieldText => "Textfeld",
             Tool::FieldCheckBox => "Kontrollkästchen",
@@ -88,9 +94,14 @@ impl Tool {
         Self::FORM.contains(&self)
     }
 
+    pub const REDACT: [Tool; 2] = [Tool::RedactText, Tool::RedactArea];
+
     /// Arbeitet das Werkzeug auf markiertem Text?
     pub fn is_text_markup(self) -> bool {
-        matches!(self, Tool::Highlight | Tool::Underline | Tool::StrikeOut)
+        matches!(
+            self,
+            Tool::Highlight | Tool::Underline | Tool::StrikeOut | Tool::RedactText
+        )
     }
 
     pub fn uses_stroke_width(self) -> bool {
@@ -105,6 +116,7 @@ impl Tool {
             Tool::Highlight | Tool::Note => Color::YELLOW,
             Tool::Underline => Color::GREEN,
             Tool::StrikeOut | Tool::Rectangle | Tool::Ellipse => Color::RED,
+            Tool::RedactText | Tool::RedactArea => Color::rgb(0.85, 0.1, 0.1),
             Tool::Ink | Tool::Arrow => Color::BLUE,
             _ => Color::BLACK,
         }

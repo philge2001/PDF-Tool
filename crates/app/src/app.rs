@@ -445,7 +445,11 @@ impl FolioApp {
             // Im Textmodus kann man Annotationen anklicken (auswählen, Doppelklick = bearbeiten);
             // Ziehen markiert weiterhin Text.
             Tool::TextSelect if d.handle_annotation_select(ui, &view, false) => {}
-            Tool::TextSelect | Tool::Highlight | Tool::Underline | Tool::StrikeOut => {
+            Tool::TextSelect
+            | Tool::Highlight
+            | Tool::Underline
+            | Tool::StrikeOut
+            | Tool::RedactText => {
                 // Text der sichtbaren Seiten vorab laden, damit Auswahl sofort geht.
                 if let Ok(render) = &self.render {
                     for &(page, _) in &view.pages {
@@ -551,6 +555,9 @@ impl eframe::App for FolioApp {
             }
             if d.search.open {
                 egui::Panel::top("searchbar").show(ui, |ui| d.search_bar(ui));
+                if std::mem::take(&mut d.search.redact_all) {
+                    d.redact_search_hits(&self.tool_settings);
+                }
             }
             if let Ok(render) = &self.render {
                 d.update_search(render);

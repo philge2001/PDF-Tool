@@ -188,6 +188,19 @@ impl FolioApp {
                 }
             }
 
+            ui.separator();
+            ui.label("Schwärzen:");
+            for tool in Tool::REDACT {
+                let selected = self.tool == tool;
+                if ui.selectable_label(selected, tool.label()).clicked() {
+                    let applied = tool.is_text_markup()
+                        && d.create_markup_from_selection(tool, &self.tool_settings);
+                    if !applied {
+                        self.tool = if selected { Tool::TextSelect } else { tool };
+                    }
+                }
+            }
+
             // Ausgewählte Annotation: deren Farbe ändern / löschen.
             if let Some(a) = d
                 .selected

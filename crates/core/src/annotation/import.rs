@@ -47,6 +47,9 @@ pub fn parse(pdf: &lopdf::Document, page: usize, id: ObjectId) -> Option<Annotat
                 _ => AnnotKind::StrikeOut { quads },
             }
         }
+        "Redact" => AnnotKind::Redact {
+            quads: quads(pdf, d).unwrap_or_else(|| vec![Quad::from_rect(rect)]),
+        },
         "Text" => AnnotKind::Note {
             pos: Point::new(rect.x0, rect.y1),
         },

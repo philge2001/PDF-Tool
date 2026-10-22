@@ -7,7 +7,7 @@ use crate::app::OpenDocument;
 use crate::viewer::{ViewOutput, transform};
 use eframe::egui::{self, CursorIcon, Pos2};
 use foliocraft_core::{
-    AddAnnotation, AnnotKind, Annotation, Batch, Command, Point, Rect, date::pdf_date_now,
+    AddAnnotation, AnnotKind, Annotation, Batch, Command, Point, Quad, Rect, date::pdf_date_now,
 };
 
 /// Ein laufender Mauszug, der eine Annotation erzeugt.
@@ -28,7 +28,7 @@ const MIN_DRAG: f32 = 4.0;
 
 impl OpenDocument {
     /// Neue Annotation mit Farbe/Autor aus den Einstellungen (ID wird schon vergeben).
-    fn new_annotation(
+    pub(crate) fn new_annotation(
         &mut self,
         page: usize,
         kind: AnnotKind,
@@ -71,6 +71,7 @@ impl OpenDocument {
                 Tool::Highlight => AnnotKind::Highlight { quads },
                 Tool::Underline => AnnotKind::Underline { quads },
                 Tool::StrikeOut => AnnotKind::StrikeOut { quads },
+                Tool::RedactText => AnnotKind::Redact { quads },
                 _ => return false,
             };
             let mut a = self.new_annotation(page, kind, tool, settings);
@@ -226,6 +227,9 @@ impl OpenDocument {
                         rect,
                         font_size: settings.font_size,
                     },
+                    Tool::RedactArea => AnnotKind::Redact {
+                        quads: vec![Quad::from_rect(rect)],
+                    },
                     _ => return None,
                 };
                 (*page, kind)
@@ -257,6 +261,9 @@ impl OpenDocument {
                 let rect = Rect::from_points(*start, *end);
                 match tool {
                     Tool::Rectangle | Tool::FreeText => AnnotKind::Square { rect, width: 1.0 },
+                    Tool::RedactArea => AnnotKind::Redact {
+                        quads: vec![Quad::from_rect(rect)],
+                    },
                     Tool::Ellipse => AnnotKind::Circle { rect, width },
                     Tool::Arrow => AnnotKind::Line {
                         start: *start,

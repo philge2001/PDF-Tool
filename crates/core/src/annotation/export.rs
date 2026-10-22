@@ -56,6 +56,14 @@ pub fn to_dict(a: &Annotation, page_id: ObjectId, base: Option<&Dictionary>) -> 
                 num_array(quads.iter().flat_map(|q| q.points).flat_map(|p| [p.x, p.y])),
             );
         }
+        AnnotKind::Redact { quads } => {
+            d.set(
+                "QuadPoints",
+                num_array(quads.iter().flat_map(|q| q.points).flat_map(|p| [p.x, p.y])),
+            );
+            // Füllfarbe der Fläche NACH dem Anwenden (schwarz).
+            d.set("IC", num_array([0.0, 0.0, 0.0]));
+        }
         AnnotKind::Note { .. } => {
             d.set("Name", "Comment");
             d.set("Open", false);
