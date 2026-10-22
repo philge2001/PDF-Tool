@@ -2,6 +2,7 @@
 
 mod annot_draw;
 mod app;
+mod comments;
 mod search;
 mod shortcuts;
 mod text_cache;

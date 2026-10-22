@@ -58,13 +58,33 @@ impl FolioApp {
             return;
         }
 
+        // Rückgängig/Wiederholen – erst hier, damit Textfelder ihr eigenes Strg+Z behalten.
+        let (undo, redo) = ctx.input_mut(|i| {
+            let redo = i.consume_key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z)
+                || i.consume_key(Modifiers::COMMAND, Key::Y);
+            (i.consume_key(Modifiers::COMMAND, Key::Z), redo)
+        });
+        if undo {
+            d.undo();
+        }
+        if redo {
+            d.redo();
+        }
+        if ctx.input(|i| i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace)) {
+            d.delete_selected();
+        }
+
         // egui meldet Strg+C nicht als Taste, sondern als eigenes `Copy`-Ereignis.
         if ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Copy))) {
             d.copy_selection(ctx);
         }
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
             // Esc der Reihe nach: laufenden Zug abbrechen, Auswahl aufheben, zurück zur Textauswahl.
-            if d.gesture.take().is_none() && d.selection.take().is_none() {
+            let had_something = d.gesture.take().is_some()
+                || d.annot_drag.take().is_some()
+                || d.selected.take().is_some()
+                || d.selection.take().is_some();
+            if !had_something {
                 self.tool = Tool::TextSelect;
             }
         }

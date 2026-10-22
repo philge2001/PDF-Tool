@@ -4,6 +4,7 @@
 
 use crate::annotation::{AnnotId, Annotation, AnnotationStore};
 use crate::error::{CoreError, Result};
+use std::any::Any;
 
 /// Alles, was Commands verändern dürfen. Spätere Phasen ergänzen hier z. B.
 /// Seitenreihenfolge (Phase 2) oder Formularwerte (Phase 3).
@@ -21,6 +22,16 @@ pub trait Command: std::fmt::Debug + Send {
     fn undo(&mut self, model: &mut Model) -> Result<()>;
     /// Kurzbeschreibung für das Menü ("Rückgängig: Hervorhebung hinzufügen").
     fn label(&self) -> String;
+
+    /// Für das Zusammenführen: Zugriff auf den konkreten Typ hinter `dyn Command`.
+    /// Jede Implementierung schreibt hier einfach `self`.
+    fn as_any(&self) -> &dyn Any;
+
+    /// Versucht, ein direkt folgendes Command in dieses einzuarbeiten (z. B. viele kleine
+    /// Farbänderungen beim Ziehen im Farbwähler = ein Undo-Schritt). Standard: nein.
+    fn merge(&mut self, _next: &dyn Command) -> bool {
+        false
+    }
 }
 
 // ---------- Annotations-Commands ----------
@@ -39,6 +50,9 @@ impl AddAnnotation {
 }
 
 impl Command for AddAnnotation {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
     fn apply(&mut self, model: &mut Model) -> Result<()> {
         model.annotations.push(self.annotation.clone());
         Ok(())
@@ -69,6 +83,9 @@ impl RemoveAnnotation {
 }
 
 impl Command for RemoveAnnotation {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
     fn apply(&mut self, model: &mut Model) -> Result<()> {
         self.removed = Some(
             model
@@ -97,12 +114,24 @@ impl Command for RemoveAnnotation {
 pub struct UpdateAnnotation {
     before: Annotation,
     after: Annotation,
+    mergeable: bool,
 }
 
 impl UpdateAnnotation {
     pub fn new(before: Annotation, after: Annotation) -> Self {
         debug_assert_eq!(before.id, after.id);
-        Self { before, after }
+        Self {
+            before,
+            after,
+            mergeable: false,
+        }
+    }
+
+    /// Darf mit direkt folgenden, ebenfalls zusammenführbaren Änderungen derselben
+    /// Annotation zu einem Undo-Schritt verschmelzen (Farbwähler, Tippen).
+    pub fn mergeable(mut self) -> Self {
+        self.mergeable = true;
+        self
     }
 
     fn set(model: &mut Model, mut a: Annotation) -> Result<()> {
@@ -124,6 +153,9 @@ impl UpdateAnnotation {
 }
 
 impl Command for UpdateAnnotation {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
     fn apply(&mut self, model: &mut Model) -> Result<()> {
         Self::set(model, self.after.clone())
     }
@@ -132,6 +164,16 @@ impl Command for UpdateAnnotation {
     }
     fn label(&self) -> String {
         format!("{} ändern", self.after.kind.label())
+    }
+    fn merge(&mut self, next: &dyn Command) -> bool {
+        // `downcast_ref` liefert Some nur, wenn `next` wirklich ein UpdateAnnotation ist.
+        match next.as_any().downcast_ref::<UpdateAnnotation>() {
+            Some(n) if self.mergeable && n.mergeable && n.after.id == self.after.id => {
+                self.after = n.after.clone(); // `before` bleibt der Stand vor der ersten Änderung
+                true
+            }
+            _ => false,
+        }
     }
 }
 
@@ -152,6 +194,9 @@ impl Batch {
 }
 
 impl Command for Batch {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
     fn apply(&mut self, model: &mut Model) -> Result<()> {
         for (i, cmd) in self.commands.iter_mut().enumerate() {
             if let Err(e) = cmd.apply(model) {
@@ -212,6 +257,28 @@ impl History {
         if self.undo.len() > MAX_HISTORY {
             self.undo.remove(0);
             self.saved_at = self.saved_at.and_then(|s| s.checked_sub(1));
+        }
+        Ok(())
+    }
+
+    /// Wie `execute`, verschmilzt das Command aber mit dem letzten, wenn beide das erlauben.
+    pub fn execute_merging(&mut self, mut cmd: Box<dyn Command>, model: &mut Model) -> Result<()> {
+        // Hinweis: Match-Guards (`if` in einem `match`-Arm) dürfen nichts verändern –
+        // `merge` braucht `&mut`, deshalb hier ein normales `if`.
+        let merged = self.redo.is_empty()
+            && self
+                .undo
+                .last_mut()
+                .is_some_and(|last| last.merge(cmd.as_ref()));
+        if merged {
+            cmd.apply(model)?;
+        }
+        if !merged {
+            return self.execute(cmd, model);
+        }
+        // Der oberste Schritt hat sich verändert: War genau er gespeichert, ist das jetzt anders.
+        if self.saved_at == Some(self.undo.len()) {
+            self.saved_at = None;
         }
         Ok(())
     }
@@ -325,6 +392,30 @@ mod tests {
         assert_eq!(m.annotations.len(), 3);
         h.undo(&mut m).unwrap();
         assert!(m.annotations.is_empty());
+    }
+
+    #[test]
+    fn mergeable_updates_become_one_step() {
+        let mut m = Model::default();
+        let mut h = History::new();
+        let a = note(&mut m);
+        m.annotations.push(a.clone());
+        let mut current = a.clone();
+        for c in [Color::RED, Color::GREEN, Color::BLUE] {
+            let mut next = current.clone();
+            next.color = c;
+            let cmd = UpdateAnnotation::new(current.clone(), next.clone()).mergeable();
+            h.execute_merging(Box::new(cmd), &mut m).unwrap();
+            current = next;
+        }
+        assert_eq!(m.annotations.get(a.id).unwrap().color, Color::BLUE);
+        h.undo(&mut m).unwrap();
+        assert_eq!(
+            m.annotations.get(a.id).unwrap().color,
+            a.color,
+            "ein Schritt zurück = Ursprung"
+        );
+        assert!(h.undo_label().is_none());
     }
 
     #[test]

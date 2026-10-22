@@ -14,6 +14,8 @@ impl FolioApp {
             }
             ui.toggle_value(&mut self.show_thumbnails, "Seiten")
                 .on_hover_text("Seitenleiste mit Miniaturen ein-/ausblenden");
+            ui.toggle_value(&mut self.show_comments, "Kommentare")
+                .on_hover_text("Kommentarliste ein-/ausblenden");
 
             ui.separator();
             for tool in Tool::NAVIGATION {
@@ -21,6 +23,25 @@ impl FolioApp {
             }
 
             let Some(d) = &mut self.document else { return };
+            ui.separator();
+
+            // ----- Rückgängig / Wiederholen -----
+            let undo_label = d.doc.history().undo_label();
+            let resp = ui.add_enabled(undo_label.is_some(), egui::Button::new("Rückgängig"));
+            if resp
+                .on_hover_text(format!("{} (Strg+Z)", undo_label.unwrap_or_default()))
+                .clicked()
+            {
+                d.undo();
+            }
+            let redo_label = d.doc.history().redo_label();
+            let resp = ui.add_enabled(redo_label.is_some(), egui::Button::new("Wiederholen"));
+            if resp
+                .on_hover_text(format!("{} (Strg+Y)", redo_label.unwrap_or_default()))
+                .clicked()
+            {
+                d.redo();
+            }
             ui.separator();
 
             // ----- Seitennavigation -----
@@ -149,7 +170,29 @@ impl FolioApp {
                 }
             }
 
-            // Stil des aktiven (bzw. zuletzt gewählten) Werkzeugs
+            // Ausgewählte Annotation: deren Farbe ändern / löschen.
+            if let Some(a) = d
+                .selected
+                .and_then(|id| d.doc.annotations().get(id))
+                .cloned()
+            {
+                ui.separator();
+                ui.label(format!("Auswahl: {}", a.kind.label()));
+                let mut rgb = a.color.to_rgb8();
+                if ui
+                    .color_edit_button_srgb(&mut rgb)
+                    .on_hover_text("Farbe der Auswahl")
+                    .changed()
+                {
+                    d.set_selected_color(foliocraft_core::Color::from_rgb8(rgb));
+                }
+                if ui.button("Löschen").on_hover_text("Entf").clicked() {
+                    d.delete_selected();
+                }
+                return;
+            }
+
+            // Stil des aktiven Werkzeugs
             if !Tool::ANNOTATION.contains(&self.tool) {
                 return;
             }

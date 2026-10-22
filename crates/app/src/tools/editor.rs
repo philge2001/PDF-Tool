@@ -26,7 +26,6 @@ impl TextEditor {
         }
     }
 
-    #[allow(dead_code)] // TODO(M7): Bearbeiten per Doppelklick
     pub fn edit(annotation: Annotation, anchor: Pos2) -> Self {
         Self {
             text: annotation.contents.clone(),

@@ -150,17 +150,13 @@ pub struct Annotation {
 impl Annotation {
     /// Neue Annotation (noch ohne ID – die vergibt der Store beim Einfügen).
     pub fn new(page: usize, kind: AnnotKind, color: Color) -> Self {
-        let opacity = if matches!(kind, AnnotKind::Highlight { .. }) {
-            0.5
-        } else {
-            1.0
-        };
         Self {
             id: AnnotId(0),
             page,
             kind,
             color,
-            opacity,
+            // Auch Hervorhebungen deckend: Sie werden mit "Multiply" gezeichnet, Text bleibt lesbar.
+            opacity: 1.0,
             contents: String::new(),
             author: String::new(),
             name: String::new(),

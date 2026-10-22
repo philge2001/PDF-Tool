@@ -175,6 +175,11 @@ impl Document {
         self.history.execute(cmd, &mut self.model)
     }
 
+    /// Wie `execute`, fasst aber aufeinanderfolgende zusammenführbare Änderungen zusammen.
+    pub fn execute_merging(&mut self, cmd: Box<dyn Command>) -> Result<()> {
+        self.history.execute_merging(cmd, &mut self.model)
+    }
+
     pub fn undo(&mut self) -> Result<bool> {
         self.history.undo(&mut self.model)
     }

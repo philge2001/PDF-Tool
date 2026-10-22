@@ -5,13 +5,14 @@ use crate::search::SearchState;
 use crate::text_cache::TextCache;
 use crate::tools::create::Gesture;
 use crate::tools::editor::TextEditor;
+use crate::tools::select::AnnotDrag;
 use crate::tools::text_select::TextSelection;
 use crate::tools::{Tool, ToolSettings};
 use crate::viewer::ViewOutput;
 use crate::viewer::Viewer;
 use crate::viewer::thumbnails::Thumbnails;
 use eframe::egui;
-use foliocraft_core::Document;
+use foliocraft_core::{AnnotId, Document};
 use foliocraft_render::{DocId, Event, HiddenAnnots, RenderService};
 use std::path::{Path, PathBuf};
 
@@ -27,6 +28,10 @@ pub struct OpenDocument {
     pub gesture: Option<Gesture>,
     /// Offenes Eingabefenster für Notiz-/Freitext.
     pub editor: Option<TextEditor>,
+    /// Ausgewählte Annotation.
+    pub selected: Option<AnnotId>,
+    /// Laufendes Verschieben einer Annotation.
+    pub annot_drag: Option<AnnotDrag>,
     /// Inhalt des Seitenfelds in der Toolbar, während der Nutzer tippt.
     pub page_input: Option<String>,
     /// Inhalt des Zoomfelds in der Toolbar, während der Nutzer tippt.
@@ -41,6 +46,7 @@ pub struct FolioApp {
     /// Fehlermeldung, die als Dialog angezeigt wird.
     pub(crate) error: Option<String>,
     pub(crate) show_thumbnails: bool,
+    pub(crate) show_comments: bool,
     pub(crate) tool: Tool,
     pub(crate) tool_settings: ToolSettings,
 }
@@ -63,6 +69,7 @@ impl FolioApp {
             document: None,
             error: None,
             show_thumbnails: true,
+            show_comments: true,
             tool: Tool::default(),
             tool_settings: ToolSettings::default(),
         };
@@ -94,6 +101,8 @@ impl FolioApp {
                     selection: None,
                     gesture: None,
                     editor: None,
+                    selected: None,
+                    annot_drag: None,
                     viewer: Viewer::new(id, sizes),
                     doc,
                     page_input: None,
@@ -220,12 +229,35 @@ impl OpenDocument {
     }
 
     /// Annotationen einer Seite in ein beliebiges Rechteck zeichnen (auch für Miniaturen).
+    pub fn undo(&mut self) {
+        self.annot_drag = None;
+        self.gesture = None;
+        if let Err(e) = self.doc.undo() {
+            tracing::error!(error = %e, "Rückgängig fehlgeschlagen");
+        }
+        self.validate_selection();
+    }
+
+    pub fn redo(&mut self) {
+        self.annot_drag = None;
+        self.gesture = None;
+        if let Err(e) = self.doc.redo() {
+            tracing::error!(error = %e, "Wiederholen fehlgeschlagen");
+        }
+        self.validate_selection();
+    }
+
     pub fn paint_page_annotations(&self, painter: &egui::Painter, page: usize, rect: egui::Rect) {
         let Ok(info) = self.doc.page(page) else {
             return;
         };
+        // Wird gerade eine Annotation verschoben, zeigen wir statt ihrer die verschobene Fassung.
+        let dragged = self.annot_drag.as_ref().map(|d| &d.preview);
         for a in self.doc.annotations().on_page(page) {
-            annot_draw::paint(painter, info, rect, a);
+            match dragged {
+                Some(p) if p.id == a.id => annot_draw::paint(painter, info, rect, p),
+                _ => annot_draw::paint(painter, info, rect, a),
+            }
         }
         // Neuer Freitext/Notiz im Eingabefenster: schon während des Tippens anzeigen.
         if let Some(ed) = &self.editor
@@ -246,6 +278,12 @@ impl FolioApp {
         let view = d.viewer.show(ui);
         let tool = self.tool;
         match tool {
+            Tool::Select => {
+                d.handle_annotation_select(ui, &view, true);
+            }
+            // Im Textmodus kann man Annotationen anklicken (auswählen, Doppelklick = bearbeiten);
+            // Ziehen markiert weiterhin Text.
+            Tool::TextSelect if d.handle_annotation_select(ui, &view, false) => {}
             Tool::TextSelect | Tool::Highlight | Tool::Underline | Tool::StrikeOut => {
                 // Text der sichtbaren Seiten vorab laden, damit Auswahl sofort geht.
                 if let Ok(render) = &self.render {
@@ -272,6 +310,7 @@ impl FolioApp {
             _ => d.handle_create_tool(ui, &view, tool, &self.tool_settings),
         }
         d.paint_annotations(ui, &view);
+        d.paint_annotation_selection(ui, &view);
         d.paint_gesture_preview(ui, &view, tool, &self.tool_settings);
         d.paint_search_hits(ui, &view);
         d.paint_selection(ui, &view);
@@ -292,6 +331,13 @@ impl eframe::App for FolioApp {
         egui::Panel::bottom("statusbar").show(ui, |ui| self.status_bar(ui));
 
         if let Some(d) = &mut self.document {
+            d.validate_selection();
+            if self.show_comments {
+                egui::Panel::right("comments")
+                    .default_size(280.0)
+                    .size_range(200.0..=500.0)
+                    .show(ui, |ui| d.comments_panel(ui));
+            }
             if d.search.open {
                 egui::Panel::top("searchbar").show(ui, |ui| d.search_bar(ui));
             }

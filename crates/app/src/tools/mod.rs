@@ -2,6 +2,7 @@
 
 pub mod create;
 pub mod editor;
+pub mod select;
 pub mod text_select;
 
 use foliocraft_core::Color;
@@ -13,6 +14,8 @@ pub enum Tool {
     /// Text markieren und kopieren.
     #[default]
     TextSelect,
+    /// Annotationen auswählen und verschieben.
+    Select,
     /// Dokument durch Ziehen verschieben.
     Hand,
     Highlight,
@@ -30,6 +33,7 @@ impl Tool {
     pub fn label(self) -> &'static str {
         match self {
             Tool::TextSelect => "Text auswählen",
+            Tool::Select => "Auswählen",
             Tool::Hand => "Hand",
             Tool::Highlight => "Hervorheben",
             Tool::Underline => "Unterstreichen",
@@ -43,7 +47,7 @@ impl Tool {
         }
     }
 
-    pub const NAVIGATION: [Tool; 2] = [Tool::TextSelect, Tool::Hand];
+    pub const NAVIGATION: [Tool; 3] = [Tool::TextSelect, Tool::Select, Tool::Hand];
     pub const ANNOTATION: [Tool; 9] = [
         Tool::Highlight,
         Tool::Underline,

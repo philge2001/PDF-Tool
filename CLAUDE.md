@@ -48,7 +48,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - [x] M4 Text auswählen & kopieren
 - [x] M5 Annotationsmodell, Commands, Speichern (core)
 - [x] M6 Annotationswerkzeuge (UI)
-- [ ] M7 Bearbeiten, Kommentar-Panel, Undo/Redo-Shortcuts
+- [x] M7 Bearbeiten, Kommentar-Panel, Undo/Redo-Shortcuts
 - [ ] M8 Speichern in der App
 - [ ] M9 Zuletzt geöffnet, Dark/Light Mode
 
@@ -86,10 +86,13 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - `app::tools::editor` – Eingabefenster für Notiz-/Freitext (neu oder bestehend)
 - Render-Worker blendet per `HiddenAnnots` genau die von core verwalteten /Annots-Indizes aus
   (`Document::managed_annot_indices`); die App zeichnet sie selbst
+- `app::tools::select` – Annotationen anklicken/verschieben (Vorschau via `AnnotDrag`), löschen,
+  `update_selected` (zusammenführbare Updates = 1 Undo-Schritt, siehe `History::execute_merging`)
+- `app::comments` – Kommentar-Panel (nach Seite und Position sortiert, direkt bearbeitbar)
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
 
 ## Tastenkürzel
-Strg+O öffnen · Strg+C kopiert markierten Text · Esc hebt Auswahl auf · Strg+F suchen (Enter/F3 weiter, Umschalt+Enter/Umschalt+F3 zurück, Esc schließen) · Strg+Plus/Minus zoomen · Strg+1 = 100 % · Strg+2 = Seitenbreite · Strg+0 = Ganze Seite ·
+Strg+O öffnen · Strg+Z/Strg+Y (oder Strg+Umschalt+Z) Rückgängig/Wiederholen · Entf löscht Auswahl · Strg+C kopiert markierten Text · Esc hebt Auswahl auf · Strg+F suchen (Enter/F3 weiter, Umschalt+Enter/Umschalt+F3 zurück, Esc schließen) · Strg+Plus/Minus zoomen · Strg+1 = 100 % · Strg+2 = Seitenbreite · Strg+0 = Ganze Seite ·
 Strg+Mausrad zoomt um den Mauszeiger · Bild↑/↓ Seite · Pos1/Ende · Pfeiltasten scrollen
 
 ## Testen im Container (ohne Bildschirm)

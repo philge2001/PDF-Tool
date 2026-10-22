@@ -28,8 +28,9 @@ pub fn paint(painter: &egui::Painter, info: &PageInfo, page_rect: Rect, a: &Anno
 
     match &a.kind {
         AnnotKind::Highlight { quads } => {
-            // egui kann kein "Multiply" – halbtransparent wirkt ähnlich und lässt Text lesbar.
-            let fill = color32(a.color, a.opacity * 0.8);
+            // egui kann kein "Multiply" (Text bleibt dabei voll lesbar). Annäherung: höchstens
+            // halbe Deckkraft, damit der Text unter der Markierung lesbar bleibt.
+            let fill = color32(a.color, 0.2 + 0.3 * a.opacity);
             for q in quads {
                 painter.rect_filled(rect_to_screen(q.bounds()), 0.0, fill);
             }
@@ -154,7 +155,6 @@ fn paint_note_icon(painter: &egui::Painter, top_left: Pos2, size: f32, a: &Annot
 }
 
 /// Auswahlrahmen um eine Annotation (für das Auswahlwerkzeug, M7).
-#[allow(dead_code)] // TODO(M7): Auswahlwerkzeug
 pub fn paint_selection_frame(
     painter: &egui::Painter,
     info: &PageInfo,
