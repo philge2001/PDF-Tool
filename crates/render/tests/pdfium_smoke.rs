@@ -178,4 +178,19 @@ fn offscreen_render_from_other_thread() {
     assert_eq!((b.width, b.height), (595, 842));
     // Auf Seite 1 gibt es dunkle Pixel (Text).
     assert!(a.pixels.chunks_exact(4).any(|p| p[0] < 100));
+
+    // Der Inhalt muss mitskaliert sein, nicht nur die Bitmap: Die Überschrift
+    // (x 72..~330 pt) reicht bei Maßstab 2 über x = 400 px hinaus.
+    let rightmost_dark = a
+        .pixels
+        .chunks_exact(4)
+        .enumerate()
+        .filter(|(_, p)| p[0] < 100)
+        .map(|(i, _)| i as u32 % a.width)
+        .max()
+        .unwrap();
+    assert!(
+        rightmost_dark > 400,
+        "Seite nicht skaliert: {rightmost_dark}"
+    );
 }

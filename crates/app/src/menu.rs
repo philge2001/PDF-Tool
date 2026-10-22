@@ -141,6 +141,18 @@ impl FolioApp {
                     self.open_split_dialog();
                 }
                 ui.separator();
+                #[cfg(feature = "ocr")]
+                if ui
+                    .button("Texterkennung (OCR)…")
+                    .on_hover_text("Gescannte Seiten durchsuchbar machen")
+                    .clicked()
+                {
+                    self.open_ocr_dialog();
+                }
+                #[cfg(not(feature = "ocr"))]
+                ui.add_enabled(false, Button::new("Texterkennung (OCR)…"))
+                    .on_disabled_hover_text("Diese Version wurde ohne Texterkennung gebaut");
+                ui.separator();
                 let Some(d) = &mut self.document else { return };
                 let target = d.target_pages();
                 let n = d.doc.page_count();

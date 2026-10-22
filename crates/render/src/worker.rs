@@ -541,7 +541,10 @@ fn render_offscreen<'p>(
     let mut bitmap = PdfBitmap::empty(w as Pixels, h as Pixels, PdfBitmapFormat::BGRA)?;
     let config = PdfRenderConfig::new()
         .set_fixed_size(w as Pixels, h as Pixels)
-        .render_form_data(false)
+        // Achtung: Ohne Formulardaten nimmt pdfium-render den Weg über eine Matrix und
+        // ignoriert dann `set_fixed_size` (die Seite käme im Maßstab 1). Formularfelder
+        // stören die Texterkennung nicht – ihr Text soll ruhig mit erkannt werden.
+        .render_form_data(true)
         .render_annotations(false)
         .set_clear_color(PdfColor::WHITE)
         .set_reverse_byte_order(true);

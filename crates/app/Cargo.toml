@@ -23,6 +23,12 @@ tracing-subscriber.workspace = true
 serde.workspace = true
 eframe.workspace = true
 rfd.workspace = true
+# Texterkennung (Feature "ocr"): baut Tesseract mit – braucht CMake und einen C++-Compiler.
+foliocraft-ocr = { workspace = true, optional = true }
+
+[features]
+default = ["ocr"]
+ocr = ["dep:foliocraft-ocr"]
 
 [lints]
 workspace = true

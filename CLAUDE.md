@@ -21,7 +21,8 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 | foliocraft-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg, ttf-parser, subsetter, png |
 | foliocraft-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
 | foliocraft-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore |
-| foliocraft-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, eframe, rfd, der, ureq |
+| foliocraft-ocr | crates/ocr | Texterkennung (Tesseract), Wörter mit Pixelrechteck | tesseract-rs (baut Tesseract/Leptonica mit CMake) |
+| foliocraft-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, ocr (Feature `ocr`, Standard), eframe, rfd, der, ureq |
 
 ## Architekturregeln
 - **core** kennt weder UI noch PDFium und ist vollständig unit-testbar.
@@ -47,6 +48,11 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Kommentare und UI-Texte auf Deutsch, Bezeichner auf Englisch.
 - Tests für core: Roundtrip „erstellen → speichern → neu laden → vergleichen“ mit den Fixtures.
 - Fixtures in `tests/fixtures/` werden ausschließlich per `gen_fixtures` erzeugt.
+
+## Meilensteine Phase 7 (Texterkennung)
+- [x] 7.1 Tesseract einbinden (ocr-Crate, Sprachdaten, Offscreen-Rendern)
+- [x] 7.2 Unsichtbare Textebene (core)
+- [x] 7.3 OCR-Oberfläche + Abschluss
 
 ## Meilensteine Phase 6 (Text und Bilder bearbeiten)
 - [x] 6.1 Schriften einbetten (Noto Sans als Teilmenge, Unicode-Freitext)
@@ -107,6 +113,10 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   Zeile vereinheitlicht; nur links-/Blocksatz (zentriert/rechtsbündig wird linksbündig neu gesetzt); Kerning geht verloren;
   aus eingebetteten Teilmengen nur Zeichen, die auf der Seite schon vorkommen (Rest in Noto Sans, kein CJK);
   der Seiteninhalt wird neu kodiert (ein Stream); eingefügte, ungespeicherte Seiten erst nach dem Speichern.
+- Texterkennung: nur waagerechter Text in der Anzeige (keine automatische Drehung schiefer Scans), Wörter unter
+  30 % Sicherheit werden verworfen; CJK ist nicht eingebaut (Noto Sans ohne CJK). Der Tesseract-Build lädt beim ersten
+  Mal Quellen von github.com (im Container gesperrt: Quellen per `git clone` nach `~/.tesseract-rs/third_party/`,
+  `eng`/`tur` aus tessdata_best per raw.githubusercontent.com nach `~/.tesseract-rs/tessdata/`).
 - Bilder bearbeiten: nur Bilder direkt im Seiteninhalt (nicht in Formular-XObjects); Zeichenreihenfolge bleibt;
   PNG-Farbprofile/Gamma werden ignoriert.
 - Formularfelder im Overlay mit egui-Schrift; eigene Erscheinungsbilder von Kontrollkästchen/Optionsfeldern
@@ -173,6 +183,16 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   erkannt), `Document::paragraphs`/`set_paragraph(…, ParaFrame { origin, width, justify })`: alte Ausgaben →
   Verschiebungen, Absatz neu hinter dem Inhalt in `/FcPara BMC … EMC` (wird beim nächsten Mal ersetzt), Stil der
   ersten Zeile (Schrift, Größe, Füllfarbe aus `TextShow::fill`, Tc/Tw/Tz/Ts/Tr, Matrix), Umbruch auf die Kastenbreite
+- `ocr` (Crate) – `Engine::new("deu+eng")`/`recognize(&Image)` → `Word` (Pixel, oben links, Konfidenz) aus
+  Tesseracts TSV; `LANGUAGES` (eingebettete tessdata_fast, beim ersten Gebrauch in `tessdata_dir()` im Temp-Ordner)
+- `render::worker::OffscreenRenderer` – `RenderService::offscreen()`, klonbar/`Send`: Jobs rendern Seiten
+  beliebiger Bytes im Render-Thread (eigene Warteschlange nach sichtbaren Seiten und Text, blockierende Antwort).
+  pdfium-render ignoriert `set_fixed_size` ohne Formulardaten – deshalb `render_form_data(true)`
+- `core::ocr_layer` – `OcrWord` (Anzeige-Einheiten 0..1, oben links), `Document::add_ocr_layers` (3 Tr, Noto, Tz =
+  erkannte Breite, Größe = Worthöhe, gedreht wie die Seite, `/FcOcr BMC … EMC` wird ersetzt, `Batch` = 1 Undo),
+  `page_has_text`
+- `app::ocr_ui` (Feature `ocr`) – Dialog „Texterkennung (OCR)“ (Seiten, nur ohne Text, Sprachen), Job mit
+  Fortschritt/Abbrechen (Momentaufnahme + Offscreen 300 dpi + Tesseract), Ergebnis über `OcrSlot` → `take_pending_ocr`
 - `app::content_edit` – Modus „Inhalt bearbeiten“ (`Tool::EditText`/`AddText`): Absätze pro Seite gecacht (nach
   Stempel), Klick = Auswahl, Ziehen = verschieben, Anfasser rechts = Breite, Doppelklick/Enter = mehrzeiliger
   Editor (Strg+Enter übernimmt), Blocksatz-Schalter; `sync_structure` erkennt Inhaltsänderungen am Stempel
@@ -289,4 +309,7 @@ Zeitstempel: `--tsa-openssl tsa.cnf` (lokale OpenSSL-TSA, `openssl ts -reply`) o
 Gegenprobe: `pdfsig out.pdf`; CMS mit `openssl cms -verify -binary -inform DER -content daten.bin`.
 `cargo run -p foliocraft-sign --example sign_check -- datei.pdf [vertraut.pem]` prüft Signaturen (Gegenprobe: `pdfsig`).
 Unabhängig signierte Test-PDFs: OpenSSL (`openssl cms -sign -binary -outform DER`) über die ByteRange.
+`cargo run -p foliocraft-ocr --example ocr_demo -- bild.pgm [deu+eng] [dpi]` erkennt Text in einem 8-Bit-PGM.
+`FOLIOCRAFT_PDFIUM_PATH=… cargo run -p foliocraft-render --example offscreen_pgm -- datei.pdf out.pgm 4.1667` rendert
+Seite 1 offscreen (300 dpi), `… --example text_boxes -- datei.pdf [Zeichen]` zeigt PDFiums Zeichen-Rechtecke.
 `cargo run -p foliocraft-core --example form_fill -- in.pdf [out.pdf name=Wert …]` listet/füllt Formularfelder. Screenshots über Xvfb + xdotool + ImageMagick `import`.

@@ -12,6 +12,8 @@ mod forms;
 mod image_tool;
 mod jobs;
 mod menu;
+#[cfg(feature = "ocr")]
+mod ocr_ui;
 mod page_dialogs;
 mod pages;
 mod redact;

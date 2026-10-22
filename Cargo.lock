@@ -1607,6 +1607,7 @@ dependencies = [
  "der",
  "eframe",
  "foliocraft-core",
+ "foliocraft-ocr",
  "foliocraft-render",
  "foliocraft-sign",
  "rfd",

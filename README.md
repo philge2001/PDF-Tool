@@ -3,7 +3,7 @@
 Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 „FolioCraft“ ist ein Arbeitstitel. Lizenz: MIT OR Apache-2.0.
 
-**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare), Phase 4 (Signaturen), Phase 5 (Schwärzen & Bereinigen) und Phase 6 (Text und Bilder bearbeiten) abgeschlossen.
+**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare), Phase 4 (Signaturen), Phase 5 (Schwärzen & Bereinigen), Phase 6 (Text und Bilder bearbeiten) und Phase 7 (Texterkennung) abgeschlossen.
 
 ## Funktionen (Phase 1)
 
@@ -65,6 +65,14 @@ Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
   Formulardaten – mit Anzeige, was gefunden wurde
 - Warnung, wenn signierte Dokumente betroffen sind
 
+## Funktionen (Phase 7 – Texterkennung)
+
+- „Seiten → Texterkennung (OCR)…“: gescannte Seiten werden durchsuchbar – der erkannte Text liegt
+  unsichtbar über dem Bild (Suchen, Markieren, Kopieren funktionieren, auch in anderen Readern)
+- Auswahl der Seiten, „Nur Seiten ohne Text“, Sprachen Deutsch/Englisch (fest eingebaut);
+  läuft im Hintergrund mit Fortschritt und Abbrechen, Ergebnis ist ein Undo-Schritt
+- Erneutes Erkennen ersetzt die alte Textebene
+
 ## Funktionen (Phase 6 – Text und Bilder bearbeiten)
 
 - Freitext mit vollem Unicode (Umlaute, Kyrillisch, Griechisch, Sonderzeichen): eingebettet wird nur die
@@ -102,7 +110,17 @@ Werkzeug wählen und über den Text ziehen. Doppelklick auf eine Notiz oder eine
 
 ## Bauen
 
-Voraussetzungen: Rust (stable, ≥ 1.85) und die PDFium-Bibliothek (siehe unten).
+Voraussetzungen: Rust (stable, ≥ 1.85), die PDFium-Bibliothek (siehe unten) und – für die
+Texterkennung – **CMake** und ein C++-Compiler.
+
+**Texterkennung (Tesseract):** Beim ersten Build lädt `tesseract-rs` die Quellen von Tesseract 5 und
+Leptonica (~50 MB) herunter und baut sie mit CMake (einmalig 5–15 Minuten). Danach liegen sie im Cache
+(`%APPDATA%\tesseract-rs` unter Windows, `~/.tesseract-rs` unter Linux,
+`~/Library/Application Support/tesseract-rs` unter macOS).
+- Windows: `winget install Kitware.CMake` (die C++-Build-Tools von Visual Studio braucht Rust ohnehin),
+  danach ein neues Terminal öffnen.
+- macOS: `brew install cmake` · Linux: `sudo apt install cmake g++`
+- Ohne Texterkennung bauen: `cargo build -p foliocraft-app --no-default-features`
 
 ```bash
 cargo build --release
@@ -180,6 +198,12 @@ cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "¶Lorem
 ## Projektstruktur
 
 Siehe [CLAUDE.md](CLAUDE.md) für Architektur und Konventionen.
+
+## Mitgelieferte Sprachdaten
+
+`assets/tessdata/deu.traineddata` und `eng.traineddata` aus
+[tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast) (Apache-2.0, `assets/tessdata/LICENSE`),
+fest in das Programm eingebaut.
 
 ## Mitgelieferte Schrift
 

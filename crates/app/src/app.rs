@@ -90,6 +90,11 @@ pub struct FolioApp {
     pub(crate) open_after_job: Option<PathBuf>,
     /// Ergebnis-Dokument eines laufenden Jobs (z. B. Schwärzen) und sein Pfad.
     pub(crate) pending_doc: Option<(crate::redact::DocSlot, Option<PathBuf>)>,
+    /// Dialog "Texterkennung" und Ergebnis des laufenden OCR-Jobs.
+    #[cfg(feature = "ocr")]
+    pub(crate) ocr_dialog: Option<crate::ocr_ui::OcrDialog>,
+    #[cfg(feature = "ocr")]
+    pub(crate) pending_ocr: Option<crate::ocr_ui::OcrSlot>,
     pub(crate) redact_confirm: bool,
     pub(crate) sanitize_dialog: Option<crate::redact::SanitizeDialog>,
 }
@@ -169,6 +174,10 @@ impl FolioApp {
             cert_dialog: None,
             open_after_job: None,
             pending_doc: None,
+            #[cfg(feature = "ocr")]
+            ocr_dialog: None,
+            #[cfg(feature = "ocr")]
+            pending_ocr: None,
             redact_confirm: false,
             sanitize_dialog: None,
         };
@@ -357,6 +366,8 @@ impl FolioApp {
                 match result {
                     Ok(msg) => {
                         self.take_pending_doc();
+                        #[cfg(feature = "ocr")]
+                        self.take_pending_ocr();
                         if let Some(path) = open {
                             self.open_path(ctx, &path);
                             self.show_signatures = true;
@@ -365,6 +376,10 @@ impl FolioApp {
                     }
                     Err(msg) => {
                         self.pending_doc = None;
+                        #[cfg(feature = "ocr")]
+                        {
+                            self.pending_ocr = None;
+                        }
                         self.error = Some(msg);
                     }
                 }
@@ -697,6 +712,8 @@ impl eframe::App for FolioApp {
         self.split_dialog_ui(&ctx);
         self.redact_confirm_ui(&ctx);
         self.sanitize_dialog_ui(&ctx);
+        #[cfg(feature = "ocr")]
+        self.ocr_dialog_ui(&ctx);
         self.sign_dialog_ui(&ctx);
         self.cert_dialog_ui(&ctx);
         self.job_ui(&ctx);
