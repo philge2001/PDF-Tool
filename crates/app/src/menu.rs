@@ -165,6 +165,23 @@ impl FolioApp {
                 }
             });
 
+            ui.menu_button("Formular", |ui| {
+                let Some(d) = &mut self.document else {
+                    ui.label("Kein Dokument");
+                    return;
+                };
+                let has_fields = d.doc.forms().iter().any(|f| f.kind.is_fillable());
+                if !has_fields {
+                    ui.label("Dieses Dokument enthält keine Formularfelder.");
+                }
+                ui.add_enabled_ui(has_fields, |ui| {
+                    ui.checkbox(&mut self.settings.highlight_fields, "Felder hervorheben");
+                    if ui.button("Formular zurücksetzen").clicked() {
+                        d.reset_form();
+                        ui.close();
+                    }
+                });
+            });
             ui.menu_button("Ansicht", |ui| {
                 ui.checkbox(&mut self.show_thumbnails, "Seitenleiste");
                 ui.checkbox(&mut self.show_comments, "Kommentare");

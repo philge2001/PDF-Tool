@@ -5,6 +5,8 @@ use crate::annotation::{AnnotId, Annotation, appearance, export};
 use crate::date::pdf_date_now;
 use crate::document::{Document, inherited};
 use crate::error::{CoreError, Result};
+use crate::form::FieldId;
+use crate::form_save;
 use lopdf::{IncrementalDocument, Object, ObjectId, dictionary};
 use std::collections::{HashMap, HashSet};
 
@@ -16,6 +18,8 @@ pub(crate) struct SaveOutput {
     /// Pro Seitenindex: Positionen in /Annots, die FolioCraft selbst zeichnet
     /// (der Renderer blendet genau diese aus).
     pub hidden: HashMap<u32, Vec<usize>>,
+    /// Neu angelegte Formularobjekte: (Feld, Objektnummer des Felds, Nummern der Widgets).
+    pub written_fields: Vec<(FieldId, ObjectId, Vec<Option<ObjectId>>)>,
 }
 
 /// /Annots einer Seite – auch für Seiten, die erst eingefügt und noch nicht gespeichert sind.
@@ -124,6 +128,15 @@ pub(crate) fn incremental(doc: &Document) -> Result<SaveOutput> {
     inc.new_document.max_id = inc.new_document.max_id.max(reserved);
 
     write_page_tree(doc, &mut inc)?;
+    let forms = form_save::write(doc, &mut inc)?;
+    // Widgets ausfüllbarer Felder – auch die gerade erst angelegten.
+    let widgets: HashSet<ObjectId> = doc
+        .model()
+        .forms
+        .managed_widget_ids()
+        .chain(forms.added_widgets.values().flatten().copied())
+        .collect();
+    let is_widget = |o: &Object| o.as_reference().is_ok_and(|id| widgets.contains(&id));
 
     // Popups von importierten Annotationen, die gelöscht wurden, fliegen mit raus.
     // (Global bestimmt: Seitenindizes können sich seit dem Laden geändert haben.)
@@ -157,12 +170,17 @@ pub(crate) fn incremental(doc: &Document) -> Result<SaveOutput> {
                     changed |= !kept.contains(id);
                     continue;
                 }
-                if dropped_popups.contains(id) {
+                if dropped_popups.contains(id) || forms.removed_widgets.contains(id) {
                     changed = true;
                     continue;
                 }
             }
             new_list.push(entry.clone());
+        }
+        // Neue Widgets von Formularfeldern gehören zu den "fremden" Einträgen.
+        if let Some(added) = forms.added_widgets.get(&info.object_id) {
+            changed = true;
+            new_list.extend(added.iter().map(|&id| Object::from(id)));
         }
 
         // 2) Verwaltete Annotationen anhängen.
@@ -201,13 +219,22 @@ pub(crate) fn incremental(doc: &Document) -> Result<SaveOutput> {
 
         // Welche /Annots-Positionen zeichnet die App selbst? Wird die Seite neu geschrieben,
         // stehen die verwalteten hinten; sonst gilt die Originalreihenfolge.
+        // Widgets ausfüllbarer Felder sind fremde Einträge, werden aber ebenfalls ausgeblendet.
         let managed_positions: Vec<usize> = if changed {
-            (foreign_count..new_list.len()).collect()
+            new_list[..foreign_count]
+                .iter()
+                .enumerate()
+                .filter(|(_, o)| is_widget(o))
+                .map(|(i, _)| i)
+                .chain(foreign_count..new_list.len())
+                .collect()
         } else {
             original
                 .iter()
                 .enumerate()
-                .filter(|(_, o)| o.as_reference().is_ok_and(|id| doc.is_imported(id)))
+                .filter(|(_, o)| {
+                    is_widget(o) || o.as_reference().is_ok_and(|id| doc.is_imported(id))
+                })
                 .map(|(i, _)| i)
                 .collect()
         };
@@ -234,5 +261,6 @@ pub(crate) fn incremental(doc: &Document) -> Result<SaveOutput> {
         bytes,
         written,
         hidden,
+        written_fields: forms.written,
     })
 }

@@ -9,6 +9,8 @@ pub mod date;
 pub mod document;
 pub mod error;
 pub mod font;
+pub mod form;
+mod form_save;
 pub mod geometry;
 pub mod page_export;
 pub mod page_import;
@@ -19,10 +21,12 @@ pub mod text;
 
 pub use annotation::{AnnotId, AnnotKind, Annotation, AnnotationStore};
 pub use command::{
-    AddAnnotation, Batch, Command, History, Model, RemoveAnnotation, UpdateAnnotation,
+    AddAnnotation, AddField, Batch, Command, History, Model, RemoveAnnotation, RemoveField,
+    UpdateAnnotation, UpdateField,
 };
 pub use document::{Document, PageId, PageInfo, RenderSnapshot};
 pub use error::{CoreError, Result};
+pub use form::{FieldId, FieldKind, FieldValue, FormField, FormStore, Widget};
 pub use geometry::{Color, Point, Quad, Rect};
 pub use page_export::{extract_pages, split_by_ranges, split_every};
 pub use page_import::{InsertPages, parse_page_ranges};

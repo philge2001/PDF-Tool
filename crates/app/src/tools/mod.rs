@@ -28,6 +28,13 @@ pub enum Tool {
     Rectangle,
     Ellipse,
     Arrow,
+    /// Formular bearbeiten: Felder auswählen, verschieben, Größe ändern.
+    FormEdit,
+    FieldText,
+    FieldCheckBox,
+    FieldRadio,
+    FieldCombo,
+    FieldList,
 }
 
 impl Tool {
@@ -45,6 +52,12 @@ impl Tool {
             Tool::Rectangle => "Rechteck",
             Tool::Ellipse => "Ellipse",
             Tool::Arrow => "Pfeil",
+            Tool::FormEdit => "Auswählen",
+            Tool::FieldText => "Textfeld",
+            Tool::FieldCheckBox => "Kontrollkästchen",
+            Tool::FieldRadio => "Optionsfeld",
+            Tool::FieldCombo => "Kombinationsfeld",
+            Tool::FieldList => "Listenfeld",
         }
     }
 
@@ -60,6 +73,20 @@ impl Tool {
         Tool::Ellipse,
         Tool::Arrow,
     ];
+
+    pub const FORM: [Tool; 6] = [
+        Tool::FormEdit,
+        Tool::FieldText,
+        Tool::FieldCheckBox,
+        Tool::FieldRadio,
+        Tool::FieldCombo,
+        Tool::FieldList,
+    ];
+
+    /// Gehört das Werkzeug zum Modus "Formular bearbeiten"?
+    pub fn is_form_tool(self) -> bool {
+        Self::FORM.contains(&self)
+    }
 
     /// Arbeitet das Werkzeug auf markiertem Text?
     pub fn is_text_markup(self) -> bool {

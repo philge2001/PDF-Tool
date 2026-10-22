@@ -5,13 +5,15 @@
 use crate::annotation::{AnnotId, Annotation, AnnotationStore};
 use crate::document::{PageId, PageInfo};
 use crate::error::{CoreError, Result};
+use crate::form::{FieldId, FieldValue, FormField, FormStore};
 use std::any::Any;
 
-/// Alles, was Commands verändern dürfen. Spätere Phasen ergänzen hier z. B.
-/// Seitenreihenfolge (Phase 2) oder Formularwerte (Phase 3).
+/// Alles, was Commands verändern dürfen.
 #[derive(Debug, Default, Clone)]
 pub struct Model {
     pub annotations: AnnotationStore,
+    /// Formularfelder (AcroForm).
+    pub forms: FormStore,
     /// Seiten in Anzeigereihenfolge. Annotationen verweisen per Index darauf; Seiten-Commands
     /// rechnen diese Indizes beim Umsortieren/Löschen mit um.
     pub pages: Vec<PageInfo>,
@@ -232,6 +234,172 @@ impl Command for Batch {
     }
     fn label(&self) -> String {
         self.label.clone()
+    }
+}
+
+// ---------- Formular-Commands ----------
+
+/// Neues Formularfeld (Formular-Editor).
+#[derive(Debug)]
+pub struct AddField {
+    field: FormField,
+}
+
+impl AddField {
+    /// Das Feld sollte bereits eine ID haben (`FormStore::allocate_id`).
+    pub fn new(field: FormField) -> Self {
+        Self { field }
+    }
+}
+
+impl Command for AddField {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn apply(&mut self, model: &mut Model) -> Result<()> {
+        model.forms.push(self.field.clone());
+        Ok(())
+    }
+    fn undo(&mut self, model: &mut Model) -> Result<()> {
+        model
+            .forms
+            .remove(self.field.id)
+            .map(|_| ())
+            .ok_or_else(|| field_not_found(self.field.id))
+    }
+    fn label(&self) -> String {
+        format!("{} hinzufügen", self.field.kind.label())
+    }
+}
+
+#[derive(Debug)]
+pub struct RemoveField {
+    id: FieldId,
+    removed: Option<(usize, FormField)>,
+}
+
+impl RemoveField {
+    pub fn new(id: FieldId) -> Self {
+        Self { id, removed: None }
+    }
+}
+
+impl Command for RemoveField {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn apply(&mut self, model: &mut Model) -> Result<()> {
+        self.removed = Some(
+            model
+                .forms
+                .remove(self.id)
+                .ok_or_else(|| field_not_found(self.id))?,
+        );
+        Ok(())
+    }
+    fn undo(&mut self, model: &mut Model) -> Result<()> {
+        let (i, f) = self
+            .removed
+            .take()
+            .ok_or_else(|| field_not_found(self.id))?;
+        model.forms.insert(i, f);
+        Ok(())
+    }
+    fn label(&self) -> String {
+        match &self.removed {
+            Some((_, f)) => format!("{} löschen", f.kind.label()),
+            None => "Formularfeld löschen".into(),
+        }
+    }
+}
+
+fn field_not_found(id: FieldId) -> CoreError {
+    CoreError::Other(format!("Formularfeld #{} existiert nicht", id.0))
+}
+
+/// Ersetzt ein Formularfeld durch eine geänderte Fassung (Wert, später auch Eigenschaften).
+#[derive(Debug)]
+pub struct UpdateField {
+    before: FormField,
+    after: FormField,
+    mergeable: bool,
+}
+
+impl UpdateField {
+    pub fn new(before: FormField, after: FormField) -> Self {
+        debug_assert_eq!(before.id, after.id);
+        Self {
+            before,
+            after,
+            mergeable: false,
+        }
+    }
+
+    /// Nur den Wert ändern.
+    pub fn value(field: &FormField, value: FieldValue) -> Self {
+        let mut after = field.clone();
+        after.value = value;
+        Self::new(field.clone(), after)
+    }
+
+    /// Wie bei [`UpdateAnnotation::mergeable`]: Tippen in ein Feld = ein Undo-Schritt.
+    pub fn mergeable(mut self) -> Self {
+        self.mergeable = true;
+        self
+    }
+
+    pub fn field_id(&self) -> FieldId {
+        self.after.id
+    }
+
+    fn set(model: &mut Model, mut f: FormField) -> Result<()> {
+        let id = f.id;
+        if let Some(current) = model.forms.get(id) {
+            f.source = current.source; // Herkunft kann sich durchs Speichern geändert haben
+            // Widget-Objektnummern ebenso (neue Widgets bekommen sie beim Speichern).
+            for (w, cur) in f.widgets.iter_mut().zip(&current.widgets) {
+                if w.object_id.is_none() {
+                    w.object_id = cur.object_id;
+                }
+            }
+        }
+        model
+            .forms
+            .replace(f)
+            .map(|_| ())
+            .ok_or_else(|| field_not_found(id))
+    }
+}
+
+impl Command for UpdateField {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    fn apply(&mut self, model: &mut Model) -> Result<()> {
+        Self::set(model, self.after.clone())
+    }
+    fn undo(&mut self, model: &mut Model) -> Result<()> {
+        Self::set(model, self.before.clone())
+    }
+    fn label(&self) -> String {
+        let only_value = FormField {
+            value: self.before.value.clone(),
+            ..self.after.clone()
+        } == self.before;
+        if only_value {
+            format!("„{}“ ausfüllen", self.after.short_name())
+        } else {
+            format!("Feld „{}“ ändern", self.after.short_name())
+        }
+    }
+    fn merge(&mut self, next: &dyn Command) -> bool {
+        match next.as_any().downcast_ref::<UpdateField>() {
+            Some(n) if self.mergeable && n.mergeable && n.after.id == self.after.id => {
+                self.after = n.after.clone();
+                true
+            }
+            _ => false,
+        }
     }
 }
 

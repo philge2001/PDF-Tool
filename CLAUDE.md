@@ -30,6 +30,10 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - **Jede Modelländerung läuft über ein `Command`** (core::command). Nur so funktioniert Undo/Redo.
 - **Annotationen**: Unterstützte Typen werden ins Modell importiert und von der App als Overlay gezeichnet.
   Der Render-Worker blendet sie beim Rendern aus. Beim Speichern schreibt core sie mit Appearance Stream (/AP).
+- **Formularfelder**: ausfüllbare Felder (Text, Kontrollkästchen, Optionsfeld, Kombi-/Listenfeld) stehen im
+  Modell (`Model::forms`); ihre Widgets blendet der Worker aus, die App zeichnet sie. Schaltflächen und
+  Signaturfelder bleiben PDFium überlassen. Widgets merken sich ihre Seite als Objektnummer (nicht Index).
+  JavaScript wird nicht ausgeführt, /NeedAppearances bleibt unverändert.
 - **Speichern** ist ein inkrementelles Update: Die Originalbytes bleiben unverändert, die Änderungen werden angehängt.
 - Fehler: `thiserror` in Library-Crates, `anyhow` nur in der App. Logging mit `tracing`.
 - Keine AGPL-Abhängigkeiten. Jede neue Crate wird im Commit bzw. hier mit einem Satz begründet.
@@ -39,6 +43,12 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Kommentare und UI-Texte auf Deutsch, Bezeichner auf Englisch.
 - Tests für core: Roundtrip „erstellen → speichern → neu laden → vergleichen“ mit den Fixtures.
 - Fixtures in `tests/fixtures/` werden ausschließlich per `gen_fixtures` erzeugt.
+
+## Meilensteine Phase 3 (Formulare)
+- [x] 3.1 Formularmodell, Werte-Commands, Speichern mit AP (core)
+- [x] 3.2 Formulare ausfüllen (UI)
+- [x] 3.3 Formulare gestalten (Felder erstellen/bearbeiten)
+- [x] 3.4 AcroForm bei Einfügen/Extrahieren übernehmen + Abschluss
 
 ## Meilensteine Phase 2 (Seitenorganisation)
 - [x] 2.1 Seitenmodell & Seiten-Commands (core)
@@ -61,7 +71,6 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 ## Vorbereitung späterer Phasen
 - Phase 2 (Seiten): neue Commands auf `core::command::Model` (z. B. Seitenreihenfolge im Modell),
   Speichern über `IncrementalDocument` wie in `core::save`.
-- Phase 3 (Formulare): Widget-Annotationen sind heute "fremd" und werden von PDFium gerendert.
 - Phase 4 (Signaturen): inkrementelles Speichern erhält bestehende Signaturen bereits.
 - Phase 5/6 (Schwärzen, Text bearbeiten): Content-Stream-Änderungen in core, PDFium nur zum Rendern.
 
@@ -74,6 +83,9 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Dokumente werden im UI-Thread geladen (lopdf); sehr große Dateien (> 100 MB) blockieren kurz.
 - Verschlüsselte PDFs mit Benutzerpasswort werden noch nicht unterstützt (Passwortdialog fehlt).
 - Annotationen auf gedrehten Seiten: Geometrie korrekt, Freitext-Overlay nicht mitgedreht.
+- Formularfelder im Overlay mit egui-Schrift; eigene Erscheinungsbilder von Kontrollkästchen/Optionsfeldern
+  (z. B. Kreuz statt Häkchen) zeigt FolioCraft vereinfacht – in der Datei bleiben sie erhalten.
+  Felder auf gedrehten Seiten: Text nicht mitgedreht. Formular-JavaScript (Berechnungen, Formate) wird nicht ausgeführt.
 - FreeText/Notizen nutzen Helvetica (WinAnsi): Westeuropäische Zeichen gehen, CJK/Kyrillisch noch nicht.
 
 ## Wichtige Module
@@ -134,14 +146,37 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   (Ergebnis = neues unbenanntes Dokument, `adopt_document` zeigt es über eine Momentaufnahme an)
 - `app::jobs` – Hintergrund-Jobs (`Job::spawn`, Fortschritt, Abbrechen, modales Fortschrittsfenster);
   höchstens ein Job gleichzeitig (`FolioApp::job`), Ergebnis als Info- oder Fehlerdialog
+- `core::form` – `FormField`/`FieldKind`/`FieldValue`/`Widget`, `FormStore` (Dateireihenfolge = Tab-Reihenfolge);
+  `import` (Feldbaum mit vererbten /FT /Ff /V /DA …, voller Name), `appearance` (`layout` = gemeinsame
+  Textanordnung für Overlay und Datei, `build` = /AP-Streams, Helvetica WinAnsi)
+- `core::command::{AddField, RemoveField, UpdateField}` – Felder anlegen/löschen/ändern (`UpdateField::value`
+  nur Wert, `mergeable` fürs Tippen); `FormField::new` mit Standardwerten, `FormStore::unique_name`
+- `core::form_save` – neue Felder (Feld+Widget in einem Objekt, Optionsfelder als Feld mit /Kids) samt
+  /AcroForm (/Fields, /DR /Helv), geänderte nur mit geänderten Einträgen (Original-/DA bleibt), gelöschte aus
+  /Fields bzw. /Kids und /Annots; Schalter: vorhandene Zustandsbilder bleiben, solange das Aussehen gleich ist.
+  `FormChanges` liefert `save` neue/entfernte Widgets pro Seite; `after_save` übernimmt neue Objektnummern
+- `app::forms` – Ausfüllen (`FormUi`: Fokus als `FieldFocus`, Aufklappliste): `handle_form_input` (Klick/Cursor,
+  hat Vorrang vor Textauswahl/Auswählen), `handle_form_keys` (Tab, Leertaste), `show_field_editor`
+  (egui-TextEdit über dem Feld), `reset_form`; erste Änderung nach Fokuswechsel = neuer Undo-Schritt
+- `core::page_import` – übernimmt ausfüllbare Felder der eingefügten Seiten ins Modell (`InsertPages::fields`,
+  Widgets nicht als Objekt kopiert, Namen ohne Punkt und eindeutig: `free_field_name`)
+- `core::page_export::copy_acroform` – /AcroForm für extrahierte Seiten, Feldbäume auf mitkopierte Widgets
+  beschnitten (`prune_field`), danach `prune_objects`
+- `app::form_edit` – Modus „Formular bearbeiten“ (`Tool::FORM`): Felder aufziehen/klicken, auswählen, verschieben,
+  Größe am Anfasser ändern (Vorschau, 1 Undo-Schritt pro Zug), Entf löscht
+- `app::form_props` – Eigenschaften-Panel (ersetzt im Bearbeiten-Modus die Kommentare); Name/Optionsliste
+  werden erst übernommen, wenn gültig (`PropInputs`)
+- `app::form_draw` – zeichnet Widgets (Layout aus `core::form::appearance::layout`), Hervorhebung, Pflichtrahmen
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
 
 ## Tastenkürzel
 Strg+O öffnen · Strg+S speichern · Strg+Umschalt+S speichern unter · Strg+Z/Strg+Y (oder Strg+Umschalt+Z) Rückgängig/Wiederholen · Entf löscht Auswahl · Strg+C kopiert markierten Text · Esc hebt Auswahl auf · Strg+F suchen (Enter/F3 weiter, Umschalt+Enter/Umschalt+F3 zurück, Esc schließen) · Strg+Plus/Minus zoomen · Strg+1 = 100 % · Strg+2 = Seitenbreite · Strg+0 = Ganze Seite ·
+Formular: Tab/Umschalt+Tab nächstes/voriges Feld · Leertaste schaltet Kästchen/Optionsfeld · Esc verlässt das Feld ·
 Strg+Mausrad zoomt um den Mauszeiger · Bild↑/↓ Seite · Pos1/Ende · Pfeiltasten scrollen
 
 ## Testen im Container (ohne Bildschirm)
 Datei-/Ordnerdialoge (rfd über xdg-portal) funktionieren im Container nicht – Logik dahinter per Test absichern.
 PDFium liegt lokal in `pdfium/lib` (gitignored).
 `cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf` schreibt jeden Annotationstyp –
-zur Gegenprobe mit anderen Readern (z. B. `pdftoppm -png out.pdf x`). Screenshots über Xvfb + xdotool + ImageMagick `import`.
+zur Gegenprobe mit anderen Readern (z. B. `pdftoppm -png out.pdf x`).
+`cargo run -p foliocraft-core --example form_fill -- in.pdf [out.pdf name=Wert …]` listet/füllt Formularfelder. Screenshots über Xvfb + xdotool + ImageMagick `import`.

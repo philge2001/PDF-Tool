@@ -21,6 +21,8 @@ struct Builder {
     pages_id: ObjectId,
     font_id: ObjectId,
     kids: Vec<Object>,
+    /// Zusätzliche Einträge für den Katalog (z. B. /AcroForm).
+    catalog_extra: Dictionary,
 }
 
 impl Builder {
@@ -39,6 +41,7 @@ impl Builder {
             pages_id,
             font_id,
             kids: Vec::new(),
+            catalog_extra: Dictionary::new(),
         }
     }
 
@@ -113,10 +116,12 @@ impl Builder {
                 "Count" => count,
             }),
         );
-        let catalog_id = self.doc.add_object(dictionary! {
+        let mut catalog = dictionary! {
             "Type" => "Catalog",
             "Pages" => self.pages_id,
-        });
+        };
+        catalog.extend(&self.catalog_extra);
+        let catalog_id = self.doc.add_object(catalog);
         self.doc.trailer.set("Root", catalog_id);
         self.doc.compress();
         self.doc.save(path).expect("PDF speichern");
@@ -333,6 +338,218 @@ fn nested_tree(path: &Path) {
     println!("geschrieben: {}", path.display());
 }
 
+/// Form-XObject (für Appearance Streams von Formularfeldern).
+fn form_xobject(doc: &mut Document, w: f32, h: f32, ops: &str, font: Option<ObjectId>) -> ObjectId {
+    let mut res = Dictionary::new();
+    if let Some(f) = font {
+        res.set("Font", dictionary! { "Helv" => f });
+    }
+    doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Form",
+            "BBox" => vec![0.into(), 0.into(), w.into(), h.into()],
+            "Resources" => res,
+        },
+        ops.as_bytes().to_vec(),
+    ))
+}
+
+/// Formular mit allen Feldtypen (wie von einem anderen Programm erzeugt, inkl. Appearances).
+///
+/// Felder (voller Name: Typ, Wert):
+///   person.name (Text, "Max Mustermann") · person.email (Text, leer)
+///   bemerkung (Text, mehrzeilig) · agb (Kontrollkästchen, aus; An-Zustand "Ja")
+///   versand (Optionsfelder post/abholung/email, "post") · land (Kombifeld, "Deutschland")
+///   interessen (Liste, Mehrfachauswahl, ["rust"]) · kundennr (Text, schreibgeschützt, "K-12345")
+///   pflicht (Text, Pflichtfeld) · absenden (Schaltfläche) · unterschrift (Signaturfeld)
+fn form(path: &Path) {
+    let mut b = Builder::new();
+    let labels = [
+        (72.0, 762.0, 16.0, "Anmeldeformular"),
+        (72.0, 720.0, 11.0, "Name:"),
+        (72.0, 690.0, 11.0, "E-Mail:"),
+        (72.0, 660.0, 11.0, "Bemerkung:"),
+        (72.0, 590.0, 11.0, "AGB akzeptiert:"),
+        (72.0, 560.0, 11.0, "Versand:"),
+        (198.0, 560.0, 11.0, "Post"),
+        (258.0, 560.0, 11.0, "Abholung"),
+        (338.0, 560.0, 11.0, "E-Mail"),
+        (72.0, 530.0, 11.0, "Land:"),
+        (72.0, 500.0, 11.0, "Interessen:"),
+        (72.0, 420.0, 11.0, "Kundennummer:"),
+        (72.0, 390.0, 11.0, "Pflichtfeld:"),
+        (72.0, 300.0, 11.0, "Unterschrift:"),
+    ];
+    let page = b.page(A4, 0, &labels);
+    let font = b.font_id;
+    let doc = &mut b.doc;
+    let rect = |x0: f32, y0: f32, x1: f32, y1: f32| -> Object {
+        vec![x0.into(), y0.into(), x1.into(), y1.into()].into()
+    };
+    let text = |s: &str| Object::string_literal(s.as_bytes().to_vec());
+    let mut fields: Vec<Object> = Vec::new();
+    let mut widgets: Vec<ObjectId> = Vec::new();
+
+    // person (nicht-terminal) mit zwei Text-Kindern; Feld und Widget im selben Objekt.
+    let person = doc.new_object_id();
+    let name_ap = form_xobject(
+        doc,
+        250.0,
+        18.0,
+        "/Tx BMC q BT /Helv 11 Tf 0 g 2 5 Td (Max Mustermann) Tj ET Q EMC",
+        Some(font),
+    );
+    let name = doc.add_object(dictionary! {
+        "Type" => "Annot", "Subtype" => "Widget", "Parent" => person, "T" => text("name"),
+        "FT" => "Tx", "V" => text("Max Mustermann"), "DA" => text("/Helv 11 Tf 0 g"),
+        "Rect" => rect(180.0, 715.0, 430.0, 733.0), "P" => page, "F" => 4,
+        "AP" => dictionary! { "N" => name_ap },
+    });
+    let email = doc.add_object(dictionary! {
+        "Type" => "Annot", "Subtype" => "Widget", "Parent" => person, "T" => text("email"),
+        "FT" => "Tx", "DA" => text("/Helv 0 Tf 0 g"),
+        "Rect" => rect(180.0, 685.0, 430.0, 703.0), "P" => page, "F" => 4,
+    });
+    doc.objects.insert(
+        person,
+        Object::Dictionary(dictionary! {
+            "T" => text("person"), "Kids" => vec![name.into(), email.into()],
+        }),
+    );
+    fields.push(person.into());
+    widgets.extend([name, email]);
+
+    let bemerkung = doc.add_object(dictionary! {
+        "Type" => "Annot", "Subtype" => "Widget", "T" => text("bemerkung"), "FT" => "Tx",
+        "Ff" => 1 << 12, "DA" => text("/Helv 10 Tf 0 g"),
+        "Rect" => rect(180.0, 610.0, 430.0, 670.0), "P" => page, "F" => 4,
+    });
+    fields.push(bemerkung.into());
+    widgets.push(bemerkung);
+
+    // Kontrollkästchen mit Erscheinungsbildern für "Ja" und "Off".
+    let check_on = form_xobject(
+        doc,
+        14.0,
+        14.0,
+        "0 g 0.5 w 0.5 0.5 13 13 re S 3 7 m 6 3 l 11 11 l 1.5 w S",
+        None,
+    );
+    let check_off = form_xobject(doc, 14.0, 14.0, "0 g 0.5 w 0.5 0.5 13 13 re S", None);
+    let agb = doc.add_object(dictionary! {
+        "Type" => "Annot", "Subtype" => "Widget", "T" => text("agb"), "FT" => "Btn",
+        "V" => "Off", "AS" => "Off",
+        "Rect" => rect(180.0, 586.0, 194.0, 600.0), "P" => page, "F" => 4,
+        "AP" => dictionary! { "N" => dictionary! { "Ja" => check_on, "Off" => check_off } },
+    });
+    fields.push(agb.into());
+    widgets.push(agb);
+
+    // Optionsfeld-Gruppe: ein Feld, drei Widgets mit je eigenem An-Zustand.
+    let versand = doc.new_object_id();
+    let mut kids = Vec::new();
+    for (state, x) in [("post", 180.0), ("abholung", 240.0), ("email", 320.0)] {
+        let on = form_xobject(
+            doc,
+            12.0,
+            12.0,
+            "1 w 0 G 0 g 6 11.5 m 11.5 6 l 6 0.5 l 0.5 6 l h S 6 9 m 9 6 l 6 3 l 3 6 l h f",
+            None,
+        );
+        let off = form_xobject(
+            doc,
+            12.0,
+            12.0,
+            "1 w 0 G 6 11.5 m 11.5 6 l 6 0.5 l 0.5 6 l h S",
+            None,
+        );
+        let as_state = if state == "post" { state } else { "Off" };
+        let w = doc.add_object(dictionary! {
+            "Type" => "Annot", "Subtype" => "Widget", "Parent" => versand, "AS" => as_state,
+            "Rect" => rect(x, 557.0, x + 12.0, 569.0), "P" => page, "F" => 4,
+            "AP" => dictionary! { "N" => dictionary! { state => on, "Off" => off } },
+        });
+        kids.push(Object::from(w));
+        widgets.push(w);
+    }
+    doc.objects.insert(
+        versand,
+        Object::Dictionary(dictionary! {
+            "T" => text("versand"), "FT" => "Btn", "Ff" => (1 << 15) | (1 << 14),
+            "V" => "post", "Kids" => kids,
+        }),
+    );
+    fields.push(versand.into());
+
+    let land = doc.add_object(dictionary! {
+        "Type" => "Annot", "Subtype" => "Widget", "T" => text("land"), "FT" => "Ch", "Ff" => 1 << 17,
+        "Opt" => vec![text("Deutschland"), winansi("Österreich"), text("Schweiz")],
+        "V" => text("Deutschland"), "DA" => text("/Helv 11 Tf 0 g"),
+        "Rect" => rect(180.0, 525.0, 330.0, 543.0), "P" => page, "F" => 4,
+    });
+    let interessen = doc.add_object(dictionary! {
+        "Type" => "Annot", "Subtype" => "Widget", "T" => text("interessen"), "FT" => "Ch", "Ff" => 1 << 21,
+        "Opt" => vec![
+            vec![text("pdf"), text("PDF")].into(),
+            vec![text("rust"), text("Rust")].into(),
+            vec![text("egui"), text("egui")].into(),
+        ],
+        "V" => vec![text("rust")], "DA" => text("/Helv 10 Tf 0 g"),
+        "Rect" => rect(180.0, 445.0, 330.0, 510.0), "P" => page, "F" => 4,
+    });
+    let kundennr = doc.add_object(dictionary! {
+        "Type" => "Annot", "Subtype" => "Widget", "T" => text("kundennr"), "FT" => "Tx", "Ff" => 1,
+        "V" => text("K-12345"), "DA" => text("/Helv 11 Tf 0 g"),
+        "Rect" => rect(180.0, 415.0, 330.0, 433.0), "P" => page, "F" => 4,
+    });
+    let pflicht = doc.add_object(dictionary! {
+        "Type" => "Annot", "Subtype" => "Widget", "T" => text("pflicht"), "FT" => "Tx", "Ff" => 2,
+        "DA" => text("/Helv 11 Tf 0 g"),
+        "Rect" => rect(180.0, 385.0, 330.0, 403.0), "P" => page, "F" => 4,
+    });
+    let button_ap = form_xobject(
+        doc,
+        100.0,
+        22.0,
+        "0.85 g 0 0 100 22 re f BT /Helv 11 Tf 0 g 24 7 Td (Absenden) Tj ET",
+        Some(font),
+    );
+    let absenden = doc.add_object(dictionary! {
+        "Type" => "Annot", "Subtype" => "Widget", "T" => text("absenden"), "FT" => "Btn", "Ff" => 1 << 16,
+        "Rect" => rect(72.0, 340.0, 172.0, 362.0), "P" => page, "F" => 4,
+        "AP" => dictionary! { "N" => button_ap },
+    });
+    let unterschrift = doc.add_object(dictionary! {
+        "Type" => "Annot", "Subtype" => "Widget", "T" => text("unterschrift"), "FT" => "Sig",
+        "Rect" => rect(180.0, 260.0, 400.0, 310.0), "P" => page, "F" => 4,
+    });
+    for id in [land, interessen, kundennr, pflicht, absenden, unterschrift] {
+        fields.push(id.into());
+        widgets.push(id);
+    }
+
+    for w in widgets {
+        let p = b
+            .doc
+            .get_object_mut(page)
+            .and_then(Object::as_dict_mut)
+            .expect("Seite");
+        match p.get_mut(b"Annots") {
+            Ok(Object::Array(arr)) => arr.push(w.into()),
+            _ => p.set("Annots", vec![Object::from(w)]),
+        }
+    }
+    b.catalog_extra.set(
+        "AcroForm",
+        dictionary! {
+            "Fields" => fields,
+            "DA" => text("/Helv 0 Tf 0 g"),
+            "DR" => dictionary! { "Font" => dictionary! { "Helv" => font } },
+        },
+    );
+    b.finish(path);
+}
+
 /// Viele Seiten für Performance-Tests (wird nicht eingecheckt).
 fn big(path: &Path, pages: usize) {
     let mut b = Builder::new();
@@ -368,4 +585,5 @@ fn main() {
     rotated(&dir.join("rotated.pdf"));
     with_annotations(&dir.join("with_annotations.pdf"));
     nested_tree(&dir.join("nested_tree.pdf"));
+    form(&dir.join("form.pdf"));
 }

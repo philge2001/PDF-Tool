@@ -9,6 +9,7 @@ use crate::annotation::Annotation;
 use crate::command::{Command, Model};
 use crate::document::{Document, PageId, PageInfo, inherited};
 use crate::error::{CoreError, Result};
+use crate::form::FormField;
 use crate::geometry::Rect;
 use lopdf::{Dictionary, Object, ObjectId, Stream, dictionary};
 use std::any::Any;
@@ -22,6 +23,8 @@ pub struct InsertPages {
     objects: BTreeMap<ObjectId, Object>,
     /// Annotationen der neuen Seiten; `page` ist relativ (0 = erste eingefügte Seite).
     annotations: Vec<Annotation>,
+    /// Formularfelder der neuen Seiten (Widgets zeigen schon auf die neuen Seitenobjekte).
+    fields: Vec<FormField>,
     label: String,
 }
 
@@ -48,6 +51,9 @@ impl Command for InsertPages {
             a.page += at;
             model.annotations.push(a);
         }
+        for f in &self.fields {
+            model.forms.push(f.clone());
+        }
         self.at = at;
         Ok(())
     }
@@ -57,6 +63,9 @@ impl Command for InsertPages {
         let ids: HashSet<_> = self.annotations.iter().map(|a| a.id).collect();
         for id in ids {
             model.annotations.remove(id);
+        }
+        for f in &self.fields {
+            model.forms.remove(f.id);
         }
         model.pages.drain(self.at..self.at + count);
         model
@@ -181,6 +190,39 @@ impl Document {
             new_page_ids.push(new);
         }
 
+        // Ausfüllbare Felder der Quelle, die Widgets auf den gewünschten Seiten haben, kommen
+        // ins Modell (wie verwaltete Annotationen) und werden beim Speichern neu geschrieben.
+        let page_map: HashMap<ObjectId, ObjectId> = pages
+            .iter()
+            .zip(&new_page_ids)
+            .filter_map(|(&i, &new)| Some((source.page(i).ok()?.object_id, new)))
+            .collect();
+        let mut fields = Vec::new();
+        let mut field_widgets: HashSet<ObjectId> = HashSet::new();
+        for f in source.forms().iter().filter(|f| f.kind.is_fillable()) {
+            let widgets: Vec<_> = f
+                .widgets
+                .iter()
+                .filter_map(|w| {
+                    let new_page = *page_map.get(&w.page)?;
+                    field_widgets.extend(w.object_id);
+                    let mut w = w.clone();
+                    w.page = new_page;
+                    w.object_id = None;
+                    Some(w)
+                })
+                .collect();
+            if widgets.is_empty() {
+                continue;
+            }
+            let mut f = f.clone();
+            f.widgets = widgets;
+            f.source = None;
+            f.name = self.free_field_name(&f.name, &fields);
+            f.id = self.allocate_field_id();
+            fields.push(f);
+        }
+
         let mut infos = Vec::new();
         let mut annotations = Vec::new();
         for (k, (&i, &new_id)) in pages.iter().zip(&new_page_ids).enumerate() {
@@ -214,7 +256,11 @@ impl Document {
             let kept: Vec<Object> = crate::annotation::import::page_annots(spdf, info.object_id)
                 .iter()
                 .filter(|o| match o.as_reference() {
-                    Ok(id) => !managed.contains(&id) && !popups.contains(&id),
+                    Ok(id) => {
+                        !managed.contains(&id)
+                            && !popups.contains(&id)
+                            && !field_widgets.contains(&id)
+                    }
                     Err(_) => true, // direkt eingebettete Annotation (selten) – mitnehmen
                 })
                 .map(|o| copier.copy(o))
@@ -255,8 +301,25 @@ impl Document {
             pages: infos,
             objects: copier.out,
             annotations,
+            fields,
             label,
         })
+    }
+
+    /// Freier Feldname für ein eingefügtes Feld. Gleiche Namen hießen in PDF "dasselbe Feld"
+    /// (gemeinsamer Wert) – deshalb wird bei Bedarf "_2", "_3" … angehängt. Punkte (Ebenen)
+    /// werden zu "_", weil neue Felder ohne Elternfelder gespeichert werden.
+    fn free_field_name(&self, name: &str, pending: &[FormField]) -> String {
+        let base = name.replace('.', "_");
+        let taken =
+            |n: &str| self.forms().by_name(n).is_some() || pending.iter().any(|f| f.name == n);
+        if !taken(&base) {
+            return base;
+        }
+        (2..)
+            .map(|i| format!("{base}_{i}"))
+            .find(|n| !taken(n))
+            .unwrap_or(base)
     }
 
     /// Bereitet eine leere Seite der Größe `size` (Punkt) an Position `at` vor.
@@ -289,6 +352,7 @@ impl Document {
             pages: vec![info],
             objects,
             annotations: Vec::new(),
+            fields: Vec::new(),
             label: "Leere Seite einfügen".into(),
         }
     }
