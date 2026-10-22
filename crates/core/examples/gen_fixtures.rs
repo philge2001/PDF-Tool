@@ -744,9 +744,12 @@ struct TextRaster {
     cover: Vec<f32>,
 }
 
+/// Liniensegment von–bis in Pixeln.
+type Edge = ((f32, f32), (f32, f32));
+
 /// Sammelt die Umrisse einer Glyphe als Liniensegmente (in Pixeln).
 struct Outline<'a> {
-    edges: &'a mut Vec<((f32, f32), (f32, f32))>,
+    edges: &'a mut Vec<Edge>,
     to_px: &'a dyn Fn(f32, f32) -> (f32, f32),
     start: (f32, f32),
     last: (f32, f32),
@@ -835,7 +838,7 @@ impl TextRaster {
         }
     }
 
-    fn fill(&mut self, edges: &[((f32, f32), (f32, f32))]) {
+    fn fill(&mut self, edges: &[Edge]) {
         const SUB: usize = 4;
         let (y_min, y_max) = edges.iter().fold((f32::MAX, f32::MIN), |(a, b), (p, q)| {
             (a.min(p.1).min(q.1), b.max(p.1).max(q.1))
