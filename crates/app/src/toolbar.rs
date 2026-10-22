@@ -216,6 +216,25 @@ impl FolioApp {
                     )
                     .on_hover_text("Schriftgröße (Noto Sans)");
                 }
+                if self.tool == Tool::EditText
+                    && let Some((_, _, frame)) = d.content_edit.selected.clone()
+                {
+                    ui.separator();
+                    if ui
+                        .button("Text ändern…")
+                        .on_hover_text("Doppelklick oder Enter")
+                        .clicked()
+                    {
+                        d.open_paragraph_editor();
+                    }
+                    if ui
+                        .selectable_label(frame.justify, "Blocksatz")
+                        .on_hover_text("Zeilen bis an den rechten Rand des Kastens dehnen")
+                        .clicked()
+                    {
+                        d.toggle_selected_justify();
+                    }
+                }
                 if self.tool == Tool::EditImage {
                     ui.separator();
                     if ui
@@ -247,7 +266,7 @@ impl FolioApp {
                         "Auf die Seite klicken, um das Bild zu platzieren (Esc bricht ab)"
                     }
                     Tool::EditImage => "Bild ziehen = verschieben, Anfasser unten rechts = Größe",
-                    _ => "Textblock anklicken, ändern, Enter",
+                    _ => "Absatz anklicken · ziehen = verschieben · Anfasser rechts = Breite · Doppelklick = Text ändern",
                 });
             });
             return;

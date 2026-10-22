@@ -5,9 +5,11 @@
 //! `+x,y=Text` fügt neuen Text an (x, y) hinzu (Punkt, Ursprung unten links).
 //! `!bild.png@x,y,breite` fügt ein Bild ein (Mitte x, y), `#n=bild.jpg` ersetzt das n-te Bild
 //! (0-basiert), `-#n` löscht es.
+//! `¶Anfang|x,y,breite[,j]=Text` setzt den Absatz, der mit "Anfang" beginnt, neu
+//! (linker Rand der ersten Grundlinie x, y; `j` = Blocksatz). Ohne `|…` bleibt der Kasten.
 //! Ohne Ersetzungen werden die Textblöcke von Seite 1 aufgelistet.
 
-use foliocraft_core::{Color, Document, NewImage, Point};
+use foliocraft_core::{Color, Document, NewImage, ParaFrame, Point};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -17,6 +19,18 @@ fn main() {
     };
     let mut doc = Document::open(input).expect("PDF öffnen");
     if args.len() < 3 {
+        for p in doc.paragraphs(0).expect("Absätze") {
+            println!(
+                "Absatz {:>7.2} {:>7.2}  {} Zeilen, Breite {:.1}, Abstand {:.1}{}  {:?}",
+                p.origin.x,
+                p.origin.y,
+                p.lines,
+                p.width,
+                p.line_height,
+                if p.justified { ", Blocksatz" } else { "" },
+                p.text
+            );
+        }
         for b in doc.text_blocks(0).expect("Textblöcke") {
             println!(
                 "{:>7.2} {:>7.2}  {:>5.1} pt  {}  {:?}",
@@ -37,6 +51,29 @@ fn main() {
                 NewImage::from_bytes(&std::fs::read(file).expect("Bild lesen")).expect("Bild");
             doc.insert_image(0, img, Point::new(v[0], v[1]), v[2])
                 .expect("einfügen");
+            continue;
+        }
+        if let Some(rest) = spec.strip_prefix('¶') {
+            let (what, new) = rest
+                .split_once('=')
+                .expect("Format ¶Anfang|x,y,breite=Text");
+            let (start, frame) = what.split_once('|').unwrap_or((what, ""));
+            let paras = doc.paragraphs(0).expect("Absätze");
+            let para = paras
+                .iter()
+                .find(|p| p.text.starts_with(start))
+                .unwrap_or_else(|| panic!("kein Absatz beginnt mit {start:?}"))
+                .clone();
+            let mut f = para.frame();
+            let v: Vec<&str> = frame.split(',').filter(|s| !s.is_empty()).collect();
+            if v.len() >= 3 {
+                f = ParaFrame {
+                    origin: Point::new(v[0].parse().expect("x"), v[1].parse().expect("y")),
+                    width: Some(v[2].parse().expect("breite")),
+                    justify: v.get(3) == Some(&"j"),
+                };
+            }
+            doc.set_paragraph(0, &para, new, f).expect("Absatz setzen");
             continue;
         }
         if let Some(n) = spec.strip_prefix("-#") {

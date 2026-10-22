@@ -426,6 +426,8 @@ impl OpenDocument {
     pub fn undo(&mut self) {
         self.annot_drag = None;
         self.content_edit.editing = None;
+        self.content_edit.selected = None;
+        self.content_edit.drag = None;
         self.content_edit.selected_image = None;
         self.content_edit.image_drag = None;
         self.gesture = None;
@@ -438,6 +440,8 @@ impl OpenDocument {
     pub fn redo(&mut self) {
         self.annot_drag = None;
         self.content_edit.editing = None;
+        self.content_edit.selected = None;
+        self.content_edit.drag = None;
         self.content_edit.selected_image = None;
         self.content_edit.image_drag = None;
         self.gesture = None;

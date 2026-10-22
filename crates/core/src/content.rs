@@ -462,6 +462,8 @@ pub struct TextShow {
     pub word_spacing: f32,
     pub h_scale: f32,
     pub render_mode: i64,
+    /// Operationen, die die Füllfarbe setzen (Farbraum `cs` und Farbe), zum Wiederholen.
+    pub fill: Vec<Operation>,
     pub glyphs: Vec<Glyph>,
     /// Breiten sicher? Sonst ist `bounds` eine großzügige Obergrenze.
     pub exact: bool,
@@ -559,6 +561,9 @@ struct State {
     leading: f32,
     rise: f32,
     render_mode: i64,
+    /// Füllfarbraum (`cs`) und Füllfarbe (`g`, `rg`, `k`, `sc`, `scn`).
+    fill_space: Option<Operation>,
+    fill_color: Option<Operation>,
 }
 
 impl State {
@@ -573,6 +578,8 @@ impl State {
             leading: 0.0,
             rise: 0.0,
             render_mode: 0,
+            fill_space: None,
+            fill_color: None,
         }
     }
 }
@@ -738,6 +745,16 @@ impl<'a> Interp<'a> {
                 "TL" => gs.leading = a.first().map_or(0.0, f),
                 "Ts" => gs.rise = a.first().map_or(0.0, f),
                 "Tr" => gs.render_mode = a.first().and_then(|o| o.as_i64().ok()).unwrap_or(0),
+                // Füllfarbe (für Text-Neusatz); g/rg/k setzen den Farbraum gleich mit.
+                "cs" => {
+                    gs.fill_space = Some(op.clone());
+                    gs.fill_color = None;
+                }
+                "g" | "rg" | "k" => {
+                    gs.fill_space = None;
+                    gs.fill_color = Some(op.clone());
+                }
+                "sc" | "scn" => gs.fill_color = Some(op.clone()),
                 // Textpositionierung
                 "BT" => {
                     tm = Matrix::IDENTITY;
@@ -979,6 +996,12 @@ impl<'a> Interp<'a> {
             word_spacing: gs.word_spacing,
             h_scale: th,
             render_mode: gs.render_mode,
+            fill: gs
+                .fill_space
+                .iter()
+                .chain(&gs.fill_color)
+                .cloned()
+                .collect(),
             glyphs,
             exact: font.exact,
             bounds,

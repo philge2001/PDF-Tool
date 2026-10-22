@@ -80,12 +80,12 @@ pub struct TextBlock {
     pub render_mode: i64,
 }
 
-fn length(x: f32, y: f32) -> f32 {
+pub(crate) fn length(x: f32, y: f32) -> f32 {
     (x * x + y * y).sqrt()
 }
 
 /// Projektion von `p` auf die Grundlinie (Abstand entlang, Abstand quer).
-fn project(origin: Point, dir: Point, p: Point) -> (f32, f32) {
+pub(crate) fn project(origin: Point, dir: Point, p: Point) -> (f32, f32) {
     let (dx, dy) = (p.x - origin.x, p.y - origin.y);
     (dx * dir.x + dy * dir.y, dy * dir.x - dx * dir.y)
 }
@@ -225,20 +225,20 @@ impl Command for ReplacePageContent {
 // ---------- Kodieren ----------
 
 /// Teil des neuen Texts: in der Originalschrift (TJ-Array) oder in der Ersatzschrift.
-enum Segment {
+pub(crate) enum Segment {
     Original(Vec<Object>),
     Fallback(String),
 }
 
 /// Kodiert Text für eine Originalschrift – nur mit Codes, die sicher darstellbar sind.
-struct Encoder<'a> {
-    font: content::FontInfo<'a>,
+pub(crate) struct Encoder<'a> {
+    pub(crate) font: content::FontInfo<'a>,
     /// Text eines Zeichens (auch Ligaturen wie "fi") -> (Bytes, Code).
-    map: HashMap<String, (Vec<u8>, u32)>,
+    pub(crate) map: HashMap<String, (Vec<u8>, u32)>,
 }
 
 impl<'a> Encoder<'a> {
-    fn new(
+    pub(crate) fn new(
         pdf: &'a lopdf::Document,
         resources: Option<&'a lopdf::Dictionary>,
         it: &Interpreted,
@@ -282,7 +282,7 @@ impl<'a> Encoder<'a> {
 
 /// Zerlegt `text` in Original- und Ersatzschrift-Teile und berechnet den Vorschub
 /// (Textraum-Einheiten, inkl. `Tz`) – wie der Interpreter ihn messen würde.
-fn segment(enc: &Encoder, text: &str, show: &TextShow) -> Result<(Vec<Segment>, f32)> {
+pub(crate) fn segment(enc: &Encoder, text: &str, show: &TextShow) -> Result<(Vec<Segment>, f32)> {
     let (size, th) = (show.font_size, show.h_scale);
     let chars: Vec<char> = text.chars().collect();
     let mut segs: Vec<Segment> = Vec::new();
@@ -364,7 +364,7 @@ fn segment(enc: &Encoder, text: &str, show: &TextShow) -> Result<(Vec<Segment>, 
 }
 
 /// Verschiebung um `width` (Textraum, inkl. `Tz`) als `[n] TJ`.
-fn shift_op(width: f32, size: f32, th: f32) -> Option<Operation> {
+pub(crate) fn shift_op(width: f32, size: f32, th: f32) -> Option<Operation> {
     let unit = size * th;
     if width.abs() < 1e-4 || unit.abs() < 1e-6 {
         return None;
@@ -400,7 +400,7 @@ pub(crate) fn append_ops(pc: &mut PageContent, ops: Vec<Operation>) -> Result<()
 }
 
 /// Ressourcenname der Ersatzschrift: vorhandener Eintrag oder ein freier Name.
-fn fallback_name(
+pub(crate) fn fallback_name(
     pc: &PageContent,
     resources: Option<&lopdf::Dictionary>,
     pdf: &lopdf::Document,

@@ -96,6 +96,8 @@ impl FolioApp {
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
             // Esc der Reihe nach: laufenden Zug abbrechen, Auswahl aufheben, zurück zur Textauswahl.
             let had_something = d.content_edit.editing.take().is_some()
+                || d.content_edit.drag.take().is_some()
+                || d.content_edit.selected.take().is_some()
                 || d.content_edit.placing_image.take().is_some()
                 || d.content_edit.image_drag.take().is_some()
                 || d.content_edit.selected_image.take().is_some()

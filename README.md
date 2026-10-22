@@ -69,8 +69,10 @@ Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 
 - Freitext mit vollem Unicode (Umlaute, Kyrillisch, Griechisch, Sonderzeichen): eingebettet wird nur die
   benötigte Teilmenge der Schrift Noto Sans, Kopieren und Suchen liefern den richtigen Text
-- „Inhalt bearbeiten“ → „Text bearbeiten“: Textblock anklicken, ändern, Enter. Die Originalschrift bleibt,
-  fehlende Zeichen kommen aus Noto Sans; der Rest der Seite bleibt an seinem Platz. Rückgängig machbar.
+- „Inhalt bearbeiten“ → „Text bearbeiten“ arbeitet mit **Absätzen**: anklicken = Kasten auswählen, ziehen =
+  verschieben, Anfasser rechts = Breite ändern (Text bricht neu um), Doppelklick = Text ändern (Strg+Enter),
+  „Blocksatz“ an/aus. Originalschrift, -größe und -farbe bleiben, fehlende Zeichen kommen aus Noto Sans.
+  Rückgängig machbar.
 - „Text hinzufügen“: auf die Seite klicken, Text eingeben (Farbe und Größe in der Leiste)
 - „Bilder“: Bild anklicken und ziehen (verschieben), Anfasser unten rechts (Größe, Seitenverhältnis bleibt),
   „Ersetzen…“, „Löschen“ (Entf), „Bild einfügen…“ (PNG mit Transparenz oder JPEG, Klick platziert)
@@ -172,6 +174,7 @@ cargo run -p foliocraft-core --example form_fill -- in.pdf out.pdf "person.name=
 cargo run -p foliocraft-core --example text_edit_demo -- in.pdf                                   # Textblöcke von Seite 1
 cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "Lorem=Neuer Text" "+72,500=Hallo"  # bearbeiten/hinzufügen
 cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "!bild.png@300,400,120" "#0=foto.jpg" "-#1"  # Bilder
+cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "¶Lorem|72,720,260,j=Neuer Absatz …"      # Absatz neu setzen
 ```
 
 ## Projektstruktur
