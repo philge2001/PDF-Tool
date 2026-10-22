@@ -171,6 +171,8 @@ fn offscreen_render_from_other_thread() {
     let handle = std::thread::spawn(move || {
         let a = off.render_page(&bytes, 0, (595.0, 842.0), 2.0).unwrap();
         let b = off.render_page(&bytes, 1, (595.0, 842.0), 1.0).unwrap();
+        let text = off.page_text(&bytes, 1).unwrap();
+        assert!(text.contains("Zebra"), "{text}");
         (a, b)
     });
     let (a, b) = handle.join().unwrap();

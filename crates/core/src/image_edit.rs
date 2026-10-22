@@ -173,6 +173,8 @@ pub struct PageImage {
     /// Umfassendes Rechteck (PDF-Benutzerraum).
     pub bounds: Rect,
     pub inline: bool,
+    /// Ressourcenname des Bild-XObjects (`None` bei Inline-Bildern).
+    pub name: Option<Vec<u8>>,
 }
 
 fn matrix_operands(m: &Matrix) -> Vec<Object> {
@@ -245,6 +247,7 @@ impl Document {
                     matrix: *matrix,
                     bounds: *bounds,
                     inline: name.is_none(),
+                    name: name.clone(),
                 }),
                 _ => None,
             })

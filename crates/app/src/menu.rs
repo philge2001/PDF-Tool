@@ -34,6 +34,13 @@ impl FolioApp {
                 {
                     self.save_document(true);
                 }
+                if ui
+                    .add_enabled(has_doc, Button::new("Exportieren…"))
+                    .on_hover_text("Seiten als PNG/JPEG, Text (TXT) oder Word (DOCX)")
+                    .clicked()
+                {
+                    self.open_export_dialog();
+                }
                 if ui.button("Dateien zusammenführen…").clicked() {
                     self.open_merge_dialog();
                 }

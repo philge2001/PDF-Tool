@@ -31,6 +31,10 @@ subsetter = "0.2.6"
 tesseract-rs = { version = "0.4", default-features = false, features = ["build-tesseract"] }
 # PNG lesen (reines Rust) – Bilder einfügen/ersetzen (Phase 6).
 png = "0.18"
+# JPEG schreiben (reines Rust) – Export und Komprimieren (Phase 8).
+jpeg-encoder = "0.7"
+# ZIP schreiben (DOCX-Container), nur Deflate über flate2 – MIT (Phase 8).
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 # Ohne `image`-Feature: wir brauchen nur rohe RGBA-Bytes, keine image-Crate.
 pdfium-render = { version = "0.9.4", default-features = false, features = ["pdfium_latest", "thread_safe"] }
 # glow (OpenGL) statt wgpu: schnellerer Build, weniger Abhängigkeiten, reicht für 2D.

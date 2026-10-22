@@ -90,6 +90,7 @@ pub struct FolioApp {
     pub(crate) open_after_job: Option<PathBuf>,
     /// Ergebnis-Dokument eines laufenden Jobs (z. B. Schwärzen) und sein Pfad.
     pub(crate) pending_doc: Option<(crate::redact::DocSlot, Option<PathBuf>)>,
+    pub(crate) export_dialog: Option<crate::export::ExportDialog>,
     /// Dialog "Texterkennung" und Ergebnis des laufenden OCR-Jobs.
     #[cfg(feature = "ocr")]
     pub(crate) ocr_dialog: Option<crate::ocr_ui::OcrDialog>,
@@ -174,6 +175,7 @@ impl FolioApp {
             cert_dialog: None,
             open_after_job: None,
             pending_doc: None,
+            export_dialog: None,
             #[cfg(feature = "ocr")]
             ocr_dialog: None,
             #[cfg(feature = "ocr")]
@@ -712,6 +714,7 @@ impl eframe::App for FolioApp {
         self.split_dialog_ui(&ctx);
         self.redact_confirm_ui(&ctx);
         self.sanitize_dialog_ui(&ctx);
+        self.export_dialog_ui(&ctx);
         #[cfg(feature = "ocr")]
         self.ocr_dialog_ui(&ctx);
         self.sign_dialog_ui(&ctx);

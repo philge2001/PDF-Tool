@@ -113,9 +113,17 @@ enum Job {
 struct OffscreenJob {
     bytes: Arc<Vec<u8>>,
     page: u32,
-    page_size_pt: (f32, f32),
-    scale: f32,
-    reply: Sender<Result<RgbaImage>>,
+    kind: OffscreenKind,
+}
+
+enum OffscreenKind {
+    Render {
+        page_size_pt: (f32, f32),
+        scale: f32,
+        reply: Sender<Result<RgbaImage>>,
+    },
+    /// Text der Seite in Lesereihenfolge (wie PDFium ihn liefert, mit Zeilenumbrüchen).
+    Text { reply: Sender<Result<String>> },
 }
 
 /// Rendert Seiten für Hintergrund-Jobs. Klonbar und `Send`: Jeder Job-Thread bekommt eine
@@ -137,16 +145,33 @@ impl OffscreenRenderer {
         scale: f32,
     ) -> Result<RgbaImage> {
         let (reply, answer) = mpsc::channel();
+        self.send(
+            bytes,
+            page,
+            OffscreenKind::Render {
+                page_size_pt,
+                scale,
+                reply,
+            },
+        )?;
+        answer.recv().map_err(|_| RenderError::WorkerGone)?
+    }
+
+    /// Text einer Seite (Lesereihenfolge, Zeilen mit `\n` getrennt). Blockiert.
+    pub fn page_text(&self, bytes: &Arc<Vec<u8>>, page: u32) -> Result<String> {
+        let (reply, answer) = mpsc::channel();
+        self.send(bytes, page, OffscreenKind::Text { reply })?;
+        answer.recv().map_err(|_| RenderError::WorkerGone)?
+    }
+
+    fn send(&self, bytes: &Arc<Vec<u8>>, page: u32, kind: OffscreenKind) -> Result<()> {
         self.jobs
             .send(Job::Offscreen(OffscreenJob {
                 bytes: Arc::clone(bytes),
                 page,
-                page_size_pt,
-                scale,
-                reply,
+                kind,
             }))
-            .map_err(|_| RenderError::WorkerGone)?;
-        answer.recv().map_err(|_| RenderError::WorkerGone)?
+            .map_err(|_| RenderError::WorkerGone)
     }
 }
 
@@ -308,8 +333,7 @@ fn run<'p>(pdfium: &'p Pdfium, jobs: Receiver<Job>, events: Sender<Event>, waker
         if queues.offscreen_is_next()
             && let Some(job) = queues.offscreen.pop_front()
         {
-            let result = render_offscreen(pdfium, &mut offscreen_doc, &job);
-            let _ = job.reply.send(result);
+            run_offscreen(pdfium, &mut offscreen_doc, job);
             continue;
         }
         if queues.offscreen.is_empty() {
@@ -519,25 +543,59 @@ fn extract_text(doc: &PdfDocument, page: u32) -> Result<PageText> {
     Ok(PageText::new(chars))
 }
 
-/// Offscreen-Auftrag: Dokument (falls neu) laden und die ganze Seite rendern.
-fn render_offscreen<'p>(
+/// Offscreen-Auftrag ausführen und direkt beantworten.
+fn run_offscreen<'p>(
     pdfium: &'p Pdfium,
     cache: &mut Option<(Arc<Vec<u8>>, PdfDocument<'p>)>,
-    job: &OffscreenJob,
-) -> Result<RgbaImage> {
-    let cached = cache
-        .as_ref()
-        .is_some_and(|(b, _)| Arc::ptr_eq(b, &job.bytes));
+    job: OffscreenJob,
+) {
+    let pdf = offscreen_doc(pdfium, cache, &job.bytes);
+    match job.kind {
+        OffscreenKind::Render {
+            page_size_pt,
+            scale,
+            reply,
+        } => {
+            let result = pdf.and_then(|pdf| render_offscreen(pdf, job.page, page_size_pt, scale));
+            let _ = reply.send(result);
+        }
+        OffscreenKind::Text { reply } => {
+            let result = pdf.and_then(|pdf| {
+                let page = pdf.pages().get(job.page as PdfPageIndex)?;
+                Ok(page.text()?.all())
+            });
+            let _ = reply.send(result);
+        }
+    }
+}
+
+/// Lädt das Dokument eines Offscreen-Auftrags (oder nimmt das zuletzt geladene).
+fn offscreen_doc<'a, 'p>(
+    pdfium: &'p Pdfium,
+    cache: &'a mut Option<(Arc<Vec<u8>>, PdfDocument<'p>)>,
+    bytes: &Arc<Vec<u8>>,
+) -> Result<&'a PdfDocument<'p>> {
+    let cached = cache.as_ref().is_some_and(|(b, _)| Arc::ptr_eq(b, bytes));
     if !cached {
         *cache = None;
-        let pdf = pdfium.load_pdf_from_byte_vec(job.bytes.as_ref().clone(), None)?;
-        *cache = Some((Arc::clone(&job.bytes), pdf));
+        let pdf = pdfium.load_pdf_from_byte_vec(bytes.as_ref().clone(), None)?;
+        *cache = Some((Arc::clone(bytes), pdf));
     }
-    let Some((_, pdf)) = cache else {
-        return Err(RenderError::WorkerGone);
-    };
-    let page = pdf.pages().get(job.page as PdfPageIndex)?;
-    let (w, h) = page_pixel_size(job.page_size_pt, job.scale);
+    cache
+        .as_ref()
+        .map(|(_, pdf)| pdf)
+        .ok_or(RenderError::WorkerGone)
+}
+
+/// Ganze Seite rendern (ohne Annotationen).
+fn render_offscreen(
+    pdf: &PdfDocument,
+    page: u32,
+    page_size_pt: (f32, f32),
+    scale: f32,
+) -> Result<RgbaImage> {
+    let page = pdf.pages().get(page as PdfPageIndex)?;
+    let (w, h) = page_pixel_size(page_size_pt, scale);
     let mut bitmap = PdfBitmap::empty(w as Pixels, h as Pixels, PdfBitmapFormat::BGRA)?;
     let config = PdfRenderConfig::new()
         .set_fixed_size(w as Pixels, h as Pixels)
