@@ -7,6 +7,7 @@ pub mod cert;
 pub mod create;
 pub mod crypto;
 pub mod signer;
+pub mod timestamp;
 pub mod verify;
 
 pub use cert::{CertInfo, Trust, TrustStore};

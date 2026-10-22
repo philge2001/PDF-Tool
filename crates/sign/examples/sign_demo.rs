@@ -3,6 +3,8 @@
 //! `cargo run -p foliocraft-sign --example sign_demo -- in.pdf out.pdf [id.p12 passwort]`
 //! Ohne .p12 wird ein Testzertifikat erzeugt und als `out.pdf.p12` (Passwort "test")
 //! sowie `out.pdf.cer` gespeichert.
+//! `--tsa-openssl tsa.cnf` holt einen Zeitstempel bei einem lokalen OpenSSL-Zeitstempeldienst
+//! (`openssl ts -reply`), `--tsa-http URL` per `curl` bei einem echten Dienst.
 
 use foliocraft_core::Rect;
 use foliocraft_core::signature_prep::{SigPlacement, SignatureSpec};
@@ -60,7 +62,67 @@ fn main() {
         ],
         contents_len: 0,
     };
-    let out = sign_pdf(&base, spec, &signer).expect("signieren");
+    let flag = |name: &str| {
+        args.iter()
+            .position(|a| a == name)
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+    };
+    // Zeitstempel über externe Programme – die Crate selbst macht kein Netzwerk.
+    let tsa_openssl = flag("--tsa-openssl").map(|cnf| {
+        move |req: &[u8]| {
+            run_tsa(req, |q, a| {
+                let mut c = std::process::Command::new("openssl");
+                c.args(["ts", "-reply", "-config", &cnf, "-queryfile"])
+                    .arg(q)
+                    .arg("-out")
+                    .arg(a);
+                c
+            })
+        }
+    });
+    let tsa_http = flag("--tsa-http").map(|url| {
+        move |req: &[u8]| {
+            run_tsa(req, |q, a| {
+                let mut c = std::process::Command::new("curl");
+                c.args([
+                    "-s",
+                    "-H",
+                    "Content-Type: application/timestamp-query",
+                    "--data-binary",
+                ])
+                .arg(format!("@{}", q.display()))
+                .arg("-o")
+                .arg(a)
+                .arg(&url);
+                c
+            })
+        }
+    });
+    let tsa: Option<foliocraft_sign::timestamp::TsaTransport> = match (&tsa_openssl, &tsa_http) {
+        (Some(f), _) => Some(f),
+        (_, Some(f)) => Some(f),
+        _ => None,
+    };
+    let out = sign_pdf(&base, spec, &signer, tsa).expect("signieren");
     std::fs::write(&args[1], out).expect("schreiben");
     println!("signiert: {}", args[1]);
+}
+
+/// Schreibt die Anfrage in eine Datei, ruft das Programm auf und liest die Antwort.
+fn run_tsa(
+    req: &[u8],
+    command: impl FnOnce(&std::path::Path, &std::path::Path) -> std::process::Command,
+) -> Result<Vec<u8>, String> {
+    let dir = std::env::temp_dir();
+    let (q, a) = (
+        dir.join("foliocraft-demo.tsq"),
+        dir.join("foliocraft-demo.tsr"),
+    );
+    std::fs::write(&q, req).map_err(|e| e.to_string())?;
+    let status = command(&q, &a).status().map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err("Zeitstempeldienst-Aufruf fehlgeschlagen".into());
+    }
+    std::fs::read(&a).map_err(|e| e.to_string())
 }

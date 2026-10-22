@@ -64,6 +64,7 @@ fn self_signed_p256_into_existing_field() {
         &read("form.pdf"),
         spec(SigPlacement::Existing("unterschrift".into())),
         &signer,
+        None,
     )
     .unwrap();
 
@@ -91,7 +92,7 @@ fn rsa_signature_in_new_visible_field() {
         rect: Rect::new(300.0, 100.0, 520.0, 160.0),
         name: "Signatur1".into(),
     };
-    let signed = sign_pdf(&read("text_two_pages.pdf"), spec(placement), &signer).unwrap();
+    let signed = sign_pdf(&read("text_two_pages.pdf"), spec(placement), &signer, None).unwrap();
     let r = &verify(signed, &trust_of(&[&signer.cert]))[0];
     assert_eq!(r.status(), Status::Valid, "{:?} {:?}", r.integrity, r.trust);
     assert_eq!(r.page, Some(1));
@@ -147,7 +148,13 @@ fn ca_and_leaf() -> (x509_cert::Certificate, Signer) {
 #[test]
 fn chain_to_trusted_root() {
     let (root, signer) = ca_and_leaf();
-    let signed = sign_pdf(&read("text_two_pages.pdf"), spec(invisible("S")), &signer).unwrap();
+    let signed = sign_pdf(
+        &read("text_two_pages.pdf"),
+        spec(invisible("S")),
+        &signer,
+        None,
+    )
+    .unwrap();
 
     let r = &verify(signed.clone(), &TrustStore::default())[0];
     assert_eq!(r.chain.len(), 2, "Kette aus der Signatur gebildet");
@@ -167,7 +174,7 @@ fn signature_survives_pkcs12_roundtrip_with_chain() {
     let loaded = Signer::from_pkcs12(&p12, "pw").unwrap();
     assert_eq!(loaded.cert, signer.cert);
     assert_eq!(loaded.chain, vec![root.clone()]);
-    let signed = sign_pdf(&read("form.pdf"), spec(invisible("S")), &loaded).unwrap();
+    let signed = sign_pdf(&read("form.pdf"), spec(invisible("S")), &loaded, None).unwrap();
     assert_eq!(
         verify(signed, &trust_of(&[&root]))[0].status(),
         Status::Valid
@@ -177,7 +184,7 @@ fn signature_survives_pkcs12_roundtrip_with_chain() {
 #[test]
 fn tampering_breaks_the_signature() {
     let signer = Signer::self_signed("T", "", "", KeyKind::P256, 1).unwrap();
-    let mut signed = sign_pdf(&read("form.pdf"), spec(invisible("S")), &signer).unwrap();
+    let mut signed = sign_pdf(&read("form.pdf"), spec(invisible("S")), &signer, None).unwrap();
     // Ein Byte im signierten Bereich ändern: die Versionsnummer im Dateikopf ("%PDF-1.x").
     assert!(signed.starts_with(b"%PDF-1."));
     signed[7] = if signed[7] == b'4' { b'5' } else { b'4' };
@@ -197,6 +204,7 @@ fn filling_after_signing_keeps_signature_but_reports_change() {
         &read("form.pdf"),
         spec(SigPlacement::Existing("unterschrift".into())),
         &signer,
+        None,
     )
     .unwrap();
     let mut doc = Document::from_bytes(signed).unwrap();
@@ -220,9 +228,10 @@ fn second_signature_keeps_first_valid() {
         &read("form.pdf"),
         spec(SigPlacement::Existing("unterschrift".into())),
         &a,
+        None,
     )
     .unwrap();
-    let twice = sign_pdf(&once, spec(invisible("Gegenzeichnung")), &b).unwrap();
+    let twice = sign_pdf(&once, spec(invisible("Gegenzeichnung")), &b, None).unwrap();
     let trust = trust_of(&[&a.cert, &b.cert]);
     let reports = verify(twice, &trust);
     assert_eq!(reports.len(), 2);
@@ -237,6 +246,7 @@ fn second_signature_keeps_first_valid() {
         &read("form.pdf"),
         spec(SigPlacement::Existing("person.name".into())),
         &a,
+        None,
     );
     assert!(err.is_err());
 }

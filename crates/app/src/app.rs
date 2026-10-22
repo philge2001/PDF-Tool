@@ -84,6 +84,8 @@ pub struct FolioApp {
     pub(crate) show_signatures: bool,
     pub(crate) sign_dialog: Option<crate::sign_ui::SignDialog>,
     pub(crate) cert_dialog: Option<crate::sign_ui::CertDialog>,
+    /// Nach erfolgreichem Job diese Datei öffnen (z. B. frisch signierte Fassung).
+    pub(crate) open_after_job: Option<PathBuf>,
 }
 
 impl FolioApp {
@@ -130,6 +132,7 @@ impl FolioApp {
             show_signatures: false,
             sign_dialog: None,
             cert_dialog: None,
+            open_after_job: None,
         };
         app.rebuild_trust();
         if let Some(path) = initial_file {
@@ -306,11 +309,18 @@ impl FolioApp {
             None => job.show(ctx),
             Some(result) => {
                 tracing::info!(job = %job.title, ?result, "Job beendet");
+                self.job = None;
+                let open = self.open_after_job.take();
                 match result {
-                    Ok(msg) => self.info = Some(msg),
+                    Ok(msg) => {
+                        if let Some(path) = open {
+                            self.open_path(ctx, &path);
+                            self.show_signatures = true;
+                        }
+                        self.info = Some(msg);
+                    }
                     Err(msg) => self.error = Some(msg),
                 }
-                self.job = None;
             }
         }
     }

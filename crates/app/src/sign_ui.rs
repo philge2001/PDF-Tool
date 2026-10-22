@@ -11,6 +11,13 @@ use foliocraft_core::{Point, Rect as PdfRect, date};
 use foliocraft_sign::{KeyKind, Signer, sign_pdf};
 use std::path::PathBuf;
 
+/// Öffentliche, kostenlose Zeitstempeldienste (RFC 3161) als Vorschlag.
+const TSA_SUGGESTIONS: [&str; 3] = [
+    "http://timestamp.digicert.com",
+    "http://timestamp.sectigo.com",
+    "https://freetsa.org/tsr",
+];
+
 /// Standardgröße eines sichtbaren Signaturfelds bei einfachem Klick (Punkt).
 const DEFAULT_SIZE: (f32, f32) = (200.0, 60.0);
 
@@ -236,6 +243,9 @@ impl FolioApp {
             return;
         };
         let Some(signer) = &dlg.signer else { return };
+        if self.job.is_some() {
+            return; // es läuft schon etwas
+        }
         let name = signature_prep::free_signature_name(&d.doc);
         let placement = match dlg.mode {
             SignMode::Visible => match dlg.area {
@@ -291,13 +301,7 @@ impl FolioApp {
         } else {
             d.doc.bytes().to_vec()
         };
-        let signed = match sign_pdf(&base, spec, signer) {
-            Ok(b) => b,
-            Err(e) => {
-                self.error = Some(format!("Signieren fehlgeschlagen:\n{e}"));
-                return;
-            }
-        };
+        // Erst das Ziel wählen, dann signieren (die Signatur deckt die fertigen Bytes ab).
         let stem = d.file_name().trim_end_matches(".pdf").to_string();
         let mut dialog = rfd::FileDialog::new()
             .add_filter("PDF", &["pdf"])
@@ -308,17 +312,33 @@ impl FolioApp {
         let Some(path) = dialog.save_file() else {
             return; // abgebrochen – nichts geschrieben
         };
-        if let Err(e) = std::fs::write(&path, &signed) {
-            self.error = Some(format!(
-                "„{}“ konnte nicht gespeichert werden:\n{e}",
-                path.display()
-            ));
-            return;
-        }
+        let tsa_url = (self.settings.tsa_enabled && !self.settings.tsa_url.trim().is_empty())
+            .then(|| self.settings.tsa_url.trim().to_string());
+
+        // Mit Zeitstempel braucht es das Netzwerk -> Hintergrund-Job, die Oberfläche bleibt bedienbar.
+        // Der Job bekommt eigene Kopien von allem (`move`), weil er in einem anderen Thread läuft.
+        let signer = signer.clone();
+        let target = path.clone();
+        let work = move |ctx: &crate::jobs::JobCtx| -> crate::jobs::JobResult {
+            let transport = tsa_url.as_ref().map(|url| {
+                ctx.progress(0.3, format!("Zeitstempel von {url} …"));
+                move |req: &[u8]| http_tsa(url, req)
+            });
+            let tsa: Option<foliocraft_sign::timestamp::TsaTransport> =
+                transport.as_ref().map(|f| f as _);
+            let signed = sign_pdf(&base, spec, &signer, tsa)
+                .map_err(|e| format!("Signieren fehlgeschlagen:\n{e}"))?;
+            std::fs::write(&target, signed).map_err(|e| {
+                format!(
+                    "„{}“ konnte nicht gespeichert werden:\n{e}",
+                    target.display()
+                )
+            })?;
+            Ok(format!("Signiert und gespeichert:\n{}", target.display()))
+        };
         self.sign_dialog = None;
-        self.open_path(ctx, &path);
-        self.show_signatures = true;
-        self.info = Some(format!("Signiert und gespeichert:\n{}", path.display()));
+        self.open_after_job = Some(path);
+        self.job = Some(crate::jobs::Job::spawn("Signieren", ctx, work));
     }
 
     pub(crate) fn cert_dialog_ui(&mut self, ctx: &egui::Context) {
@@ -530,6 +550,33 @@ fn sign_dialog_body(
             ui.end_row();
         });
 
+    ui.checkbox(
+        &mut settings.tsa_enabled,
+        "Zeitstempel hinzufügen (empfohlen)",
+    )
+    .on_hover_text(
+        "Ein Zeitstempeldienst bestätigt unabhängig, wann signiert wurde. Dabei wird nur \
+             ein Hashwert übertragen, nicht das Dokument.",
+    );
+    if settings.tsa_enabled {
+        ui.horizontal(|ui| {
+            ui.label("Dienst");
+            ui.add(
+                egui::TextEdit::singleline(&mut settings.tsa_url)
+                    .hint_text("http://…")
+                    .desired_width(220.0),
+            );
+            ui.menu_button("Vorschläge", |ui| {
+                for url in TSA_SUGGESTIONS {
+                    if ui.button(url).clicked() {
+                        settings.tsa_url = url.to_string();
+                        ui.close();
+                    }
+                }
+            });
+        });
+    }
+
     ui.separator();
     ui.label(RichText::new("Darstellung").strong());
     if !dlg.existing.is_empty() {
@@ -601,4 +648,21 @@ fn load_signer(dlg: &mut SignDialog, path: &PathBuf) {
         },
         Err(e) => dlg.load_error = Some(format!("Datei nicht lesbar: {e}")),
     }
+}
+
+/// Schickt eine Zeitstempel-Anfrage per HTTP(S) an den Dienst (RFC 3161, Abschnitt 3.4).
+fn http_tsa(url: &str, request: &[u8]) -> Result<Vec<u8>, String> {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(std::time::Duration::from_secs(30)))
+        .build()
+        .into();
+    let mut response = agent
+        .post(url)
+        .header("Content-Type", "application/timestamp-query")
+        .send(request)
+        .map_err(|e| format!("Zeitstempeldienst nicht erreichbar ({url}): {e}"))?;
+    response
+        .body_mut()
+        .read_to_vec()
+        .map_err(|e| format!("Antwort des Zeitstempeldienstes unvollständig: {e}"))
 }

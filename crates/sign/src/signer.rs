@@ -46,6 +46,8 @@ fn other(e: impl std::fmt::Display) -> SignerError {
 }
 
 /// Privater Schlüssel. Wird nie gespeichert oder ausgegeben, nur zum Signieren benutzt.
+/// `Clone`, damit ein Hintergrund-Job (Signieren mit Zeitstempel) eine eigene Kopie bekommt.
+#[derive(Clone)]
 pub enum PrivateKey {
     Rsa(Box<rsa::RsaPrivateKey>),
     P256(p256::ecdsa::SigningKey),
@@ -158,7 +160,7 @@ pub enum KeyKind {
 }
 
 /// Digitale ID: Schlüssel + Zertifikat (+ weitere Zertifikate der Kette).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Signer {
     pub key: PrivateKey,
     pub cert: Certificate,

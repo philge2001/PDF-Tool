@@ -21,7 +21,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 | foliocraft-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing |
 | foliocraft-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
 | foliocraft-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore |
-| foliocraft-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, eframe, rfd, der |
+| foliocraft-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, eframe, rfd, der, ureq |
 
 ## Architekturregeln
 - **core** kennt weder UI noch PDFium und ist vollständig unit-testbar.
@@ -51,7 +51,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 ## Meilensteine Phase 4 (Signaturen)
 - [x] 4.1 Signaturen prüfen (sign-Crate, Panel, Vertrauensspeicher)
 - [x] 4.2 Signieren PAdES B-B (PKCS#12, Platzhalter, CMS)
-- [ ] 4.3 Zeitstempel (PAdES B-T) + Abschluss
+- [x] 4.3 Zeitstempel (PAdES B-T) + Abschluss
 
 ## Meilensteine Phase 3 (Formulare)
 - [x] 3.1 Formularmodell, Werte-Commands, Speichern mit AP (core)
@@ -95,6 +95,10 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Formularfelder im Overlay mit egui-Schrift; eigene Erscheinungsbilder von Kontrollkästchen/Optionsfeldern
   (z. B. Kreuz statt Häkchen) zeigt FolioCraft vereinfacht – in der Datei bleiben sie erhalten.
   Felder auf gedrehten Seiten: Text nicht mitgedreht. Formular-JavaScript (Berechnungen, Formate) wird nicht ausgeführt.
+- Signaturen: keine Sperrprüfung (OCSP/CRL) und kein LTV (B-LT/B-LTA), RSA-PSS wird nicht geprüft,
+  DocMDP-Berechtigungen werden angezeigt, aber Änderungen danach nicht darauf geprüft. Digitale IDs nur als
+  PKCS#12-Datei (kein Windows-Zertifikatspeicher, keine Smartcards). Vertrauen nur über selbst
+  hinterlegte Zertifikate (keine eingebaute Liste von Stammzertifikaten).
 - FreeText/Notizen nutzen Helvetica (WinAnsi): Westeuropäische Zeichen gehen, CJK/Kyrillisch noch nicht.
 
 ## Wichtige Module
@@ -187,8 +191,13 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   (Profil Leaf mit sich selbst als Aussteller, EKU E-Mail + Dokumentsignatur), `PrivateKey::sign_prehashed`
 - `sign::create` – `build_cms` (PAdES B-B: contentType, messageDigest, signing-certificate-v2; keine
   signingTime), `sign_pdf` (SubFilter ETSI.CAdES.detached, 24 KB Platz)
+- `sign::timestamp` – RFC 3161: `request` (TimeStampReq mit Nonce, prüft Antwort/Imprint/Nonce; Übertragung
+  als `TsaTransport`-Funktion von außen – die Crate macht kein Netzwerk), `verify_token` → `TimestampInfo`;
+  Test-TSA `tests::fake_tsa`. Zeitstempel = unsigniertes Attribut 1.2.840.113549.1.9.16.2.14 über den
+  Signaturwert; Dokument-Zeitstempel (ETSI.RFC3161) werden beim Prüfen erkannt
 - `app::sign_ui` – Dialog „Dokument signieren“ (ID-Datei, Passwort nur im Speicher, Grund/Ort/Kontakt,
-  sichtbar = Bereich aufziehen, unsichtbar, vorhandenes Feld), Ergebnis als neue Datei; „Testzertifikat erstellen“
+  sichtbar = Bereich aufziehen, unsichtbar, vorhandenes Feld), Ergebnis als neue Datei; „Testzertifikat erstellen“;
+  Signieren läuft als Job (`open_after_job`), Zeitstempel per `ureq` (`http_tsa`)
 - `app::signatures` – `SigState` (neu prüfen bei neuen Bytes/Vertrauensstand), Hinweisleiste, Panel
   (Details, Zertifikate, „vertrauen“, „Signierte Fassung speichern“), Vertrauensspeicher in den Einstellungen
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
@@ -204,6 +213,8 @@ PDFium liegt lokal in `pdfium/lib` (gitignored).
 `cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf` schreibt jeden Annotationstyp –
 zur Gegenprobe mit anderen Readern (z. B. `pdftoppm -png out.pdf x`).
 `cargo run -p foliocraft-sign --example sign_demo -- in.pdf out.pdf [id.p12 pw] [rsa]` signiert (ohne ID mit Testzertifikat).
+Zeitstempel: `--tsa-openssl tsa.cnf` (lokale OpenSSL-TSA, `openssl ts -reply`) oder `--tsa-http URL`.
+Öffentliche TSAs sind aus dem Container nicht erreichbar (Netzwerkregel).
 Gegenprobe: `pdfsig out.pdf`; CMS mit `openssl cms -verify -binary -inform DER -content daten.bin`.
 `cargo run -p foliocraft-sign --example sign_check -- datei.pdf [vertraut.pem]` prüft Signaturen (Gegenprobe: `pdfsig`).
 Unabhängig signierte Test-PDFs: OpenSSL (`openssl cms -sign -binary -outform DER`) über die ByteRange.

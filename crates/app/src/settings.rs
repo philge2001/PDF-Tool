@@ -39,6 +39,9 @@ pub struct Settings {
     pub sign_reason: String,
     pub sign_location: String,
     pub sign_contact: String,
+    /// Zeitstempel beim Signieren einholen (PAdES B-T) und von welchem Dienst.
+    pub tsa_enabled: bool,
+    pub tsa_url: String,
 }
 
 impl Default for Settings {
@@ -59,6 +62,8 @@ impl Default for Settings {
             sign_reason: String::new(),
             sign_location: String::new(),
             sign_contact: String::new(),
+            tsa_enabled: false,
+            tsa_url: String::new(),
         }
     }
 }

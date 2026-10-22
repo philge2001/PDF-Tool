@@ -260,10 +260,30 @@ fn report_ui(ui: &mut egui::Ui, i: usize, r: &SignatureReport, action: &mut Opti
         status_dot(ui, color);
         ui.label(RichText::new(r.summary()).strong().color(color));
     });
-    ui.label(format!("Unterzeichnet von: {}", r.signer));
-    if let Some(t) = &r.time {
-        ui.label(format!("Zeit: {t}"))
-            .on_hover_text("Vom Unterzeichner angegeben, nicht unabhängig bestätigt");
+    if r.document_timestamp {
+        ui.label(format!("Dokument-Zeitstempel von: {}", r.signer));
+    } else {
+        ui.label(format!("Unterzeichnet von: {}", r.signer));
+    }
+    match &r.timestamp {
+        Some(ts) if ts.integrity.is_ok() => {
+            let who = match ts.trust {
+                Trust::Trusted => ts.tsa.clone(),
+                _ => format!("{} (Dienst nicht als vertrauenswürdig hinterlegt)", ts.tsa),
+            };
+            ui.label(format!("Zeitstempel: {}", ts.time))
+                .on_hover_text(format!("Unabhängig bestätigt von {who}"));
+        }
+        Some(ts) => {
+            let e = ts.integrity.as_ref().err().cloned().unwrap_or_default();
+            ui.colored_label(RED, format!("Zeitstempel ungültig: {e}"));
+        }
+        None => {
+            if let Some(t) = &r.time {
+                ui.label(format!("Zeit: {t}"))
+                    .on_hover_text("Vom Unterzeichner angegeben, nicht unabhängig bestätigt");
+            }
+        }
     }
     if !r.reason.is_empty() {
         ui.label(format!("Grund: {}", r.reason));

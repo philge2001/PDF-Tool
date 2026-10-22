@@ -3,7 +3,7 @@
 Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 „FolioCraft“ ist ein Arbeitstitel. Lizenz: MIT OR Apache-2.0.
 
-**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation) und Phase 3 (Formulare) abgeschlossen.
+**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare) und Phase 4 (Signaturen) abgeschlossen.
 
 ## Funktionen (Phase 1)
 
@@ -39,6 +39,19 @@ Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 - Seiten einfügen/zusammenführen übernimmt die Formularfelder (bei Namenskonflikten mit Zusatz `_2`),
   Extrahieren/Teilen nimmt das Formular der gewählten Seiten mit
 - JavaScript in Formularen (Berechnungen, Formatierungen) wird bewusst nicht ausgeführt
+
+## Funktionen (Phase 4 – Digitale Signaturen)
+
+- Signaturen prüfen: Hinweisleiste und Signatur-Panel mit Ampel (gültig / Identität nicht bestätigt /
+  ungültig), Unterzeichner, Zeit, Grund, Zertifikatskette, „nach dem Signieren geändert“,
+  „Signierte Fassung speichern“; RSA und ECDSA (P-256/P-384), SHA-1 bis SHA-512
+- Vertrauenswürdige Zertifikate verwalten (Einstellungen, oder „… vertrauen“ direkt im Panel)
+- Signieren (PAdES B-B, `ETSI.CAdES.detached`) mit einer digitalen ID als PKCS#12-Datei (.p12/.pfx):
+  sichtbar (Bereich aufziehen), unsichtbar oder in ein vorhandenes Signaturfeld
+- Zeitstempel eines Zeitstempeldienstes (RFC 3161, PAdES B-T) – optional, URL frei wählbar
+- „Testzertifikat erstellen“: selbst ausgestellte digitale ID zum Ausprobieren
+- Signieren ist inkrementell: vorhandene Signaturen bleiben gültig; Ausfüllen/Kommentieren nach dem
+  Signieren wird als „danach geändert“ angezeigt
 
 ## Bedienung
 
@@ -128,6 +141,8 @@ Alle Dateien in `tests/fixtures/` sind selbst erzeugt:
 cargo run -p foliocraft-core --example gen_fixtures                    # Fixtures neu erzeugen
 cargo run -p foliocraft-core --example gen_fixtures -- big 500 big.pdf # 500-Seiten-PDF für Performance-Tests
 cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf     # jeden Annotationstyp schreiben (Gegenprobe in anderen Readern)
+cargo run -p foliocraft-sign --example sign_check -- datei.pdf [vertraut.pem]                     # Signaturen prüfen
+cargo run -p foliocraft-sign --example sign_demo -- in.pdf out.pdf [id.p12 passwort]              # signieren (ohne ID: Testzertifikat)
 cargo run -p foliocraft-core --example form_fill -- tests/fixtures/form.pdf                        # Formularfelder auflisten
 cargo run -p foliocraft-core --example form_fill -- in.pdf out.pdf "person.name=Erika" agb=an     # Formular füllen
 ```

@@ -28,6 +28,8 @@ eframe = { version = "0.37", default-features = false, features = [
     "accesskit", "clipboard", "default_fonts", "glow", "persistence", "wayland", "x11",
 ] }
 rfd = "0.17"
+# HTTP für Zeitstempeldienste (RFC 3161); TLS über rustls, damit auch https-Dienste gehen.
+ureq = { version = "3.5", default-features = false, features = ["rustls"] }
 
 # Digitale Signaturen (Phase 4) – RustCrypto, reines Rust, MIT/Apache.
 # Bewusst der stabile 0.2/0.7/0.9/0.13-Stand: die nächste Generation ist noch Release-Candidate.

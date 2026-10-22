@@ -34,6 +34,12 @@ fn main() {
         println!("  Integrität: {:?}", r.integrity);
         println!("  Vertrauen: {:?}", r.trust);
         println!("  Spätere Revisionen: {}", r.later_revisions);
+        if let Some(ts) = &r.timestamp {
+            println!(
+                "  Zeitstempel: {} von {} – {:?}, Vertrauen {:?}",
+                ts.time, ts.tsa, ts.integrity, ts.trust
+            );
+        }
         for c in &r.chain {
             println!("  Kette: {} (gültig bis {})", c.name, c.not_after);
         }

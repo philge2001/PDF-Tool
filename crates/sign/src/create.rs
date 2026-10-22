@@ -9,6 +9,7 @@
 
 use crate::crypto::Hash;
 use crate::signer::{Signer, SignerError};
+use crate::timestamp::{self, TsaTransport};
 use cms::cert::{CertificateChoices, IssuerAndSerialNumber};
 use cms::content_info::{CmsVersion, ContentInfo};
 use cms::signed_data::{
@@ -72,8 +73,38 @@ fn other(e: impl std::fmt::Display) -> SignerError {
     SignerError::Other(e.to_string())
 }
 
-/// Baut die CMS-Signatur (DER) für den Hash `digest` der signierten Bytes.
-pub fn build_cms(signer: &Signer, hash: Hash, digest: &[u8]) -> Result<Vec<u8>, SignerError> {
+/// Baut die CMS-Signatur (DER) für den Hash `digest` der signierten Bytes ("detached").
+/// Mit `tsa` wird ein Zeitstempel über den Signaturwert eingeholt und angehängt (PAdES B-T).
+pub fn build_cms(
+    signer: &Signer,
+    hash: Hash,
+    digest: &[u8],
+    tsa: Option<TsaTransport>,
+) -> Result<Vec<u8>, SignerError> {
+    build_signed_data_inner(signer, hash, OID_DATA, None, digest, tsa)
+}
+
+/// SignedData mit eingebettetem Inhalt (z. B. TSTInfo eines Zeitstempels).
+#[cfg(test)]
+pub(crate) fn build_signed_data(
+    signer: &Signer,
+    econtent_type: ObjectIdentifier,
+    content: Option<Vec<u8>>,
+    tsa: Option<TsaTransport>,
+) -> Result<Vec<u8>, SignerError> {
+    let hash = signer.key.hash();
+    let digest = hash.digest([content.as_deref().unwrap_or_default()]);
+    build_signed_data_inner(signer, hash, econtent_type, content, &digest, tsa)
+}
+
+fn build_signed_data_inner(
+    signer: &Signer,
+    hash: Hash,
+    econtent_type: ObjectIdentifier,
+    content: Option<Vec<u8>>,
+    digest: &[u8],
+    tsa: Option<TsaTransport>,
+) -> Result<Vec<u8>, SignerError> {
     let cert = &signer.cert;
     let cert_der = cert.to_der().map_err(other)?;
     let ess = SigningCertificateV2 {
@@ -90,7 +121,7 @@ pub fn build_cms(signer: &Signer, hash: Hash, digest: &[u8]) -> Result<Vec<u8>, 
     };
     // `SetOfVec::try_from` sortiert die Attribute so, wie DER es für ein SET verlangt.
     let attrs: SignedAttributes = SetOfVec::try_from(vec![
-        attribute(OID_CONTENT_TYPE, OID_DATA)?,
+        attribute(OID_CONTENT_TYPE, econtent_type)?,
         attribute(OID_MESSAGE_DIGEST, OctetString::new(digest).map_err(other)?)?,
         attribute(OID_SIGNING_CERT_V2, ess)?,
     ])
@@ -101,6 +132,21 @@ pub fn build_cms(signer: &Signer, hash: Hash, digest: &[u8]) -> Result<Vec<u8>, 
     let (sig_alg, signature) = signer
         .key
         .sign_prehashed(&hash.digest([attrs_der.as_slice()]))?;
+    // Zeitstempel über den Signaturwert – kommt in die NICHT signierten Attribute,
+    // die Signatur selbst bleibt dadurch unverändert.
+    let unsigned_attrs = match tsa {
+        Some(transport) => {
+            let token = timestamp::request(&signature, transport).map_err(SignerError::Other)?;
+            Some(
+                SetOfVec::try_from(vec![Attribute {
+                    oid: timestamp::OID_TIMESTAMP_TOKEN,
+                    values: SetOfVec::try_from(vec![token]).map_err(other)?,
+                }])
+                .map_err(other)?,
+            )
+        }
+        None => None,
+    };
     let digest_alg = AlgorithmIdentifierOwned {
         oid: hash.oid(),
         parameters: None,
@@ -115,18 +161,28 @@ pub fn build_cms(signer: &Signer, hash: Hash, digest: &[u8]) -> Result<Vec<u8>, 
         signed_attrs: Some(attrs),
         signature_algorithm: sig_alg,
         signature: OctetString::new(signature).map_err(other)?,
-        unsigned_attrs: None,
+        unsigned_attrs,
     };
     let certs: Vec<CertificateChoices> = std::iter::once(cert)
         .chain(&signer.chain)
         .map(|c| CertificateChoices::Certificate(c.clone()))
         .collect();
+    let econtent = match content {
+        // Eingebetteter Inhalt steht als OCTET STRING im SignedData.
+        Some(c) => Some(Any::encode_from(&OctetString::new(c).map_err(other)?).map_err(other)?),
+        None => None, // "detached": die PDF-Bytes stehen nicht in der Signatur
+    };
     let signed_data = SignedData {
-        version: CmsVersion::V1,
+        // RFC 5652: Version 3, wenn der Inhalt nicht "data" ist (z. B. TSTInfo), sonst 1.
+        version: if econtent_type == OID_DATA {
+            CmsVersion::V1
+        } else {
+            CmsVersion::V3
+        },
         digest_algorithms: SetOfVec::try_from(vec![digest_alg]).map_err(other)?,
         encap_content_info: EncapsulatedContentInfo {
-            econtent_type: OID_DATA,
-            econtent: None, // "detached": die PDF-Bytes stehen nicht in der Signatur
+            econtent_type,
+            econtent,
         },
         certificates: Some(CertificateSet(SetOfVec::try_from(certs).map_err(other)?)),
         crls: None,
@@ -140,11 +196,13 @@ pub fn build_cms(signer: &Signer, hash: Hash, digest: &[u8]) -> Result<Vec<u8>, 
 }
 
 /// Signiert: hängt an `base` (fertige PDF-Bytes) eine Revision mit Signatur an.
-/// `spec.sub_filter` und `spec.contents_len` werden hier gesetzt.
+/// `spec.sub_filter` und `spec.contents_len` werden hier gesetzt. Mit `tsa` kommt ein
+/// Zeitstempel dazu (PAdES B-T).
 pub fn sign_pdf(
     base: &[u8],
     mut spec: SignatureSpec,
     signer: &Signer,
+    tsa: Option<TsaTransport>,
 ) -> Result<Vec<u8>, SignerError> {
     spec.sub_filter = "ETSI.CAdES.detached".into();
     if spec.contents_len == 0 {
@@ -156,6 +214,6 @@ pub fn sign_pdf(
     let prepared = signature_prep::prepare_signature(base, &spec).map_err(other)?;
     let hash = signer.key.hash();
     let digest = hash.digest(prepared.signed_parts());
-    let cms = build_cms(signer, hash, &digest)?;
+    let cms = build_cms(signer, hash, &digest, tsa)?;
     prepared.finish(&cms).map_err(other)
 }

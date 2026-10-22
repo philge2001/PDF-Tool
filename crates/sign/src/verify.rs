@@ -10,6 +10,7 @@
 
 use crate::cert::{self, CertInfo, Trust, TrustStore};
 use crate::crypto::{self, Hash};
+use crate::timestamp::{self, TimestampInfo};
 use cms::cert::CertificateChoices;
 use cms::content_info::ContentInfo;
 use cms::signed_data::{SignedData, SignerIdentifier, SignerInfo};
@@ -74,6 +75,10 @@ pub struct SignatureReport {
     pub signed_len: usize,
     /// Anzahl späterer Revisionen (0 = die Signatur deckt die ganze Datei ab).
     pub later_revisions: usize,
+    /// Zeitstempel eines Zeitstempeldienstes (PAdES B-T), falls vorhanden.
+    pub timestamp: Option<TimestampInfo>,
+    /// Dokument-Zeitstempel statt Signatur einer Person (SubFilter ETSI.RFC3161).
+    pub document_timestamp: bool,
 }
 
 impl SignatureReport {
@@ -162,6 +167,8 @@ pub fn verify_signature(bytes: &[u8], dict: &Dictionary, trust: &TrustStore) -> 
         chain: Vec::new(),
         signed_len: 0,
         later_revisions: 0,
+        timestamp: None,
+        document_timestamp: false,
     };
     if let Err(e) = check(bytes, dict, trust, &mut report) {
         report.integrity = e;
@@ -228,6 +235,23 @@ fn check(
         hex_decode(&bytes[b + 1..c - 1]).ok_or_else(|| broken("/Contents ist kein Hex"))?;
     let mut reader = SliceReader::new(&contents).map_err(|e| unsupported(e.to_string()))?;
     // `decode` liest genau EIN DER-Objekt; die Füll-Nullen dahinter bleiben ungelesen.
+    // Dokument-Zeitstempel: /Contents ist direkt ein RFC-3161-Token über die Bytes.
+    if report.sub_filter == "ETSI.RFC3161" {
+        report.document_timestamp = true;
+        let token = der::Any::decode(&mut reader)
+            .map_err(|e| unsupported(format!("Zeitstempel unlesbar: {e}")))?;
+        let data = [&bytes[a..a + b], &bytes[c..end]].concat();
+        let ts = timestamp::verify_token(&token, &data, trust);
+        report.signer = ts.tsa.clone();
+        report.time = Some(ts.time.clone());
+        report.trust = ts.trust.clone();
+        report.integrity = match &ts.integrity {
+            Ok(()) => Integrity::Intact,
+            Err(e) => Integrity::Broken(e.clone()),
+        };
+        report.timestamp = Some(ts);
+        return Ok(());
+    }
     let info = ContentInfo::decode(&mut reader)
         .map_err(|e| unsupported(format!("CMS-Struktur unlesbar: {e}")))?;
     let _ = reader.remaining_len();
@@ -313,8 +337,28 @@ fn check(
     }
     report.integrity = Integrity::Intact;
 
+    // Zeitstempel über den Signaturwert (nicht signiertes Attribut).
+    if let Some(token) = si
+        .unsigned_attrs
+        .iter()
+        .flat_map(|set| set.iter())
+        .find(|a| a.oid == timestamp::OID_TIMESTAMP_TOKEN)
+        .and_then(|a| a.values.iter().next())
+    {
+        report.timestamp = Some(timestamp::verify_token(token, sig, trust));
+    }
+
     // 5) Vertrauen: Kette bis zu einem vertrauenswürdigen Zertifikat.
-    let at = signing_time(si).unwrap_or_else(SystemTime::now);
+    // Prüfzeitpunkt: bestätigte Zeit aus einem gültigen Zeitstempel, sonst die angegebene
+    // Signaturzeit, sonst jetzt.
+    let stamped = report
+        .timestamp
+        .as_ref()
+        .filter(|t| t.integrity.is_ok())
+        .map(|t| t.system_time);
+    let at = stamped
+        .or_else(|| signing_time(si))
+        .unwrap_or_else(SystemTime::now);
     let chain = cert::build_chain(signer, &certs, trust, at);
     report.chain = chain.certs.iter().map(CertInfo::of).collect();
     report.trust = chain.trust;
@@ -339,7 +383,10 @@ fn decode_time(v: &der::Any) -> Option<x509_cert::time::Time> {
 }
 
 /// Zertifikat zum SignerIdentifier (Aussteller + Seriennummer oder Schlüsselkennung).
-fn find_signer<'a>(certs: &'a [Certificate], sid: &SignerIdentifier) -> Option<&'a Certificate> {
+pub(crate) fn find_signer<'a>(
+    certs: &'a [Certificate],
+    sid: &SignerIdentifier,
+) -> Option<&'a Certificate> {
     certs.iter().find(|c| match sid {
         SignerIdentifier::IssuerAndSerialNumber(is) => {
             c.tbs_certificate.issuer == is.issuer
