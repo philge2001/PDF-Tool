@@ -42,15 +42,75 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 
 ## Meilensteine Phase 1
 - [x] M0 Grundgerüst
-- [ ] M1 Öffnen & Rendern
-- [ ] M2 Zoom, Navigation, Thumbnails, Cache
-- [ ] M3 Textsuche
-- [ ] M4 Text auswählen & kopieren
-- [ ] M5 Annotationsmodell, Commands, Speichern (core)
-- [ ] M6 Annotationswerkzeuge (UI)
-- [ ] M7 Bearbeiten, Kommentar-Panel, Undo/Redo-Shortcuts
-- [ ] M8 Speichern in der App
-- [ ] M9 Zuletzt geöffnet, Dark/Light Mode
+- [x] M1 Öffnen & Rendern
+- [x] M2 Zoom, Navigation, Thumbnails, Cache
+- [x] M3 Textsuche
+- [x] M4 Text auswählen & kopieren
+- [x] M5 Annotationsmodell, Commands, Speichern (core)
+- [x] M6 Annotationswerkzeuge (UI)
+- [x] M7 Bearbeiten, Kommentar-Panel, Undo/Redo-Shortcuts
+- [x] M8 Speichern in der App
+- [x] M9 Zuletzt geöffnet, Dark/Light Mode
+
+## Vorbereitung späterer Phasen
+- Phase 2 (Seiten): neue Commands auf `core::command::Model` (z. B. Seitenreihenfolge im Modell),
+  Speichern über `IncrementalDocument` wie in `core::save`.
+- Phase 3 (Formulare): Widget-Annotationen sind heute "fremd" und werden von PDFium gerendert.
+- Phase 4 (Signaturen): inkrementelles Speichern erhält bestehende Signaturen bereits.
+- Phase 5/6 (Schwärzen, Text bearbeiten): Content-Stream-Änderungen in core, PDFium nur zum Rendern.
 
 ## Bekannte Einschränkungen
+- Overlay vs. Datei: Hervorhebungen im Overlay halbtransparent (egui kann kein Multiply),
+  Freitext im Overlay mit egui-Schrift (Zeilenumbrüche identisch) und auf gedrehten Seiten nicht mitgedreht.
+- Importierte Annotationen mit exotischer Darstellung (z. B. Wolkenrand) werden vereinfacht neu gezeichnet.
+- Dokumente werden im UI-Thread geladen (lopdf); sehr große Dateien (> 100 MB) blockieren kurz.
+- Verschlüsselte PDFs mit Benutzerpasswort werden noch nicht unterstützt (Passwortdialog fehlt).
+- Annotationen auf gedrehten Seiten: Geometrie korrekt, Freitext-Overlay nicht mitgedreht.
 - FreeText/Notizen nutzen Helvetica (WinAnsi): Westeuropäische Zeichen gehen, CJK/Kyrillisch noch nicht.
+
+## Wichtige Module
+- `core::document` – `Document::open`, `PageInfo` (CropBox, /Rotate, Umrechnung PDF ↔ Anzeige)
+- `render::worker` – `RenderService` (Thread + Channels), `RenderKey` (Seite, Skalierungsstufe, Kachel),
+  `page_pixel_size`/`tile_grid`/`tile_rect` (gemeinsame Rechenregeln für App und Worker)
+- `render::cache::ByteLru` – LRU mit Byte-Budget
+- `app::viewer` – `Layout` (Präfixsummen, Binärsuche), `PageTextures` (GPU-Texturen, pending/wanted),
+  `Viewer::show` (zeichnet nur sichtbare Seiten, Kacheln ab 3072 px), Zoom mit Anker (`set_zoom`),
+  `ZoomMode` (Custom/FitWidth/FitPage), `FrameRequests` (Render-Aufträge pro Frame, `flush_requests`)
+- `app::viewer::thumbnails` – Seitenleiste, gleiche Texturen, Priorität `Thumbnail`
+- `core::annotation` – `Annotation`/`AnnotKind` (9 Typen), `AnnotationStore`; `import` (PDF -> Modell,
+  Unverstandenes bleibt fremd), `export` (Dictionary, Basis = Original-Dict), `appearance` (/AP-Streams)
+- `core::command` – `Command`-Trait, `Model` (was Commands ändern dürfen), `History` (Undo/Redo, dirty)
+- `core::save` – inkrementelles Speichern: pro Seite fremde Einträge + verwaltete; unveränderte
+  behalten ihren Verweis, geänderte werden unter derselben Objektnummer neu geschrieben
+- `core::font` (Helvetica-Breiten, WinAnsi, Umbruch), `core::pdf_string` (Textstrings), `core::date`
+- `core::text` – `PageText`/`CharBox` (Zeichen + Rechteck im PDF-Raum), `find`, `range_rects`, `char_at`
+- `render::worker` – Textextraktion (`extract_text`, Event `Text`), eigene Warteschlange:
+  sichtbare Seiten > Text > Prefetch > Miniaturen
+- `app::viewer::transform` – EINZIGE Umrechnung PDF ↔ Bildschirm (inkl. /Rotate)
+- `app::text_cache` – Seitentext pro Dokument (lazy angefordert)
+- `app::search` – Suchleiste, Treffer seitenweise sortiert, Overlay-Hervorhebung
+- `app::tools` – `Tool`-Enum (aktives Werkzeug); `tools::text_select` – `TextSelection`
+  (Anker/Fokus als `TextPos`, seitenübergreifend), Kopieren, Doppelklick = Wort
+- `app::annot_draw` – zeichnet `Annotation` als egui-Overlay (auch Vorschau & Miniaturen)
+- `app::tools::create` – Gesten (Freihand/Formen/Pfeil), Markup aus Textauswahl (`Batch` = 1 Undo-Schritt)
+- `app::tools::editor` – Eingabefenster für Notiz-/Freitext (neu oder bestehend)
+- Render-Worker blendet per `HiddenAnnots` genau die von core verwalteten /Annots-Indizes aus
+  (`Document::managed_annot_indices`); die App zeichnet sie selbst
+- `app::tools::select` – Annotationen anklicken/verschieben (Vorschau via `AnnotDrag`), löschen,
+  `update_selected` (zusammenführbare Updates = 1 Undo-Schritt, siehe `History::execute_merging`)
+- `app::comments` – Kommentar-Panel (nach Seite und Position sortiert, direkt bearbeitbar)
+- `app::file_ops` – Speichern/Speichern unter, Rückfrage bei ungespeicherten Änderungen
+  (`PendingAction`), Fenstertitel mit `*`; nach dem Speichern lädt der Worker neu (`reload_renderer`)
+- `app::menu` – Menüleiste Datei/Bearbeiten/Ansicht
+- `app::settings` – dauerhafte Einstellungen (serde + eframe-Persistenz, Schlüssel `foliocraft_settings`):
+  zuletzt geöffnet, Design, Panels, Werkzeugstil, Autor
+- `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
+
+## Tastenkürzel
+Strg+O öffnen · Strg+S speichern · Strg+Umschalt+S speichern unter · Strg+Z/Strg+Y (oder Strg+Umschalt+Z) Rückgängig/Wiederholen · Entf löscht Auswahl · Strg+C kopiert markierten Text · Esc hebt Auswahl auf · Strg+F suchen (Enter/F3 weiter, Umschalt+Enter/Umschalt+F3 zurück, Esc schließen) · Strg+Plus/Minus zoomen · Strg+1 = 100 % · Strg+2 = Seitenbreite · Strg+0 = Ganze Seite ·
+Strg+Mausrad zoomt um den Mauszeiger · Bild↑/↓ Seite · Pos1/Ende · Pfeiltasten scrollen
+
+## Testen im Container (ohne Bildschirm)
+PDFium liegt lokal in `pdfium/lib` (gitignored).
+`cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf` schreibt jeden Annotationstyp –
+zur Gegenprobe mit anderen Readern (z. B. `pdftoppm -png out.pdf x`). Screenshots über Xvfb + xdotool + ImageMagick `import`.
