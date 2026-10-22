@@ -1,0 +1,25 @@
+[package]
+name = "foliocraft-app"
+description = "FolioCraft Desktop-App (eframe/egui)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "foliocraft"
+path = "src/main.rs"
+
+[dependencies]
+foliocraft-core.workspace = true
+foliocraft-render.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+eframe.workspace = true
+rfd.workspace = true
+
+[lints]
+workspace = true

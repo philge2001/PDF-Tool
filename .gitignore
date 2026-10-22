@@ -1,0 +1,6 @@
+/target
+# PDFium-Binaries werden nicht eingecheckt (siehe README)
+/pdfium/
+*.so
+*.dylib
+*.dll

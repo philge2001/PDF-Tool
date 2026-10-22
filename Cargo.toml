@@ -1,0 +1,40 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/render", "crates/app"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# Zentrale Versionsverwaltung: Crates erben mit `foo.workspace = true`.
+[workspace.dependencies]
+foliocraft-core = { path = "crates/core" }
+foliocraft-render = { path = "crates/render" }
+
+anyhow = "1.0"
+thiserror = "2.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1.0", features = ["derive"] }
+lopdf = { version = "0.46", default-features = false }
+# Ohne `image`-Feature: wir brauchen nur rohe RGBA-Bytes, keine image-Crate.
+pdfium-render = { version = "0.9.4", default-features = false, features = ["pdfium_latest", "thread_safe"] }
+# glow (OpenGL) statt wgpu: schnellerer Build, weniger Abhängigkeiten, reicht für 2D.
+eframe = { version = "0.37", default-features = false, features = [
+    "accesskit", "clipboard", "default_fonts", "glow", "persistence", "wayland", "x11",
+] }
+rfd = "0.17"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.dev.package."*"]
+# Abhängigkeiten auch im Debug-Build optimieren: macht PDFium-nahe Bitmap-Kopien
+# und egui deutlich schneller, unser eigener Code bleibt gut debugbar.
+opt-level = 2
