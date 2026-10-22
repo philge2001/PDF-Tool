@@ -20,6 +20,11 @@ pub struct Model {
     /// Neue PDF-Objekte, die noch nicht in der Datei stehen (z. B. eingefügte Seiten
     /// samt Schriften und Bildern). Werden beim Speichern geschrieben.
     pub extra_objects: std::collections::BTreeMap<lopdf::ObjectId, lopdf::Object>,
+    /// Bearbeitete Seiteninhalte (Text bearbeiten/hinzufügen), nach Objektnummer der Seite.
+    /// Einmal bearbeitet, bleibt eine Seite hier – Undo setzt den vorigen Inhalt ein.
+    pub page_content: std::collections::BTreeMap<lopdf::ObjectId, crate::text_edit::PageContent>,
+    /// Zählt jede Inhaltsänderung (auch Undo/Redo); liefert die `stamp`-Werte.
+    pub content_epoch: u64,
     next_page_id: u32,
 }
 

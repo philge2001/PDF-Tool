@@ -24,6 +24,7 @@ pub mod sanitize;
 mod save;
 pub mod signature_prep;
 pub mod text;
+pub mod text_edit;
 
 pub use annotation::{AnnotId, AnnotKind, Annotation, AnnotationStore};
 pub use command::{
@@ -38,3 +39,4 @@ pub use page_export::{extract_pages, split_by_ranges, split_every};
 pub use page_import::{InsertPages, parse_page_ranges};
 pub use page_ops::{DeletePages, ReorderPages, RotatePages};
 pub use text::{CharBox, PageText, TextRange};
+pub use text_edit::{PageContent, TextBlock};

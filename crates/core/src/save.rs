@@ -102,6 +102,55 @@ fn write_page_tree(doc: &Document, inc: &mut IncrementalDocument) -> Result<()> 
     Ok(())
 }
 
+/// Schreibt bearbeitete Seiteninhalte: neuer Content Stream, Ressourcen als direktes
+/// Dictionary (bisherige plus eingebettete Ersatzschriften).
+fn write_page_contents(doc: &Document, inc: &mut IncrementalDocument) -> Result<()> {
+    let pdf = doc.pdf();
+    for info in doc.pages() {
+        let page = info.object_id;
+        if !doc.content_changed(page) {
+            continue;
+        }
+        let Some(pc) = doc.model().page_content.get(&page) else {
+            continue;
+        };
+        let mut fonts = Vec::new();
+        for (name, sub) in &pc.fonts {
+            let id = sub.write(&mut |o| inc.new_document.add_object(o))?;
+            fonts.push((name.clone(), id));
+        }
+        let mut stream = lopdf::Stream::new(lopdf::Dictionary::new(), pc.content.clone());
+        let _ = stream.compress();
+        let content_id = inc.new_document.add_object(stream);
+
+        // Ressourcen auflösen und kopieren (sie können mit anderen Seiten geteilt sein).
+        let resolve = |o: &Object| -> lopdf::Dictionary {
+            pdf.dereference(o)
+                .ok()
+                .and_then(|(_, o)| o.as_dict().ok().cloned())
+                .unwrap_or_default()
+        };
+        let mut resources = inherited(pdf, page, b"Resources")
+            .map(resolve)
+            .unwrap_or_default();
+        if !fonts.is_empty() {
+            let mut font_dict = resources.get(b"Font").map(resolve).unwrap_or_default();
+            for (name, id) in fonts {
+                font_dict.set(name, id);
+            }
+            resources.set("Font", font_dict);
+        }
+        inc.opt_clone_object_to_new_document(page)?;
+        let dict = inc
+            .new_document
+            .get_object_mut(page)
+            .and_then(Object::as_dict_mut)?;
+        dict.set("Contents", content_id);
+        dict.set("Resources", resources);
+    }
+    Ok(())
+}
+
 /// Eindeutiger Name (/NM) für neue Annotationen.
 fn unique_name(id: AnnotId) -> String {
     let nanos = std::time::SystemTime::now()
@@ -128,6 +177,7 @@ pub(crate) fn incremental(doc: &Document) -> Result<SaveOutput> {
     inc.new_document.max_id = inc.new_document.max_id.max(reserved);
 
     write_page_tree(doc, &mut inc)?;
+    write_page_contents(doc, &mut inc)?;
     let forms = form_save::write(doc, &mut inc)?;
     // Widgets ausfüllbarer Felder – auch die gerade erst angelegten.
     let widgets: HashSet<ObjectId> = doc

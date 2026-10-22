@@ -108,6 +108,16 @@ impl SubsetFont {
         out
     }
 
+    /// Breiten (1/1000 em) der bisher benutzten Glyphen, nach neuer Glyphennummer.
+    pub fn widths(&self) -> impl Iterator<Item = (u16, f32)> + '_ {
+        self.glyphs.iter().map(|(&g, (_, w))| (g, *w))
+    }
+
+    /// Text der bisher benutzten Glyphen (wie in der ToUnicode-CMap).
+    pub fn texts(&self) -> impl Iterator<Item = (u16, &str)> + '_ {
+        self.glyphs.iter().map(|(&g, (t, _))| (g, t.as_str()))
+    }
+
     /// Hex-String-Objekt für einen `Tj`-Operanden.
     pub fn encode_object(&mut self, text: &str) -> Object {
         Object::String(self.encode(text), StringFormat::Hexadecimal)

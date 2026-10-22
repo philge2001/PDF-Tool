@@ -88,6 +88,8 @@ pub struct Document {
     imported: HashMap<ObjectId, Annotation>,
     /// Dasselbe für Formularfelder (nach Objektnummer des Feld-Dictionarys).
     imported_fields: HashMap<ObjectId, FormField>,
+    /// Stempel der bearbeiteten Seiteninhalte, wie sie in der Datei stehen.
+    saved_content: HashMap<ObjectId, u64>,
 }
 
 impl Document {
@@ -124,6 +126,7 @@ impl Document {
             history: History::new(),
             imported: HashMap::new(),
             imported_fields: HashMap::new(),
+            saved_content: HashMap::new(),
         };
         doc.saved_pages = doc.page_structure();
         doc.next_object_id = doc.pdf.max_id + 1;
@@ -326,6 +329,14 @@ impl Document {
         self.imported_fields.get(&id)
     }
 
+    /// Wurde der Inhalt dieser Seite seit dem Laden/Speichern geändert?
+    pub(crate) fn content_changed(&self, page: ObjectId) -> bool {
+        self.model
+            .page_content
+            .get(&page)
+            .is_some_and(|c| self.saved_content.get(&page) != Some(&c.stamp))
+    }
+
     pub(crate) fn imported(&self) -> impl Iterator<Item = &Annotation> {
         self.imported.values()
     }
@@ -409,6 +420,12 @@ impl Document {
         }
         self.imported_fields = snapshot_fields(&self.model.forms);
         self.saved_pages = self.page_structure();
+        self.saved_content = self
+            .model
+            .page_content
+            .iter()
+            .map(|(&id, c)| (id, c.stamp))
+            .collect();
         // Die zusätzlichen Objekte stehen jetzt in der Datei.
         self.model.extra_objects.clear();
         self.next_object_id = self.next_object_id.max(self.pdf.max_id + 1);
