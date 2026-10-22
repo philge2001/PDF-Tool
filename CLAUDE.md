@@ -44,7 +44,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - [x] M0 Grundgerüst
 - [x] M1 Öffnen & Rendern
 - [x] M2 Zoom, Navigation, Thumbnails, Cache
-- [ ] M3 Textsuche
+- [x] M3 Textsuche
 - [ ] M4 Text auswählen & kopieren
 - [ ] M5 Annotationsmodell, Commands, Speichern (core)
 - [ ] M6 Annotationswerkzeuge (UI)
@@ -64,10 +64,16 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   `Viewer::show` (zeichnet nur sichtbare Seiten, Kacheln ab 3072 px), Zoom mit Anker (`set_zoom`),
   `ZoomMode` (Custom/FitWidth/FitPage), `FrameRequests` (Render-Aufträge pro Frame, `flush_requests`)
 - `app::viewer::thumbnails` – Seitenleiste, gleiche Texturen, Priorität `Thumbnail`
+- `core::text` – `PageText`/`CharBox` (Zeichen + Rechteck im PDF-Raum), `find`, `range_rects`, `char_at`
+- `render::worker` – Textextraktion (`extract_text`, Event `Text`), eigene Warteschlange:
+  sichtbare Seiten > Text > Prefetch > Miniaturen
+- `app::viewer::transform` – EINZIGE Umrechnung PDF ↔ Bildschirm (inkl. /Rotate)
+- `app::text_cache` – Seitentext pro Dokument (lazy angefordert)
+- `app::search` – Suchleiste, Treffer seitenweise sortiert, Overlay-Hervorhebung
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
 
 ## Tastenkürzel
-Strg+O öffnen · Strg+Plus/Minus zoomen · Strg+1 = 100 % · Strg+2 = Seitenbreite · Strg+0 = Ganze Seite ·
+Strg+O öffnen · Strg+F suchen (Enter/F3 weiter, Umschalt+Enter/Umschalt+F3 zurück, Esc schließen) · Strg+Plus/Minus zoomen · Strg+1 = 100 % · Strg+2 = Seitenbreite · Strg+0 = Ganze Seite ·
 Strg+Mausrad zoomt um den Mauszeiger · Bild↑/↓ Seite · Pos1/Ende · Pfeiltasten scrollen
 
 ## Testen im Container (ohne Bildschirm)

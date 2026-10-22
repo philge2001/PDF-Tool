@@ -3,6 +3,7 @@
 pub mod layout;
 pub mod textures;
 pub mod thumbnails;
+pub mod transform;
 
 use eframe::egui::{self, Color32, Pos2, Rect, ScrollArea, Sense, Vec2, pos2, vec2};
 use foliocraft_render::{
@@ -39,9 +40,9 @@ pub enum ZoomMode {
 }
 
 /// Seiten, die in diesem Frame sichtbar sind – für Overlays (Suche, Auswahl, Annotationen).
-#[allow(dead_code)] // TODO(M3): wird von Suche/Textauswahl genutzt
 pub struct ViewOutput {
     /// Interaktionsfläche des gesamten Inhalts (Klicks, Ziehen).
+    #[allow(dead_code)] // TODO(M4): Textauswahl
     pub response: egui::Response,
     /// Sichtbarer Bildschirmbereich des Scrollfelds (zum Zuschneiden von Overlays).
     pub clip: Rect,
@@ -141,14 +142,20 @@ impl Viewer {
         self.current_page = page;
     }
 
-    /// Scrollt so, dass `rect_pt` (Anzeige-Punkte relativ zur Seite, Ursprung oben links)
-    /// sichtbar ist – z. B. für Suchtreffer.
-    #[allow(dead_code)] // TODO(M3): wird von der Suche genutzt
-    pub fn reveal(&mut self, page: usize, rect_in_page: Rect) {
+    /// Scrollt so, dass `unit_rect` sichtbar ist – z. B. für Suchtreffer.
+    /// `unit_rect` ist in normierten Seitenkoordinaten (0..1, oben links), siehe `transform`.
+    pub fn reveal(&mut self, page: usize, unit_rect: Rect) {
         let content_w = self.content_width();
         let page_rect = self.layout.page_rect(page, self.zoom, content_w);
-        let target = rect_in_page.translate(page_rect.min.to_vec2());
-        let view = self.last_viewport;
+        let target = Rect::from_min_max(
+            page_rect.min + unit_rect.min.to_vec2() * page_rect.size(),
+            page_rect.min + unit_rect.max.to_vec2() * page_rect.size(),
+        );
+        // Ziel einer noch ausstehenden Scrollanweisung berücksichtigen.
+        let view = match self.scroll_to {
+            Some(off) => Rect::from_min_size(off.to_pos2(), self.last_viewport.size()),
+            None => self.last_viewport,
+        };
         if view.is_positive() && view.contains_rect(target) {
             return;
         }

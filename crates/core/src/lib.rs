@@ -6,7 +6,9 @@
 pub mod document;
 pub mod error;
 pub mod geometry;
+pub mod text;
 
 pub use document::{Document, PageInfo};
 pub use error::{CoreError, Result};
 pub use geometry::{Color, Point, Quad, Rect};
+pub use text::{CharBox, PageText, TextRange};

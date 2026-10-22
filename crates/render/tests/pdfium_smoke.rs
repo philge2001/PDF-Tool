@@ -85,4 +85,24 @@ fn renders_page_and_tile() {
         unreachable!()
     };
     assert_eq!((image.width, image.height), (1024, 1024));
+
+    // Text mit Positionen: "Suchwort: Zebra. Noch einmal ZEBRA und zebra." steht bei y = 660.
+    svc.extract_text(1, 0);
+    let Event::Text { text, .. } = wait_for(&svc, |e| matches!(e, Event::Text { .. })) else {
+        unreachable!()
+    };
+    let hits = text.find("zebra", false);
+    assert_eq!(hits.len(), 3);
+    let rects = text.range_rects(hits[0]);
+    assert_eq!(rects.len(), 1);
+    let r = rects[0];
+    assert!(r.y0 > 650.0 && r.y1 < 680.0, "Zeilenposition: {r:?}");
+    assert!(
+        r.x0 > 72.0 && r.width() > 20.0 && r.width() < 60.0,
+        "Wortbreite: {r:?}"
+    );
+    assert!(
+        text.text_in(foliocraft_core::TextRange::new(0, 40))
+            .contains("FolioCraft Testdokument")
+    );
 }

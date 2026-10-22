@@ -1,5 +1,7 @@
 //! Die Haupt-App: hält Render-Service, geöffnetes Dokument und UI-Zustand.
 
+use crate::search::SearchState;
+use crate::text_cache::TextCache;
 use crate::viewer::Viewer;
 use crate::viewer::thumbnails::Thumbnails;
 use eframe::egui;
@@ -12,6 +14,8 @@ pub struct OpenDocument {
     pub doc: Document,
     pub viewer: Viewer,
     pub thumbs: Thumbnails,
+    pub texts: TextCache,
+    pub search: SearchState,
     /// Inhalt des Seitenfelds in der Toolbar, während der Nutzer tippt.
     pub page_input: Option<String>,
     /// Inhalt des Zoomfelds in der Toolbar, während der Nutzer tippt.
@@ -69,6 +73,8 @@ impl FolioApp {
                 let sizes: Vec<_> = doc.pages().iter().map(|p| p.display_size()).collect();
                 self.document = Some(OpenDocument {
                     thumbs: Thumbnails::new(&sizes),
+                    texts: TextCache::new(id, sizes.len()),
+                    search: SearchState::default(),
                     viewer: Viewer::new(id, sizes),
                     doc,
                     page_input: None,
@@ -109,6 +115,7 @@ impl FolioApp {
                     self.error = Some(format!("PDFium kann das Dokument nicht öffnen: {error}"));
                     self.document = None;
                 }
+                (Some(d), Event::Text { doc, page, text }) => d.texts.insert(doc, page, text),
                 (Some(d), ev) => d.viewer.on_render_event(ctx, ev),
                 (None, _) => {}
             }
@@ -187,6 +194,12 @@ impl eframe::App for FolioApp {
         egui::Panel::bottom("statusbar").show(ui, |ui| self.status_bar(ui));
 
         if let Some(d) = &mut self.document {
+            if d.search.open {
+                egui::Panel::top("searchbar").show(ui, |ui| d.search_bar(ui));
+            }
+            if let Ok(render) = &self.render {
+                d.update_search(render);
+            }
             if self.show_thumbnails {
                 egui::Panel::left("thumbnails")
                     .default_size(160.0)
@@ -200,7 +213,8 @@ impl eframe::App for FolioApp {
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE.fill(ui.visuals().extreme_bg_color))
                 .show(ui, |ui| {
-                    d.viewer.show(ui);
+                    let view = d.viewer.show(ui);
+                    d.paint_search_hits(ui, &view);
                 });
             if let Ok(render) = &self.render {
                 d.viewer.flush_requests(render);

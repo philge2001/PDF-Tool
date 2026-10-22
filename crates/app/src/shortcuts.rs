@@ -17,6 +17,23 @@ impl FolioApp {
         }
 
         let Some(d) = &mut self.document else { return };
+
+        if cmd(Key::F) {
+            d.search.open();
+        }
+        let f3 = ctx.input_mut(|i| {
+            if i.consume_key(Modifiers::SHIFT, Key::F3) {
+                Some(false)
+            } else if i.consume_key(Modifiers::NONE, Key::F3) {
+                Some(true)
+            } else {
+                None
+            }
+        });
+        if let Some(forward) = f3 {
+            d.search_step(forward);
+        }
+
         let v = &mut d.viewer;
 
         if cmd(Key::Plus) || cmd(Key::Equals) {

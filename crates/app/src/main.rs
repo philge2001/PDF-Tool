@@ -1,7 +1,9 @@
 //! Einstiegspunkt der FolioCraft-Desktop-App.
 
 mod app;
+mod search;
 mod shortcuts;
+mod text_cache;
 mod toolbar;
 mod viewer;
 

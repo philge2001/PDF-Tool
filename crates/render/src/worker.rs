@@ -6,8 +6,10 @@
 
 use crate::error::{RenderError, Result};
 use crate::loader;
+use foliocraft_core::geometry::Rect;
+use foliocraft_core::text::{CharBox, PageText};
 use pdfium_render::prelude::*;
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread::JoinHandle;
@@ -64,10 +66,28 @@ pub struct RgbaImage {
 
 /// Nachrichten vom Worker an die UI.
 pub enum Event {
-    Opened { doc: DocId, page_count: usize },
-    OpenFailed { doc: DocId, error: String },
-    Rendered { key: RenderKey, image: RgbaImage },
-    RenderFailed { key: RenderKey, error: String },
+    Opened {
+        doc: DocId,
+        page_count: usize,
+    },
+    OpenFailed {
+        doc: DocId,
+        error: String,
+    },
+    Rendered {
+        key: RenderKey,
+        image: RgbaImage,
+    },
+    RenderFailed {
+        key: RenderKey,
+        error: String,
+    },
+    /// Text einer Seite (mit Zeichenpositionen). Bei Fehlern leer.
+    Text {
+        doc: DocId,
+        page: u32,
+        text: PageText,
+    },
 }
 
 /// Nachrichten von der UI an den Worker (intern).
@@ -78,6 +98,10 @@ enum Job {
     },
     Close,
     Render(RenderRequest),
+    ExtractText {
+        doc: DocId,
+        page: u32,
+    },
     /// Verwirft alle wartenden Aufträge, deren Schlüssel nicht in der Menge ist.
     Retain(HashSet<RenderKey>),
 }
@@ -175,7 +199,13 @@ impl RenderService {
         self.send(Job::Render(req));
     }
 
-    /// Teilt dem Worker mit, welche Aufträge noch gebraucht werden.
+    /// Fordert den Text einer Seite an (Antwort: [`Event::Text`]).
+    pub fn extract_text(&self, doc: DocId, page: u32) {
+        self.send(Job::ExtractText { doc, page });
+    }
+
+    /// Teilt dem Worker mit, welche Render-Aufträge noch gebraucht werden
+    /// (Textaufträge sind davon nicht betroffen).
     pub fn retain(&self, wanted: HashSet<RenderKey>) {
         self.send(Job::Retain(wanted));
     }
@@ -202,35 +232,27 @@ impl Drop for RenderService {
 /// nicht länger leben als die `Pdfium`-Instanz, von der es stammt. Der Compiler prüft das.
 fn run<'p>(pdfium: &'p Pdfium, jobs: Receiver<Job>, events: Sender<Event>, waker: impl Fn()) {
     let mut doc: Option<(DocId, PdfDocument<'p>)> = None;
-    let mut queue: Vec<RenderRequest> = Vec::new();
+    let mut queues = Queues::default();
 
     loop {
         // Nichts zu tun? Dann blockierend auf den nächsten Auftrag warten (kostet keine CPU).
-        if queue.is_empty() {
+        if queues.is_empty() {
             match jobs.recv() {
-                Ok(job) => handle_job(job, pdfium, &mut doc, &mut queue, &events, &waker),
+                Ok(job) => handle_job(job, pdfium, &mut doc, &mut queues, &events, &waker),
                 Err(_) => return, // App wurde beendet
             }
         }
         // Alle weiteren wartenden Aufträge einsammeln, damit wir priorisieren können.
         while let Ok(job) = jobs.try_recv() {
-            handle_job(job, pdfium, &mut doc, &mut queue, &events, &waker);
+            handle_job(job, pdfium, &mut doc, &mut queues, &events, &waker);
         }
-
-        // Dringendsten Auftrag wählen; bei Gleichstand den zuletzt angefragten
-        // (der Nutzer schaut vermutlich gerade dorthin).
-        let Some(best) = queue
-            .iter()
-            .enumerate()
-            .min_by_key(|(i, r)| (r.priority, std::cmp::Reverse(*i)))
-            .map(|(i, _)| i)
-        else {
+        let Some((doc_id, d)) = &doc else {
+            queues.clear(); // ohne Dokument gibt es nichts zu tun
             continue;
         };
-        let req = queue.remove(best);
 
-        let event = match &doc {
-            Some((id, d)) if *id == req.key.doc => match render(d, &req) {
+        let event = match queues.next() {
+            Some(Work::Render(req)) if req.key.doc == *doc_id => match render(d, &req) {
                 Ok(image) => Event::Rendered {
                     key: req.key,
                     image,
@@ -240,7 +262,15 @@ fn run<'p>(pdfium: &'p Pdfium, jobs: Receiver<Job>, events: Sender<Event>, waker
                     error: e.to_string(),
                 },
             },
-            _ => continue, // gehört zu einem alten Dokument
+            Some(Work::Text(id, page)) if id == *doc_id => Event::Text {
+                doc: id,
+                page,
+                text: extract_text(d, page).unwrap_or_else(|e| {
+                    tracing::warn!(page, error = %e, "Textextraktion fehlgeschlagen");
+                    PageText::default()
+                }),
+            },
+            _ => continue, // leer oder gehört zu einem alten Dokument
         };
         if events.send(event).is_err() {
             return;
@@ -249,17 +279,58 @@ fn run<'p>(pdfium: &'p Pdfium, jobs: Receiver<Job>, events: Sender<Event>, waker
     }
 }
 
+/// Wartende Arbeit des Workers.
+#[derive(Default)]
+struct Queues {
+    renders: Vec<RenderRequest>,
+    texts: VecDeque<(DocId, u32)>,
+}
+
+enum Work {
+    Render(RenderRequest),
+    Text(DocId, u32),
+}
+
+impl Queues {
+    fn is_empty(&self) -> bool {
+        self.renders.is_empty() && self.texts.is_empty()
+    }
+
+    fn clear(&mut self) {
+        self.renders.clear();
+        self.texts.clear();
+    }
+
+    /// Reihenfolge: sichtbare Seiten > Text (Suche) > Vorab-Rendern > Miniaturen.
+    /// Bei gleicher Priorität gewinnt der zuletzt angefragte Render-Auftrag
+    /// (der Nutzer schaut vermutlich gerade dorthin).
+    fn next(&mut self) -> Option<Work> {
+        let best = self
+            .renders
+            .iter()
+            .enumerate()
+            .min_by_key(|(i, r)| (r.priority, std::cmp::Reverse(*i)))
+            .map(|(i, r)| (i, r.priority));
+        match best {
+            Some((i, Priority::Visible)) => Some(Work::Render(self.renders.remove(i))),
+            _ if !self.texts.is_empty() => self.texts.pop_front().map(|(d, p)| Work::Text(d, p)),
+            Some((i, _)) => Some(Work::Render(self.renders.remove(i))),
+            None => None,
+        }
+    }
+}
+
 fn handle_job<'p>(
     job: Job,
     pdfium: &'p Pdfium,
     doc: &mut Option<(DocId, PdfDocument<'p>)>,
-    queue: &mut Vec<RenderRequest>,
+    queues: &mut Queues,
     events: &Sender<Event>,
     waker: &impl Fn(),
 ) {
     match job {
         Job::Open { doc: id, bytes } => {
-            queue.clear();
+            queues.clear();
             *doc = None; // altes Dokument zuerst freigeben
             // PDFium will einen eigenen Vec; wir kopieren die Bytes einmalig.
             let event = match pdfium.load_pdf_from_byte_vec(bytes.as_ref().clone(), None) {
@@ -280,19 +351,54 @@ fn handle_job<'p>(
             waker();
         }
         Job::Close => {
-            queue.clear();
+            queues.clear();
             *doc = None;
         }
         Job::Render(req) => {
             // Doppelte Aufträge zusammenführen, dabei die höhere Priorität behalten.
-            if let Some(existing) = queue.iter_mut().find(|r| r.key == req.key) {
+            if let Some(existing) = queues.renders.iter_mut().find(|r| r.key == req.key) {
                 existing.priority = existing.priority.min(req.priority);
             } else {
-                queue.push(req);
+                queues.renders.push(req);
             }
         }
-        Job::Retain(wanted) => queue.retain(|r| wanted.contains(&r.key)),
+        Job::ExtractText { doc, page } => {
+            if !queues.texts.contains(&(doc, page)) {
+                queues.texts.push_back((doc, page));
+            }
+        }
+        Job::Retain(wanted) => queues.renders.retain(|r| wanted.contains(&r.key)),
     }
+}
+
+/// Liest alle Zeichen einer Seite mit ihren Rechtecken (PDF-Raum, unrotiert).
+fn extract_text(doc: &PdfDocument, page: u32) -> Result<PageText> {
+    let page = doc.pages().get(page as PdfPageIndex)?;
+    let text = page.text()?;
+    let chars = text
+        .chars()
+        .iter()
+        .map(|c| {
+            let ch = c.unicode_char().unwrap_or('\u{FFFD}');
+            // Generierte Zeichen (von PDFium eingefügte Leerzeichen/Umbrüche) haben keine Box.
+            let rect = c
+                .loose_bounds()
+                .ok()
+                .filter(|_| !c.is_generated().unwrap_or(false))
+                .map(|b| {
+                    Rect::new(
+                        b.left().value,
+                        b.bottom().value,
+                        b.right().value,
+                        b.top().value,
+                    )
+                    .normalized()
+                })
+                .unwrap_or_default();
+            CharBox { ch, rect }
+        })
+        .collect();
+    Ok(PageText::new(chars))
 }
 
 fn render(doc: &PdfDocument, req: &RenderRequest) -> Result<RgbaImage> {
