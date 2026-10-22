@@ -23,6 +23,18 @@ impl FolioApp {
                     Tool::FormEdit
                 };
             }
+            let content_mode = self.tool.is_content_tool();
+            if ui
+                .selectable_label(content_mode, "Inhalt bearbeiten")
+                .on_hover_text("Text der Seite ändern oder neuen Text hinzufügen")
+                .clicked()
+            {
+                self.tool = if content_mode {
+                    Tool::TextSelect
+                } else {
+                    Tool::EditText
+                };
+            }
 
             let Some(d) = &mut self.document else { return };
             ui.separator();
@@ -167,6 +179,41 @@ impl FolioApp {
                 if ui.button("Fertig").on_hover_text("Esc").clicked() {
                     self.tool = Tool::TextSelect;
                 }
+            });
+            return;
+        }
+        if self.tool.is_content_tool() {
+            ui.horizontal(|ui| {
+                ui.label("Inhalt bearbeiten:");
+                for tool in Tool::CONTENT {
+                    ui.selectable_value(&mut self.tool, tool, tool.label());
+                }
+                if self.tool == Tool::AddText {
+                    ui.separator();
+                    let s = &mut self.tool_settings;
+                    let mut rgb = s.color(Tool::AddText).to_rgb8();
+                    if ui
+                        .color_edit_button_srgb(&mut rgb)
+                        .on_hover_text("Textfarbe")
+                        .changed()
+                    {
+                        s.set_color(Tool::AddText, foliocraft_core::Color::from_rgb8(rgb));
+                    }
+                    ui.add(
+                        egui::DragValue::new(&mut s.font_size)
+                            .range(4.0..=144.0)
+                            .suffix(" pt"),
+                    )
+                    .on_hover_text("Schriftgröße (Noto Sans)");
+                }
+                ui.separator();
+                if ui.button("Fertig").on_hover_text("Esc").clicked() {
+                    self.tool = Tool::TextSelect;
+                }
+                ui.weak(match self.tool {
+                    Tool::AddText => "Auf die Seite klicken, Text eingeben, Enter",
+                    _ => "Textblock anklicken, ändern, Enter",
+                });
             });
             return;
         }

@@ -38,12 +38,13 @@ impl OpenDocument {
         }
     }
 
-    /// (PageId, Rotation) aller Seiten – daran erkennen wir Strukturänderungen.
-    pub fn page_structure(&self) -> Vec<(PageId, u16)> {
+    /// (PageId, Rotation, Inhaltsstempel) aller Seiten – daran erkennen wir Struktur-
+    /// und Inhaltsänderungen.
+    pub fn page_structure(&self) -> Vec<(PageId, u16, u64)> {
         self.doc
             .pages()
             .iter()
-            .map(|p| (p.id, p.rotation))
+            .map(|p| (p.id, p.rotation, self.doc.content_stamp(p.object_id)))
             .collect()
     }
 
@@ -80,21 +81,28 @@ impl OpenDocument {
         }
         let before = std::mem::replace(&mut self.structure, now.clone());
 
-        // Alter Index pro PageId und ob die Seite gleich geblieben ist (gleiche Rotation).
-        let old_index: HashMap<PageId, (usize, u16)> = before
+        // Alter Index pro PageId, Rotation und Inhaltsstempel.
+        let old_index: HashMap<PageId, (usize, u16, u64)> = before
             .iter()
             .enumerate()
-            .map(|(i, &(id, rot))| (id, (i, rot)))
+            .map(|(i, &(id, rot, stamp))| (id, (i, rot, stamp)))
             .collect();
+        // Text bleibt gültig, solange der Inhalt gleich ist.
         let old_of_new: Vec<Option<usize>> = now
             .iter()
-            .map(|(id, _)| old_index.get(id).map(|&(i, _)| i))
+            .map(|(id, _, stamp)| {
+                old_index
+                    .get(id)
+                    .filter(|o| o.2 == *stamp)
+                    .map(|&(i, _, _)| i)
+            })
             .collect();
-        // Bilder sind nur gültig, wenn die Seite nicht gedreht wurde.
+        // Bilder sind nur gültig, wenn die Seite weder gedreht noch inhaltlich geändert wurde.
         let mut new_of_old_image: HashMap<u32, u32> = HashMap::new();
-        for (new, (id, rot)) in now.iter().enumerate() {
-            if let Some(&(old, old_rot)) = old_index.get(id)
+        for (new, (id, rot, stamp)) in now.iter().enumerate() {
+            if let Some(&(old, old_rot, old_stamp)) = old_index.get(id)
                 && old_rot == *rot
+                && old_stamp == *stamp
             {
                 new_of_old_image.insert(old as u32, new as u32);
             }

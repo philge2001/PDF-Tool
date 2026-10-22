@@ -69,6 +69,9 @@ Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 
 - Freitext mit vollem Unicode (Umlaute, Kyrillisch, Griechisch, Sonderzeichen): eingebettet wird nur die
   benötigte Teilmenge der Schrift Noto Sans, Kopieren und Suchen liefern den richtigen Text
+- „Inhalt bearbeiten“ → „Text bearbeiten“: Textblock anklicken, ändern, Enter. Die Originalschrift bleibt,
+  fehlende Zeichen kommen aus Noto Sans; der Rest der Seite bleibt an seinem Platz. Rückgängig machbar.
+- „Text hinzufügen“: auf die Seite klicken, Text eingeben (Farbe und Größe in der Leiste)
 
 ## Bedienung
 
@@ -164,6 +167,8 @@ cargo run -p foliocraft-sign --example sign_check -- datei.pdf [vertraut.pem]   
 cargo run -p foliocraft-sign --example sign_demo -- in.pdf out.pdf [id.p12 passwort]              # signieren (ohne ID: Testzertifikat)
 cargo run -p foliocraft-core --example form_fill -- tests/fixtures/form.pdf                        # Formularfelder auflisten
 cargo run -p foliocraft-core --example form_fill -- in.pdf out.pdf "person.name=Erika" agb=an     # Formular füllen
+cargo run -p foliocraft-core --example text_edit_demo -- in.pdf                                   # Textblöcke von Seite 1
+cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "Lorem=Neuer Text" "+72,500=Hallo"  # bearbeiten/hinzufügen
 ```
 
 ## Projektstruktur
