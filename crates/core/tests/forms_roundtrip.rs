@@ -480,3 +480,65 @@ fn created_field_survives_save_undo_redo() {
     assert_eq!(Document::open(&path).unwrap().forms().len(), 1);
     let _ = std::fs::remove_file(path);
 }
+
+// ---------- Formulare beim Einfügen/Extrahieren (3.4) ----------
+
+#[test]
+fn inserting_form_page_brings_fillable_fields() {
+    let mut doc = Document::open(fixture("text_two_pages.pdf")).unwrap();
+    let mut source = open_form();
+    set(&mut source, "person.email", text("quelle@example.org"));
+    let cmd = doc.prepare_insert(&source, &[0], 1).unwrap();
+    doc.execute(Box::new(cmd)).unwrap();
+    // Schaltfläche und Signaturfeld bleiben fremd (PDFium zeichnet sie).
+    assert_eq!(doc.forms().len(), 9);
+    assert_eq!(value(&doc, "person_email"), text("quelle@example.org"));
+
+    // Ein zweites Mal: gleiche Namen wären dasselbe Feld -> umbenannt.
+    let cmd = doc.prepare_insert(&source, &[0], 2).unwrap();
+    doc.execute(Box::new(cmd)).unwrap();
+    assert_eq!(doc.forms().len(), 18);
+    assert!(doc.forms().by_name("person_email_2").is_some());
+
+    let back = reload(&doc);
+    assert_eq!(back.page_count(), 4);
+    assert_eq!(back.forms().len(), 18);
+    assert_eq!(value(&back, "person_email"), text("quelle@example.org"));
+    assert_eq!(
+        value(&back, "versand_2"),
+        FieldValue::Toggle(Some("post".into()))
+    );
+    assert_eq!(back.managed_annot_indices(1).len(), 11);
+    assert_eq!(back.managed_annot_indices(2).len(), 11);
+
+    doc.undo().unwrap();
+    doc.undo().unwrap();
+    assert!(doc.forms().is_empty());
+}
+
+#[test]
+fn extracted_pages_keep_their_form() {
+    let mut doc = open_form();
+    set(&mut doc, "pflicht", text("extrahiert"));
+    let bytes = foliocraft_core::extract_pages(&doc.snapshot_pdf().unwrap(), &[0]).unwrap();
+    let out = Document::from_bytes(bytes).unwrap();
+    assert_eq!(out.forms().len(), 11);
+    assert_eq!(value(&out, "pflicht"), text("extrahiert"));
+    assert_eq!(value(&out, "person.name"), text("Max Mustermann"));
+    assert_eq!(out.forms().by_name("versand").unwrap().widgets.len(), 3);
+}
+
+#[test]
+fn extracting_page_without_fields_drops_form() {
+    // Seite 1 der zusammengesetzten Datei hat keine Felder -> keine /AcroForm im Ergebnis.
+    let mut doc = Document::open(fixture("text_two_pages.pdf")).unwrap();
+    let cmd = doc.prepare_insert(&open_form(), &[0], 1).unwrap();
+    doc.execute(Box::new(cmd)).unwrap();
+    let snap = doc.snapshot_pdf().unwrap();
+    let only_text =
+        Document::from_bytes(foliocraft_core::extract_pages(&snap, &[0]).unwrap()).unwrap();
+    assert!(only_text.forms().is_empty());
+    let with_form =
+        Document::from_bytes(foliocraft_core::extract_pages(&snap, &[1]).unwrap()).unwrap();
+    assert_eq!(with_form.forms().len(), 9);
+}

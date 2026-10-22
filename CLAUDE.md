@@ -48,7 +48,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - [x] 3.1 Formularmodell, Werte-Commands, Speichern mit AP (core)
 - [x] 3.2 Formulare ausfüllen (UI)
 - [x] 3.3 Formulare gestalten (Felder erstellen/bearbeiten)
-- [ ] 3.4 AcroForm bei Einfügen/Extrahieren übernehmen + Abschluss
+- [x] 3.4 AcroForm bei Einfügen/Extrahieren übernehmen + Abschluss
 
 ## Meilensteine Phase 2 (Seitenorganisation)
 - [x] 2.1 Seitenmodell & Seiten-Commands (core)
@@ -158,6 +158,10 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - `app::forms` – Ausfüllen (`FormUi`: Fokus als `FieldFocus`, Aufklappliste): `handle_form_input` (Klick/Cursor,
   hat Vorrang vor Textauswahl/Auswählen), `handle_form_keys` (Tab, Leertaste), `show_field_editor`
   (egui-TextEdit über dem Feld), `reset_form`; erste Änderung nach Fokuswechsel = neuer Undo-Schritt
+- `core::page_import` – übernimmt ausfüllbare Felder der eingefügten Seiten ins Modell (`InsertPages::fields`,
+  Widgets nicht als Objekt kopiert, Namen ohne Punkt und eindeutig: `free_field_name`)
+- `core::page_export::copy_acroform` – /AcroForm für extrahierte Seiten, Feldbäume auf mitkopierte Widgets
+  beschnitten (`prune_field`), danach `prune_objects`
 - `app::form_edit` – Modus „Formular bearbeiten“ (`Tool::FORM`): Felder aufziehen/klicken, auswählen, verschieben,
   Größe am Anfasser ändern (Vorschau, 1 Undo-Schritt pro Zug), Entf löscht
 - `app::form_props` – Eigenschaften-Panel (ersetzt im Bearbeiten-Modus die Kommentare); Name/Optionsliste

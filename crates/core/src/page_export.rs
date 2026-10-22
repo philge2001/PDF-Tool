@@ -68,6 +68,8 @@ pub fn extract_pages(source: &lopdf::Document, pages: &[usize]) -> Result<Vec<u8
         copier.out.insert(new, Object::Dictionary(dict));
     }
 
+    let acroform = copy_acroform(source, &mut copier, &kids);
+
     let mut doc = lopdf::Document::with_version(source.version.clone());
     doc.objects = std::mem::take(&mut copier.out);
     doc.objects.insert(
@@ -78,10 +80,11 @@ pub fn extract_pages(source: &lopdf::Document, pages: &[usize]) -> Result<Vec<u8
             "Count" => kids.len() as i64,
         }),
     );
-    doc.objects.insert(
-        catalog_id,
-        Object::Dictionary(dictionary! { "Type" => "Catalog", "Pages" => root_id }),
-    );
+    let mut catalog = dictionary! { "Type" => "Catalog", "Pages" => root_id };
+    if let Some(af) = acroform {
+        catalog.set("AcroForm", af);
+    }
+    doc.objects.insert(catalog_id, Object::Dictionary(catalog));
     doc.max_id = copier.next_id - 1;
     doc.trailer.set("Root", catalog_id);
     let info = doc.add_object(dictionary! {
@@ -89,12 +92,91 @@ pub fn extract_pages(source: &lopdf::Document, pages: &[usize]) -> Result<Vec<u8
         "CreationDate" => Object::string_literal(crate::date::pdf_date_now()),
     });
     doc.trailer.set("Info", info);
+    // Objekte, die nur über weggelassene Seiten erreichbar waren (z. B. Widgets eines
+    // Optionsfelds auf anderen Seiten), fliegen raus.
+    doc.prune_objects();
     doc.compress();
 
     let mut bytes = Vec::new();
     doc.save_to(&mut bytes)
         .map_err(|e| CoreError::Other(format!("PDF schreiben: {e}")))?;
     Ok(bytes)
+}
+
+/// Übernimmt /AcroForm mit den Feldern, deren Widgets auf den kopierten Seiten liegen.
+/// Die Widgets wurden mit den Seiten kopiert (/Annots), ihre Felder über /Parent mit.
+/// Hier werden die Feldbäume auf die mitgekommenen Widgets beschnitten.
+fn copy_acroform(
+    source: &lopdf::Document,
+    copier: &mut Copier,
+    pages: &[(ObjectId, ObjectId)],
+) -> Option<Object> {
+    let acro = crate::form::import::acroform(source)?;
+    let mut kept_widgets = HashSet::new();
+    for &(_, new) in pages {
+        if let Some(Object::Dictionary(d)) = copier.out.get(&new)
+            && let Ok(Object::Array(annots)) = d.get(b"Annots")
+        {
+            kept_widgets.extend(annots.iter().filter_map(|a| a.as_reference().ok()));
+        }
+    }
+    let top: Vec<ObjectId> = acro
+        .get(b"Fields")
+        .ok()
+        .and_then(|f| source.dereference(f).ok())
+        .and_then(|(_, f)| f.as_array().ok())
+        .into_iter()
+        .flatten()
+        .filter_map(|f| f.as_reference().ok())
+        .filter_map(|old| copier.mapped.get(&old).copied())
+        .filter(|&new| prune_field(&mut copier.out, new, &kept_widgets, 0))
+        .collect();
+    if top.is_empty() {
+        return None;
+    }
+    let mut af = dictionary! { "Fields" => top.into_iter().map(Object::from).collect::<Vec<_>>() };
+    for key in [&b"DA"[..], b"DR", b"Q"] {
+        if let Ok(v) = acro.get(key) {
+            let v = copier.copy(v);
+            af.set(key, v);
+        }
+    }
+    Some(Object::Dictionary(af))
+}
+
+/// Entfernt aus einem kopierten Feldbaum alle Widgets, die nicht auf einer kopierten Seite
+/// liegen. `true` = das Feld bleibt (hat noch mindestens ein Widget).
+fn prune_field(
+    out: &mut BTreeMap<ObjectId, Object>,
+    id: ObjectId,
+    kept: &HashSet<ObjectId>,
+    depth: usize,
+) -> bool {
+    if depth > 32 {
+        return false;
+    }
+    let kids: Option<Vec<Object>> = match out.get(&id) {
+        Some(Object::Dictionary(d)) => match d.get(b"Kids") {
+            Ok(Object::Array(k)) => Some(k.clone()),
+            _ => None,
+        },
+        _ => return false,
+    };
+    let Some(kids) = kids else {
+        return kept.contains(&id); // Blatt: Feld mit eigenem Widget
+    };
+    let remaining: Vec<Object> = kids
+        .into_iter()
+        .filter(|k| {
+            k.as_reference()
+                .is_ok_and(|kid| prune_field(out, kid, kept, depth + 1))
+        })
+        .collect();
+    let keep = !remaining.is_empty();
+    if let Some(Object::Dictionary(d)) = out.get_mut(&id) {
+        d.set("Kids", remaining);
+    }
+    keep
 }
 
 /// Teilt `page_count` Seiten in Gruppen zu je `n` Seiten.

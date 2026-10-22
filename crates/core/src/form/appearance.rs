@@ -18,6 +18,8 @@ use std::fmt::Write as _;
 pub const PADDING: f32 = 2.0;
 /// Zeilenabstand als Vielfaches der Schriftgröße.
 pub const LINE_HEIGHT: f32 = 1.15;
+/// Rahmen von Kontrollkästchen/Optionsfeldern, die selbst keinen festlegen.
+pub const FALLBACK_BORDER: Color = Color::rgb(0.43, 0.43, 0.43);
 /// Hintergrund markierter Listeneinträge.
 pub const SELECTION_COLOR: Color = Color::rgb(0.6, 0.75, 0.9);
 
@@ -275,6 +277,15 @@ pub fn build(field: &FormField, widget: &Widget) -> Option<WidgetAppearance> {
             let round = field.kind == FieldKind::Radio;
             let mut off = String::new();
             frame(&mut off, widget, round);
+            if widget.border.is_none() {
+                // Ohne eigenen Rahmen wäre nur der Haken sichtbar, nicht das Kästchen selbst.
+                // Gleicher Ersatzrahmen wie im Overlay der App.
+                let mut fallback = widget.clone();
+                fallback.background = None;
+                fallback.border = Some(FALLBACK_BORDER);
+                fallback.border_width = 1.0;
+                frame(&mut off, &fallback, round);
+            }
             let mut on = off.clone();
             symbol(&mut on, field, widget);
             Some(WidgetAppearance::States {

@@ -81,7 +81,10 @@ pub fn paint(
             ));
         }
         // Schalter ohne eigenen Rahmen: dünner grauer Rand, sonst sieht man das Kästchen nicht.
-        _ if toggle => outline(Stroke::new(1.0, Color32::from_gray(110))),
+        _ if toggle => outline(Stroke::new(
+            scale.max(1.0),
+            color32(appearance::FALLBACK_BORDER, 1.0),
+        )),
         _ => {}
     }
     if style.highlight && field.required {

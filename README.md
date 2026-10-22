@@ -3,7 +3,7 @@
 Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 „FolioCraft“ ist ein Arbeitstitel. Lizenz: MIT OR Apache-2.0.
 
-**Stand:** Phase 1 (Viewer + Annotationen) und Phase 2 (Seitenorganisation) abgeschlossen.
+**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation) und Phase 3 (Formulare) abgeschlossen.
 
 ## Funktionen (Phase 1)
 
@@ -26,6 +26,20 @@ Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 - Seiten als neue Datei extrahieren (optional danach löschen), Dokument teilen (alle N Seiten oder nach
   Bereichen wie `1-3; 4-6; 7-`) – läuft im Hintergrund mit Fortschritt und Abbrechen
 
+## Funktionen (Phase 3 – Formulare)
+
+- Formulare ausfüllen: Textfelder (ein-/mehrzeilig, Passwort, Höchstlänge), Kontrollkästchen, Optionsfelder,
+  Kombinations- und Listenfelder (Mehrfachauswahl mit Strg+Klick); Tab springt zum nächsten Feld
+- Felder hervorheben, Pflichtfelder rot umrandet, schreibgeschützte Felder gesperrt; „Formular zurücksetzen“
+- Formular bearbeiten (Werkzeugleiste „Formular bearbeiten“): Felder aufziehen, verschieben, Größe ändern,
+  löschen; Eigenschaften-Panel (Name, Kurzinfo, Pflicht, Schreibschutz, Einträge, Exportwerte, Schrift,
+  Ausrichtung, Rahmen, Hintergrund, Standardwert)
+- Speichern mit eigenen Appearance Streams – andere Reader zeigen die Werte ohne Neuberechnung;
+  inkrementell, vorhandene Feldeigenschaften und -aktionen bleiben erhalten
+- Seiten einfügen/zusammenführen übernimmt die Formularfelder (bei Namenskonflikten mit Zusatz `_2`),
+  Extrahieren/Teilen nimmt das Formular der gewählten Seiten mit
+- JavaScript in Formularen (Berechnungen, Formatierungen) wird bewusst nicht ausgeführt
+
 ## Bedienung
 
 | Aktion | Tastenkürzel |
@@ -39,6 +53,9 @@ Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 | 100 % / Seitenbreite / Ganze Seite | Strg+1 / Strg+2 / Strg+0 |
 | Seite vor/zurück, Anfang/Ende | Bild↓/Bild↑, Pos1/Ende |
 | Abbrechen / zurück zur Textauswahl | Esc |
+| Formular: nächstes / voriges Feld | Tab / Umschalt+Tab |
+| Formular: Kästchen/Option umschalten | Leertaste |
+| Formular bearbeiten: Feld löschen | Entf |
 
 Annotationswerkzeuge stehen in der Leiste „Kommentieren“. Markup-Werkzeuge (Hervorheben usw.)
 wirken auf markierten Text: entweder erst Text markieren und dann das Werkzeug anklicken, oder
@@ -111,6 +128,8 @@ Alle Dateien in `tests/fixtures/` sind selbst erzeugt:
 cargo run -p foliocraft-core --example gen_fixtures                    # Fixtures neu erzeugen
 cargo run -p foliocraft-core --example gen_fixtures -- big 500 big.pdf # 500-Seiten-PDF für Performance-Tests
 cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf     # jeden Annotationstyp schreiben (Gegenprobe in anderen Readern)
+cargo run -p foliocraft-core --example form_fill -- tests/fixtures/form.pdf                        # Formularfelder auflisten
+cargo run -p foliocraft-core --example form_fill -- in.pdf out.pdf "person.name=Erika" agb=an     # Formular füllen
 ```
 
 ## Projektstruktur
