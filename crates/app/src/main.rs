@@ -9,6 +9,7 @@ mod form_draw;
 mod form_edit;
 mod form_props;
 mod forms;
+mod image_tool;
 mod jobs;
 mod menu;
 mod page_dialogs;

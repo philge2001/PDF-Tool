@@ -43,6 +43,8 @@ pub enum Tool {
     EditText,
     /// Inhalt bearbeiten: neuen Text auf die Seite setzen.
     AddText,
+    /// Inhalt bearbeiten: Bilder auswählen, verschieben, skalieren, ersetzen, löschen.
+    EditImage,
 }
 
 impl Tool {
@@ -70,6 +72,7 @@ impl Tool {
             Tool::FieldList => "Listenfeld",
             Tool::EditText => "Text bearbeiten",
             Tool::AddText => "Text hinzufügen",
+            Tool::EditImage => "Bilder",
         }
     }
 
@@ -100,7 +103,7 @@ impl Tool {
         Self::FORM.contains(&self)
     }
 
-    pub const CONTENT: [Tool; 2] = [Tool::EditText, Tool::AddText];
+    pub const CONTENT: [Tool; 3] = [Tool::EditText, Tool::AddText, Tool::EditImage];
 
     /// Gehört das Werkzeug zum Modus "Inhalt bearbeiten"?
     pub fn is_content_tool(self) -> bool {

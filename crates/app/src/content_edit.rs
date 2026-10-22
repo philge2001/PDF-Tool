@@ -21,6 +21,14 @@ pub struct ContentEdit {
     pub editing: Option<InlineEdit>,
     /// Fehlermeldung für den Dialog der App.
     pub error: Option<String>,
+    /// Bilder pro Seite samt Inhaltsstempel.
+    pub(crate) images: HashMap<PageId, (u64, Vec<foliocraft_core::PageImage>)>,
+    /// Ausgewähltes Bild (Seite, Bild).
+    pub selected_image: Option<(usize, foliocraft_core::PageImage)>,
+    /// Laufendes Verschieben/Skalieren.
+    pub(crate) image_drag: Option<crate::image_tool::ImageDrag>,
+    /// Bild, das mit dem nächsten Klick platziert wird.
+    pub placing_image: Option<foliocraft_core::NewImage>,
 }
 
 impl Default for ContentEdit {
@@ -30,6 +38,10 @@ impl Default for ContentEdit {
             blocks: HashMap::new(),
             editing: None,
             error: None,
+            images: HashMap::new(),
+            selected_image: None,
+            image_drag: None,
+            placing_image: None,
         }
     }
 }

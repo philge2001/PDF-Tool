@@ -5,6 +5,16 @@ use crate::tools::Tool;
 use crate::viewer::{ZOOM_STEPS, ZoomMode};
 use eframe::egui;
 
+/// Dateiauswahl für PNG/JPEG; liefert die Bytes (Lesefehler werden protokolliert).
+fn pick_image() -> Option<Vec<u8>> {
+    let path = rfd::FileDialog::new()
+        .add_filter("Bilder", &["png", "jpg", "jpeg"])
+        .pick_file()?;
+    std::fs::read(&path)
+        .inspect_err(|e| tracing::error!(error = %e, path = %path.display(), "Bild lesen"))
+        .ok()
+}
+
 impl FolioApp {
     pub(crate) fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
@@ -206,12 +216,37 @@ impl FolioApp {
                     )
                     .on_hover_text("Schriftgröße (Noto Sans)");
                 }
+                if self.tool == Tool::EditImage {
+                    ui.separator();
+                    if ui
+                        .button("Bild einfügen…")
+                        .on_hover_text("PNG oder JPEG wählen, dann auf die Seite klicken")
+                        .clicked()
+                        && let Some(bytes) = pick_image()
+                    {
+                        d.start_image_insert(&bytes);
+                    }
+                    if d.content_edit.selected_image.is_some() {
+                        if ui.button("Ersetzen…").clicked()
+                            && let Some(bytes) = pick_image()
+                        {
+                            d.replace_selected_image(&bytes);
+                        }
+                        if ui.button("Löschen").on_hover_text("Entf").clicked() {
+                            d.delete_selected_image();
+                        }
+                    }
+                }
                 ui.separator();
                 if ui.button("Fertig").on_hover_text("Esc").clicked() {
                     self.tool = Tool::TextSelect;
                 }
                 ui.weak(match self.tool {
                     Tool::AddText => "Auf die Seite klicken, Text eingeben, Enter",
+                    Tool::EditImage if d.content_edit.placing_image.is_some() => {
+                        "Auf die Seite klicken, um das Bild zu platzieren (Esc bricht ab)"
+                    }
+                    Tool::EditImage => "Bild ziehen = verschieben, Anfasser unten rechts = Größe",
                     _ => "Textblock anklicken, ändern, Enter",
                 });
             });

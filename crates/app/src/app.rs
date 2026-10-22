@@ -426,6 +426,8 @@ impl OpenDocument {
     pub fn undo(&mut self) {
         self.annot_drag = None;
         self.content_edit.editing = None;
+        self.content_edit.selected_image = None;
+        self.content_edit.image_drag = None;
         self.gesture = None;
         if let Err(e) = self.doc.undo() {
             tracing::error!(error = %e, "Rückgängig fehlgeschlagen");
@@ -436,6 +438,8 @@ impl OpenDocument {
     pub fn redo(&mut self) {
         self.annot_drag = None;
         self.content_edit.editing = None;
+        self.content_edit.selected_image = None;
+        self.content_edit.image_drag = None;
         self.gesture = None;
         if let Err(e) = self.doc.redo() {
             tracing::error!(error = %e, "Wiederholen fehlgeschlagen");
@@ -522,7 +526,11 @@ impl FolioApp {
                     self.tool_settings.font_size,
                     self.tool_settings.color(Tool::AddText),
                 );
-                d.handle_content_edit(ui, &view, t);
+                if t == Tool::EditImage {
+                    d.handle_image_edit(ui, &view);
+                } else {
+                    d.handle_content_edit(ui, &view, t);
+                }
             }
             Tool::Hand => {
                 let resp = &view.response;
@@ -548,6 +556,9 @@ impl FolioApp {
         d.paint_gesture_preview(ui, &view, tool, &self.tool_settings);
         d.paint_search_hits(ui, &view);
         d.paint_selection(ui, &view);
+        if tool == Tool::EditImage {
+            d.paint_image_edit(ui, &view);
+        }
         if tool.is_content_tool() {
             d.paint_content_edit(ui, &view, tool);
         } else if d.content_edit.editing.is_some() {
