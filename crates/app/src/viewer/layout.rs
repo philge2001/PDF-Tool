@@ -14,10 +14,16 @@ pub struct Layout {
     /// `cum_heights[i]` = Summe der Höhen der Seiten 0..i (Länge n+1).
     cum_heights: Vec<f32>,
     max_width: f32,
+    /// Abstand zwischen den Seiten (egui-Punkte, zoomunabhängig).
+    gap: f32,
 }
 
 impl Layout {
     pub fn new(sizes: Vec<(f32, f32)>) -> Self {
+        Self::with_gap(sizes, GAP)
+    }
+
+    pub fn with_gap(sizes: Vec<(f32, f32)>, gap: f32) -> Self {
         let mut cum_heights = Vec::with_capacity(sizes.len() + 1);
         let mut acc = 0.0;
         cum_heights.push(acc);
@@ -30,6 +36,7 @@ impl Layout {
             sizes,
             cum_heights,
             max_width,
+            gap,
         }
     }
 
@@ -41,16 +48,20 @@ impl Layout {
         self.sizes[i]
     }
 
+    pub fn max_width_pt(&self) -> f32 {
+        self.max_width
+    }
+
     /// Oberkante von Seite `i`.
     pub fn page_top(&self, i: usize, zoom: f32) -> f32 {
-        GAP + self.cum_heights[i] * zoom + i as f32 * GAP
+        self.gap + self.cum_heights[i] * zoom + i as f32 * self.gap
     }
 
     /// Gesamtgröße des Inhalts. `view_width` = verfügbare Breite, damit Seiten zentriert werden können.
     pub fn content_size(&self, zoom: f32, view_width: f32) -> Vec2 {
         let n = self.sizes.len();
         let h = self.page_top(n, zoom); // "Oberkante" der gedachten Seite n = Ende des Inhalts
-        let w = (self.max_width * zoom + 2.0 * GAP).max(view_width);
+        let w = (self.max_width * zoom + 2.0 * self.gap).max(view_width);
         vec2(w, h)
     }
 
@@ -58,7 +69,7 @@ impl Layout {
     pub fn page_rect(&self, i: usize, zoom: f32, content_width: f32) -> Rect {
         let (w, h) = self.sizes[i];
         let size = vec2(w * zoom, h * zoom);
-        let x = ((content_width - size.x) / 2.0).max(GAP);
+        let x = ((content_width - size.x) / 2.0).max(self.gap);
         Rect::from_min_size(pos2(x, self.page_top(i, zoom)), size)
     }
 

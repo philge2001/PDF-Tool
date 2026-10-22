@@ -1,6 +1,7 @@
 //! Die Haupt-App: hält Render-Service, geöffnetes Dokument und UI-Zustand.
 
 use crate::viewer::Viewer;
+use crate::viewer::thumbnails::Thumbnails;
 use eframe::egui;
 use foliocraft_core::Document;
 use foliocraft_render::{DocId, Event, RenderService};
@@ -10,19 +11,28 @@ use std::path::{Path, PathBuf};
 pub struct OpenDocument {
     pub doc: Document,
     pub viewer: Viewer,
+    pub thumbs: Thumbnails,
+    /// Inhalt des Seitenfelds in der Toolbar, während der Nutzer tippt.
+    pub page_input: Option<String>,
+    /// Inhalt des Zoomfelds in der Toolbar, während der Nutzer tippt.
+    pub zoom_input: Option<String>,
 }
 
 pub struct FolioApp {
     /// `Err` enthält die Fehlermeldung, wenn PDFium nicht geladen werden konnte.
-    render: Result<RenderService, String>,
+    pub(crate) render: Result<RenderService, String>,
     next_doc_id: DocId,
-    document: Option<OpenDocument>,
+    pub(crate) document: Option<OpenDocument>,
     /// Fehlermeldung, die als Dialog angezeigt wird.
-    error: Option<String>,
+    pub(crate) error: Option<String>,
+    pub(crate) show_thumbnails: bool,
 }
 
 impl FolioApp {
     pub fn new(cc: &eframe::CreationContext<'_>, initial_file: Option<PathBuf>) -> Self {
+        // egui würde Strg+Plus/Minus sonst für die UI-Vergrößerung nutzen – wir zoomen das Dokument.
+        cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
+
         // Der Worker weckt die UI auf, wenn ein Bild fertig ist. `Context` ist intern ein
         // `Arc` – das Klonen ist billig und der Klon darf in den Worker-Thread wandern.
         let ctx = cc.egui_ctx.clone();
@@ -35,6 +45,7 @@ impl FolioApp {
             next_doc_id: 1,
             document: None,
             error: None,
+            show_thumbnails: true,
         };
         if let Some(path) = initial_file {
             app.open_path(&cc.egui_ctx, &path);
@@ -55,10 +66,13 @@ impl FolioApp {
                 let id = self.next_doc_id;
                 self.next_doc_id += 1;
                 render.open(id, doc.bytes().clone()); // Arc-Klon: nur der Zeiger wird kopiert
-                let sizes = doc.pages().iter().map(|p| p.display_size()).collect();
+                let sizes: Vec<_> = doc.pages().iter().map(|p| p.display_size()).collect();
                 self.document = Some(OpenDocument {
+                    thumbs: Thumbnails::new(&sizes),
                     viewer: Viewer::new(id, sizes),
                     doc,
+                    page_input: None,
+                    zoom_input: None,
                 });
                 let name = path
                     .file_name()
@@ -76,7 +90,7 @@ impl FolioApp {
         }
     }
 
-    fn open_dialog(&mut self, ctx: &egui::Context) {
+    pub(crate) fn open_dialog(&mut self, ctx: &egui::Context) {
         // Nativer Dialog; blockiert den UI-Thread, solange er offen ist (normal für Dateidialoge).
         if let Some(path) = rfd::FileDialog::new()
             .add_filter("PDF", &["pdf"])
@@ -115,25 +129,22 @@ impl FolioApp {
         }
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
-        let ctx = ui.ctx().clone();
-        ui.horizontal(|ui| {
-            if ui.button("Öffnen…").on_hover_text("Strg+O").clicked() {
-                self.open_dialog(&ctx);
-            }
-        });
-    }
-
     fn status_bar(&self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| match &self.document {
             Some(d) => {
+                let name = d
+                    .doc
+                    .path()
+                    .and_then(|p| p.file_name())
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                ui.label(name);
+                ui.separator();
                 ui.label(format!(
                     "Seite {} / {}",
                     d.viewer.current_page + 1,
                     d.doc.page_count()
                 ));
-                ui.separator();
-                ui.label(format!("{:.0} %", d.viewer.zoom * 100.0));
             }
             None => {
                 ui.label("Kein Dokument");
@@ -170,32 +181,33 @@ impl eframe::App for FolioApp {
         let ctx = ui.ctx().clone();
         self.poll_render(&ctx);
         self.handle_dropped_files(&ctx);
-        if ctx.input_mut(|i| i.consume_key(egui::Modifiers::COMMAND, egui::Key::O)) {
-            self.open_dialog(&ctx);
-        }
-        if let Some(d) = &mut self.document {
-            // Pos1/Ende springen zur ersten bzw. letzten Seite.
-            let (home, end) = ctx.input(|i| {
-                (
-                    i.key_pressed(egui::Key::Home),
-                    i.key_pressed(egui::Key::End),
-                )
-            });
-            if home {
-                d.viewer.scroll_to_page(0);
-            } else if end {
-                d.viewer.scroll_to_page(usize::MAX);
-            }
-        }
+        self.handle_shortcuts(&ctx);
 
         egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
         egui::Panel::bottom("statusbar").show(ui, |ui| self.status_bar(ui));
-        egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.fill(ui.visuals().extreme_bg_color))
-            .show(ui, |ui| match (&mut self.document, &self.render) {
-                (Some(d), Ok(render)) => d.viewer.show(ui, render),
-                _ => self.empty_state(ui),
-            });
+
+        if let Some(d) = &mut self.document {
+            if self.show_thumbnails {
+                egui::Panel::left("thumbnails")
+                    .default_size(160.0)
+                    .size_range(100.0..=400.0)
+                    .show(ui, |ui| {
+                        if let Some(page) = d.viewer.show_thumbnails(ui, &mut d.thumbs) {
+                            d.viewer.scroll_to_page(page);
+                        }
+                    });
+            }
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE.fill(ui.visuals().extreme_bg_color))
+                .show(ui, |ui| {
+                    d.viewer.show(ui);
+                });
+            if let Ok(render) = &self.render {
+                d.viewer.flush_requests(render);
+            }
+        } else {
+            egui::CentralPanel::default().show(ui, |ui| self.empty_state(ui));
+        }
         self.error_dialog(&ctx);
     }
 }

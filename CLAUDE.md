@@ -43,7 +43,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 ## Meilensteine Phase 1
 - [x] M0 Grundgerüst
 - [x] M1 Öffnen & Rendern
-- [ ] M2 Zoom, Navigation, Thumbnails, Cache
+- [x] M2 Zoom, Navigation, Thumbnails, Cache
 - [ ] M3 Textsuche
 - [ ] M4 Text auswählen & kopieren
 - [ ] M5 Annotationsmodell, Commands, Speichern (core)
@@ -55,13 +55,20 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 ## Bekannte Einschränkungen
 - FreeText/Notizen nutzen Helvetica (WinAnsi): Westeuropäische Zeichen gehen, CJK/Kyrillisch noch nicht.
 
-## Wichtige Module (Stand M1)
+## Wichtige Module
 - `core::document` – `Document::open`, `PageInfo` (CropBox, /Rotate, Umrechnung PDF ↔ Anzeige)
 - `render::worker` – `RenderService` (Thread + Channels), `RenderKey` (Seite, Skalierungsstufe, Kachel),
   `page_pixel_size`/`tile_grid`/`tile_rect` (gemeinsame Rechenregeln für App und Worker)
 - `render::cache::ByteLru` – LRU mit Byte-Budget
 - `app::viewer` – `Layout` (Präfixsummen, Binärsuche), `PageTextures` (GPU-Texturen, pending/wanted),
-  `Viewer::show` (zeichnet nur sichtbare Seiten, Kacheln ab 3072 px)
+  `Viewer::show` (zeichnet nur sichtbare Seiten, Kacheln ab 3072 px), Zoom mit Anker (`set_zoom`),
+  `ZoomMode` (Custom/FitWidth/FitPage), `FrameRequests` (Render-Aufträge pro Frame, `flush_requests`)
+- `app::viewer::thumbnails` – Seitenleiste, gleiche Texturen, Priorität `Thumbnail`
+- `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
+
+## Tastenkürzel
+Strg+O öffnen · Strg+Plus/Minus zoomen · Strg+1 = 100 % · Strg+2 = Seitenbreite · Strg+0 = Ganze Seite ·
+Strg+Mausrad zoomt um den Mauszeiger · Bild↑/↓ Seite · Pos1/Ende · Pfeiltasten scrollen
 
 ## Testen im Container (ohne Bildschirm)
 PDFium liegt lokal in `pdfium/lib` (gitignored). Screenshots über Xvfb + xdotool + ImageMagick `import`.

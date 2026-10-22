@@ -1,6 +1,8 @@
 //! Einstiegspunkt der FolioCraft-Desktop-App.
 
 mod app;
+mod shortcuts;
+mod toolbar;
 mod viewer;
 
 use eframe::egui;
