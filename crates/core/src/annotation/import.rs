@@ -146,23 +146,27 @@ pub fn parse(pdf: &lopdf::Document, page: usize, id: ObjectId) -> Option<Annotat
 
 // ---------- kleine Lesehelfer (folgen indirekten Verweisen) ----------
 
-fn deref<'a>(pdf: &'a lopdf::Document, o: &'a Object) -> &'a Object {
+pub(crate) fn deref<'a>(pdf: &'a lopdf::Document, o: &'a Object) -> &'a Object {
     pdf.dereference(o).map(|(_, o)| o).unwrap_or(o)
 }
 
-fn float(pdf: &lopdf::Document, d: &Dictionary, key: &[u8]) -> Option<f32> {
+pub(crate) fn float(pdf: &lopdf::Document, d: &Dictionary, key: &[u8]) -> Option<f32> {
     deref(pdf, d.get(key).ok()?).as_float().ok()
 }
 
-fn int(pdf: &lopdf::Document, d: &Dictionary, key: &[u8]) -> Option<i64> {
+pub(crate) fn int(pdf: &lopdf::Document, d: &Dictionary, key: &[u8]) -> Option<i64> {
     deref(pdf, d.get(key).ok()?).as_i64().ok()
 }
 
-fn array<'a>(pdf: &'a lopdf::Document, d: &'a Dictionary, key: &[u8]) -> Option<&'a Vec<Object>> {
+pub(crate) fn array<'a>(
+    pdf: &'a lopdf::Document,
+    d: &'a Dictionary,
+    key: &[u8],
+) -> Option<&'a Vec<Object>> {
     deref(pdf, d.get(key).ok()?).as_array().ok()
 }
 
-fn numbers(pdf: &lopdf::Document, o: &Object) -> Option<Vec<f32>> {
+pub(crate) fn numbers(pdf: &lopdf::Document, o: &Object) -> Option<Vec<f32>> {
     deref(pdf, o)
         .as_array()
         .ok()?
@@ -171,7 +175,7 @@ fn numbers(pdf: &lopdf::Document, o: &Object) -> Option<Vec<f32>> {
         .collect()
 }
 
-fn rect(pdf: &lopdf::Document, d: &Dictionary, key: &[u8]) -> Option<Rect> {
+pub(crate) fn rect(pdf: &lopdf::Document, d: &Dictionary, key: &[u8]) -> Option<Rect> {
     let v = numbers(pdf, d.get(key).ok()?)?;
     (v.len() == 4).then(|| Rect::new(v[0], v[1], v[2], v[3]).normalized())
 }

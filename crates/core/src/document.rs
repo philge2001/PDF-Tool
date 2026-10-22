@@ -3,6 +3,7 @@
 use crate::annotation::{self, AnnotId, Annotation, AnnotationStore, Source};
 use crate::command::{Command, History, Model};
 use crate::error::{CoreError, Result};
+use crate::form::{self, FormField, FormStore};
 use crate::geometry::{Point, Rect};
 use crate::save;
 use lopdf::{Dictionary, Object, ObjectId};
@@ -85,6 +86,8 @@ pub struct Document {
     /// Stand der verwalteten Annotationen in der Datei (nach Laden/Speichern),
     /// nach Objektnummer – zum Erkennen von Änderungen beim Speichern.
     imported: HashMap<ObjectId, Annotation>,
+    /// Dasselbe für Formularfelder (nach Objektnummer des Feld-Dictionarys).
+    imported_fields: HashMap<ObjectId, FormField>,
 }
 
 impl Document {
@@ -120,13 +123,19 @@ impl Document {
             model,
             history: History::new(),
             imported: HashMap::new(),
+            imported_fields: HashMap::new(),
         };
         doc.saved_pages = doc.page_structure();
         doc.next_object_id = doc.pdf.max_id + 1;
         doc.import_annotations();
+        for f in form::import::read(&doc.pdf, &doc.model.pages) {
+            doc.model.forms.push(f);
+        }
+        doc.imported_fields = snapshot_fields(&doc.model.forms);
         tracing::debug!(
             pages = doc.model.pages.len(),
             annotations = doc.model.annotations.len(),
+            fields = doc.model.forms.len(),
             "Dokument geladen"
         );
         Ok(doc)
@@ -211,6 +220,15 @@ impl Document {
         &self.model.annotations
     }
 
+    pub fn forms(&self) -> &FormStore {
+        &self.model.forms
+    }
+
+    /// Seitenindex zur Objektnummer einer Seite (z. B. für Widgets).
+    pub fn page_index_of(&self, page: ObjectId) -> Option<usize> {
+        self.model.pages.iter().position(|p| p.object_id == page)
+    }
+
     pub(crate) fn allocate_page_id(&mut self) -> PageId {
         self.model.allocate_page_id()
     }
@@ -266,20 +284,28 @@ impl Document {
     }
 
     /// Positionen im /Annots-Array einer Seite, die FolioCraft selbst verwaltet (und
-    /// daher als Overlay zeichnet). Der Renderer blendet genau diese aus.
+    /// daher als Overlay zeichnet): Annotationen und Widgets ausfüllbarer Formularfelder.
+    /// Der Renderer blendet genau diese aus.
     pub fn managed_annot_indices(&self, page: usize) -> Vec<usize> {
         let Some(info) = self.model.pages.get(page) else {
             return Vec::new();
         };
+        let widgets: std::collections::HashSet<ObjectId> =
+            self.model.forms.managed_widget_ids().collect();
         annotation::import::page_annots(&self.pdf, info.object_id)
             .iter()
             .enumerate()
             .filter(|(_, o)| {
                 o.as_reference()
-                    .is_ok_and(|id| self.imported.contains_key(&id))
+                    .is_ok_and(|id| self.imported.contains_key(&id) || widgets.contains(&id))
             })
             .map(|(i, _)| i)
             .collect()
+    }
+
+    /// Stand eines Formularfelds in der Datei (für `save`).
+    pub(crate) fn imported_field(&self, id: ObjectId) -> Option<&FormField> {
+        self.imported_fields.get(&id)
     }
 
     pub(crate) fn imported(&self) -> impl Iterator<Item = &Annotation> {
@@ -352,6 +378,7 @@ impl Document {
             .iter()
             .filter_map(|a| Some((a.source?.object_id, a.clone())))
             .collect();
+        self.imported_fields = snapshot_fields(&self.model.forms);
         self.saved_pages = self.page_structure();
         // Die zusätzlichen Objekte stehen jetzt in der Datei.
         self.model.extra_objects.clear();
@@ -359,6 +386,14 @@ impl Document {
         self.history.mark_saved();
         Ok(())
     }
+}
+
+/// Felder mit Herkunft in der Datei, nach Objektnummer.
+fn snapshot_fields(forms: &FormStore) -> HashMap<ObjectId, FormField> {
+    forms
+        .iter()
+        .filter_map(|f| Some((f.source?, f.clone())))
+        .collect()
 }
 
 /// Siehe [`Document::render_snapshot`].

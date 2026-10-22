@@ -17,7 +17,7 @@ pub struct Appearance {
 }
 
 /// Zahl kompakt formatieren (max. 3 Nachkommastellen, ohne überflüssige Nullen).
-fn n(v: f32) -> String {
+pub(crate) fn n(v: f32) -> String {
     let s = format!("{v:.3}");
     let s = s.trim_end_matches('0').trim_end_matches('.');
     if s == "-0" { "0".into() } else { s.to_string() }
@@ -234,7 +234,7 @@ pub fn arrow_head(start: Point, end: Point, size: f32) -> (Point, Point) {
 }
 
 /// Ellipse aus vier Bézierkurven (Standard-Annäherung mit k ≈ 0,5523).
-fn ellipse(s: &mut String, r: Rect) {
+pub(crate) fn ellipse(s: &mut String, r: Rect) {
     const K: f32 = 0.552_284_8;
     let (cx, cy) = (r.center().x, r.center().y);
     let (rx, ry) = (r.width() / 2.0, r.height() / 2.0);
@@ -283,7 +283,7 @@ fn ellipse(s: &mut String, r: Rect) {
 }
 
 /// Bytes als PDF-Literal-String `( … )` mit maskierten Sonderzeichen.
-fn pdf_literal(bytes: &[u8]) -> String {
+pub(crate) fn pdf_literal(bytes: &[u8]) -> String {
     let mut out = String::from("(");
     for &b in bytes {
         match b {

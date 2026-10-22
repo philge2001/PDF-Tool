@@ -30,6 +30,10 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - **Jede Modelländerung läuft über ein `Command`** (core::command). Nur so funktioniert Undo/Redo.
 - **Annotationen**: Unterstützte Typen werden ins Modell importiert und von der App als Overlay gezeichnet.
   Der Render-Worker blendet sie beim Rendern aus. Beim Speichern schreibt core sie mit Appearance Stream (/AP).
+- **Formularfelder**: ausfüllbare Felder (Text, Kontrollkästchen, Optionsfeld, Kombi-/Listenfeld) stehen im
+  Modell (`Model::forms`); ihre Widgets blendet der Worker aus, die App zeichnet sie. Schaltflächen und
+  Signaturfelder bleiben PDFium überlassen. Widgets merken sich ihre Seite als Objektnummer (nicht Index).
+  JavaScript wird nicht ausgeführt, /NeedAppearances bleibt unverändert.
 - **Speichern** ist ein inkrementelles Update: Die Originalbytes bleiben unverändert, die Änderungen werden angehängt.
 - Fehler: `thiserror` in Library-Crates, `anyhow` nur in der App. Logging mit `tracing`.
 - Keine AGPL-Abhängigkeiten. Jede neue Crate wird im Commit bzw. hier mit einem Satz begründet.
@@ -39,6 +43,12 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Kommentare und UI-Texte auf Deutsch, Bezeichner auf Englisch.
 - Tests für core: Roundtrip „erstellen → speichern → neu laden → vergleichen“ mit den Fixtures.
 - Fixtures in `tests/fixtures/` werden ausschließlich per `gen_fixtures` erzeugt.
+
+## Meilensteine Phase 3 (Formulare)
+- [x] 3.1 Formularmodell, Werte-Commands, Speichern mit AP (core)
+- [ ] 3.2 Formulare ausfüllen (UI)
+- [ ] 3.3 Formulare gestalten (Felder erstellen/bearbeiten)
+- [ ] 3.4 AcroForm bei Einfügen/Extrahieren übernehmen + Abschluss
 
 ## Meilensteine Phase 2 (Seitenorganisation)
 - [x] 2.1 Seitenmodell & Seiten-Commands (core)
@@ -61,7 +71,6 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 ## Vorbereitung späterer Phasen
 - Phase 2 (Seiten): neue Commands auf `core::command::Model` (z. B. Seitenreihenfolge im Modell),
   Speichern über `IncrementalDocument` wie in `core::save`.
-- Phase 3 (Formulare): Widget-Annotationen sind heute "fremd" und werden von PDFium gerendert.
 - Phase 4 (Signaturen): inkrementelles Speichern erhält bestehende Signaturen bereits.
 - Phase 5/6 (Schwärzen, Text bearbeiten): Content-Stream-Änderungen in core, PDFium nur zum Rendern.
 
@@ -134,6 +143,12 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   (Ergebnis = neues unbenanntes Dokument, `adopt_document` zeigt es über eine Momentaufnahme an)
 - `app::jobs` – Hintergrund-Jobs (`Job::spawn`, Fortschritt, Abbrechen, modales Fortschrittsfenster);
   höchstens ein Job gleichzeitig (`FolioApp::job`), Ergebnis als Info- oder Fehlerdialog
+- `core::form` – `FormField`/`FieldKind`/`FieldValue`/`Widget`, `FormStore` (Dateireihenfolge = Tab-Reihenfolge);
+  `import` (Feldbaum mit vererbten /FT /Ff /V /DA …, voller Name), `appearance` (`layout` = gemeinsame
+  Textanordnung für Overlay und Datei, `build` = /AP-Streams, Helvetica WinAnsi)
+- `core::command::UpdateField` – Feld ändern (`::value` nur Wert, `mergeable` fürs Tippen)
+- `core::save::write_forms` – geänderte Felder: /V (+ /I bei Listen), Text-AP neu, Schalter nur /AS
+  (vorhandene Zustandsbilder bleiben, fehlende werden erzeugt)
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
 
 ## Tastenkürzel
@@ -144,4 +159,5 @@ Strg+Mausrad zoomt um den Mauszeiger · Bild↑/↓ Seite · Pos1/Ende · Pfeilt
 Datei-/Ordnerdialoge (rfd über xdg-portal) funktionieren im Container nicht – Logik dahinter per Test absichern.
 PDFium liegt lokal in `pdfium/lib` (gitignored).
 `cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf` schreibt jeden Annotationstyp –
-zur Gegenprobe mit anderen Readern (z. B. `pdftoppm -png out.pdf x`). Screenshots über Xvfb + xdotool + ImageMagick `import`.
+zur Gegenprobe mit anderen Readern (z. B. `pdftoppm -png out.pdf x`).
+`cargo run -p foliocraft-core --example form_fill -- in.pdf [out.pdf name=Wert …]` listet/füllt Formularfelder. Screenshots über Xvfb + xdotool + ImageMagick `import`.
