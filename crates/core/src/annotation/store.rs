@@ -72,6 +72,36 @@ impl AnnotationStore {
             .find(|a| a.page == page && a.hit_test(p, tol))
     }
 
+    /// Rechnet den Seitenindex aller Annotationen um (nach Umsortieren/Löschen von Seiten).
+    pub fn remap_pages(&mut self, f: impl Fn(usize) -> usize) {
+        for a in &mut self.items {
+            a.page = f(a.page);
+        }
+    }
+
+    /// Entfernt alle Annotationen der angegebenen Seiten und liefert sie samt ihrer
+    /// bisherigen Position zurück (für Undo).
+    pub fn take_on_pages(&mut self, pages: &[usize]) -> Vec<(usize, Annotation)> {
+        let mut taken = Vec::new();
+        let mut i = 0;
+        // Manuelle Schleife statt `retain`, weil wir die Positionen mitschreiben müssen.
+        while i < self.items.len() {
+            if pages.contains(&self.items[i].page) {
+                taken.push((i + taken.len(), self.items.remove(i)));
+            } else {
+                i += 1;
+            }
+        }
+        taken
+    }
+
+    /// Gegenstück zu [`Self::take_on_pages`]: fügt an den alten Positionen wieder ein.
+    pub fn restore(&mut self, taken: Vec<(usize, Annotation)>) {
+        for (index, a) in taken {
+            self.insert(index, a);
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.items.len()
     }

@@ -3,7 +3,7 @@
 Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 „FolioCraft“ ist ein Arbeitstitel. Lizenz: MIT OR Apache-2.0.
 
-**Stand:** Phase 1 (Viewer + Annotationen) abgeschlossen.
+**Stand:** Phase 1 (Viewer + Annotationen) und Phase 2 (Seitenorganisation) abgeschlossen.
 
 ## Funktionen (Phase 1)
 
@@ -16,6 +16,15 @@ Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 - Speichern als standardkonforme PDF-Annotationen mit Appearance Streams (sichtbar in anderen Readern),
   **inkrementell** – der Originalinhalt der Datei bleibt Byte für Byte erhalten
 - Helles/dunkles Design, Einstellungen (Autorname) werden gespeichert
+
+## Funktionen (Phase 2 – Seitenorganisation)
+
+- Seiten drehen, löschen und per Drag & Drop in der Seitenleiste neu anordnen (Mehrfachauswahl mit
+  Strg/Umschalt, Rechtsklick-Menü, Menü „Seiten“) – alles rückgängig machbar
+- Seiten aus einer anderen PDF einfügen (Seitenbereich, Position), leere Seite einfügen
+- Dateien zusammenführen (Datei → Dateien zusammenführen…)
+- Seiten als neue Datei extrahieren (optional danach löschen), Dokument teilen (alle N Seiten oder nach
+  Bereichen wie `1-3; 4-6; 7-`) – läuft im Hintergrund mit Fortschritt und Abbrechen
 
 ## Bedienung
 

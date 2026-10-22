@@ -40,6 +40,12 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Tests für core: Roundtrip „erstellen → speichern → neu laden → vergleichen“ mit den Fixtures.
 - Fixtures in `tests/fixtures/` werden ausschließlich per `gen_fixtures` erzeugt.
 
+## Meilensteine Phase 2 (Seitenorganisation)
+- [x] 2.1 Seitenmodell & Seiten-Commands (core)
+- [x] 2.2 Seiten-UI (Mehrfachauswahl, Kontextmenü, Drag & Drop)
+- [x] 2.3 Einfügen, Zusammenführen, Leerseite
+- [x] 2.4 Extrahieren & Teilen, Hintergrund-Jobs
+
 ## Meilensteine Phase 1
 - [x] M0 Grundgerüst
 - [x] M1 Öffnen & Rendern
@@ -63,6 +69,8 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Overlay vs. Datei: Hervorhebungen im Overlay halbtransparent (egui kann kein Multiply),
   Freitext im Overlay mit egui-Schrift (Zeilenumbrüche identisch) und auf gedrehten Seiten nicht mitgedreht.
 - Importierte Annotationen mit exotischer Darstellung (z. B. Wolkenrand) werden vereinfacht neu gezeichnet.
+- Gelöschte Seiten sind nach inkrementellem Speichern nicht mehr erreichbar, ihre Bytes stehen aber
+  noch in der Datei (vollständiges Neuschreiben folgt in Phase 5).
 - Dokumente werden im UI-Thread geladen (lopdf); sehr große Dateien (> 100 MB) blockieren kurz.
 - Verschlüsselte PDFs mit Benutzerpasswort werden noch nicht unterstützt (Passwortdialog fehlt).
 - Annotationen auf gedrehten Seiten: Geometrie korrekt, Freitext-Overlay nicht mitgedreht.
@@ -79,9 +87,22 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - `app::viewer::thumbnails` – Seitenleiste, gleiche Texturen, Priorität `Thumbnail`
 - `core::annotation` – `Annotation`/`AnnotKind` (9 Typen), `AnnotationStore`; `import` (PDF -> Modell,
   Unverstandenes bleibt fremd), `export` (Dictionary, Basis = Original-Dict), `appearance` (/AP-Streams)
-- `core::command` – `Command`-Trait, `Model` (was Commands ändern dürfen), `History` (Undo/Redo, dirty)
-- `core::save` – inkrementelles Speichern: pro Seite fremde Einträge + verwaltete; unveränderte
-  behalten ihren Verweis, geänderte werden unter derselben Objektnummer neu geschrieben
+- `core::command` – `Command`-Trait, `Model` (Annotationen + Seitenliste), `History` (Undo/Redo, dirty)
+- `core::page_ops` – `RotatePages`, `DeletePages`, `ReorderPages` (rechnen Annotations-Seitenindizes mit um);
+  `PageInfo::id` (`PageId`) ist stabil über Umsortieren hinweg
+- `core::page_import` – `Document::prepare_insert` (Tiefenkopie von Seiten aus einer anderen PDF mit
+  Umnummerierung; /Parent und fremde Seiten werden nicht verfolgt; verwaltete Annotationen werden
+  ins Modell übernommen), `prepare_blank_page`, `InsertPages`-Command, `parse_page_ranges("1-3, 5, 8-")`.
+  Neue Objekte liegen bis zum Speichern in `Model::extra_objects`; Objektnummern vergibt ein
+  nur hochzählender Zähler (`next_object_id`)
+- `core::page_export` – `extract_pages` (neue, eigenständige PDF nur mit den gewünschten Seiten, aus
+  `Document::snapshot_pdf` = aktueller Stand inkl. ungespeicherter Änderungen), `split_every`, `split_by_ranges`
+- `Document::render_snapshot` – Bytes des aktuellen Stands + Ausblendliste für den Renderer
+  (nach strukturellen Änderungen, ohne zu speichern)
+- `core::save` – inkrementelles Speichern: Seitenbaum (bei neuer Reihenfolge flach unter der Wurzel,
+  geerbte MediaBox/CropBox/Resources werden in die Seite übernommen), pro Seite fremde Einträge +
+  verwaltete Annotationen; unveränderte behalten ihren Verweis, geänderte werden unter derselben
+  Objektnummer neu geschrieben
 - `core::font` (Helvetica-Breiten, WinAnsi, Umbruch), `core::pdf_string` (Textstrings), `core::date`
 - `core::text` – `PageText`/`CharBox` (Zeichen + Rechteck im PDF-Raum), `find`, `range_rects`, `char_at`
 - `render::worker` – Textextraktion (`extract_text`, Event `Text`), eigene Warteschlange:
@@ -104,6 +125,15 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - `app::menu` – Menüleiste Datei/Bearbeiten/Ansicht
 - `app::settings` – dauerhafte Einstellungen (serde + eframe-Persistenz, Schlüssel `foliocraft_settings`):
   zuletzt geöffnet, Design, Panels, Werkzeugstil, Autor
+- `app::pages` – `PageAction`, `sync_structure` (erkennt jede Strukturänderung inkl. Undo/Redo, biegt
+  Texturen/Text per `PageId` auf neue Indizes um, lädt den Worker mit `render_snapshot` und NEUER DocId),
+  `new_doc_id`, `target_pages` (Auswahl in der Seitenleiste oder aktuelle Seite)
+- `app::viewer::thumbnails` – zusätzlich Mehrfachauswahl (als `PageId`), Kontextmenü, Drag & Drop (`ThumbAction`)
+- `app::page_dialogs` – Dialoge „Seiten aus Datei einfügen“, „Dateien zusammenführen“, „Seiten extrahieren“,
+  „Dokument teilen“
+  (Ergebnis = neues unbenanntes Dokument, `adopt_document` zeigt es über eine Momentaufnahme an)
+- `app::jobs` – Hintergrund-Jobs (`Job::spawn`, Fortschritt, Abbrechen, modales Fortschrittsfenster);
+  höchstens ein Job gleichzeitig (`FolioApp::job`), Ergebnis als Info- oder Fehlerdialog
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
 
 ## Tastenkürzel
@@ -111,6 +141,7 @@ Strg+O öffnen · Strg+S speichern · Strg+Umschalt+S speichern unter · Strg+Z/
 Strg+Mausrad zoomt um den Mauszeiger · Bild↑/↓ Seite · Pos1/Ende · Pfeiltasten scrollen
 
 ## Testen im Container (ohne Bildschirm)
+Datei-/Ordnerdialoge (rfd über xdg-portal) funktionieren im Container nicht – Logik dahinter per Test absichern.
 PDFium liegt lokal in `pdfium/lib` (gitignored).
 `cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf` schreibt jeden Annotationstyp –
 zur Gegenprobe mit anderen Readern (z. B. `pdftoppm -png out.pdf x`). Screenshots über Xvfb + xdotool + ImageMagick `import`.

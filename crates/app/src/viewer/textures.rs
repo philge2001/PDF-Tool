@@ -74,6 +74,23 @@ impl PageTextures {
             .and_then(|k| self.cache.peek(k).cloned())
     }
 
+    /// Nach einer Strukturänderung (Seiten umsortiert/gelöscht/gedreht): behält die Texturen
+    /// der Seiten, für die `new_page` einen neuen Index liefert, und ordnet sie dem neuen
+    /// Dokument zu. Alles andere wird freigegeben.
+    pub fn remap(&mut self, new_doc: u64, new_page: impl Fn(u32) -> Option<u32>) {
+        for (key, tex, bytes) in self.cache.drain() {
+            if let Some(page) = new_page(key.page) {
+                let key = RenderKey {
+                    doc: new_doc,
+                    page,
+                    ..key
+                };
+                self.cache.insert(key, tex, bytes);
+            }
+        }
+        self.reset_pending();
+    }
+
     /// Gibt `Some(wanted)` zurück, wenn sich die gewünschte Menge geändert hat und der
     /// Worker informiert werden muss. Nicht mehr gewünschte Aufträge gelten als verworfen.
     pub fn update_wanted(&mut self, wanted: HashSet<RenderKey>) -> Option<HashSet<RenderKey>> {

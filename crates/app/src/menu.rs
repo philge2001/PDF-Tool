@@ -1,6 +1,7 @@
 //! Menüleiste: Datei, Bearbeiten, Ansicht.
 
 use crate::app::FolioApp;
+use crate::pages::PageAction;
 use crate::viewer::ZoomMode;
 use eframe::egui::{self, Button, ThemePreference};
 
@@ -31,6 +32,9 @@ impl FolioApp {
                     .clicked()
                 {
                     self.save_document(true);
+                }
+                if ui.button("Dateien zusammenführen…").clicked() {
+                    self.open_merge_dialog();
                 }
                 ui.separator();
                 ui.menu_button("Zuletzt geöffnet", |ui| {
@@ -114,6 +118,50 @@ impl FolioApp {
                     .clicked()
                 {
                     d.search.open();
+                }
+            });
+
+            ui.menu_button("Seiten", |ui| {
+                if self.document.is_none() {
+                    ui.label("Kein Dokument");
+                    return;
+                }
+                if ui.button("Seiten aus Datei einfügen…").clicked() {
+                    self.start_insert_from_file();
+                }
+                if ui.button("Leere Seite einfügen").clicked() {
+                    self.insert_blank_page();
+                }
+                ui.separator();
+                if ui.button("Seiten extrahieren…").clicked() {
+                    self.open_extract_dialog();
+                }
+                if ui.button("Dokument teilen…").clicked() {
+                    self.open_split_dialog();
+                }
+                ui.separator();
+                let Some(d) = &mut self.document else { return };
+                let target = d.target_pages();
+                let n = d.doc.page_count();
+                let what = if target.len() == 1 {
+                    format!("Seite {}", target[0] + 1)
+                } else {
+                    format!("{} ausgewählte Seiten", target.len())
+                };
+                ui.label(egui::RichText::new(what).weak());
+                if ui.button("Im Uhrzeigersinn drehen").clicked() {
+                    d.apply_page_action(PageAction::Rotate(target.clone(), 1));
+                }
+                if ui.button("Gegen den Uhrzeigersinn drehen").clicked() {
+                    d.apply_page_action(PageAction::Rotate(target.clone(), -1));
+                }
+                ui.separator();
+                if ui
+                    .add_enabled(target.len() < n, Button::new("Löschen"))
+                    .on_disabled_hover_text("Mindestens eine Seite muss bleiben")
+                    .clicked()
+                {
+                    d.apply_page_action(PageAction::Delete(target));
                 }
             });
 

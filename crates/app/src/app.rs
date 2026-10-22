@@ -12,10 +12,11 @@ use crate::tools::text_select::TextSelection;
 use crate::tools::{Tool, ToolSettings};
 use crate::viewer::ViewOutput;
 use crate::viewer::Viewer;
+use crate::viewer::thumbnails::ThumbAction;
 use crate::viewer::thumbnails::Thumbnails;
 use eframe::egui;
 use foliocraft_core::{AnnotId, Document};
-use foliocraft_render::{DocId, Event, HiddenAnnots, RenderService};
+use foliocraft_render::{Event, HiddenAnnots, RenderService};
 use std::path::{Path, PathBuf};
 
 /// Ein geöffnetes Dokument samt Ansicht.
@@ -24,6 +25,8 @@ pub struct OpenDocument {
     pub viewer: Viewer,
     pub thumbs: Thumbnails,
     pub texts: TextCache,
+    /// Letzter bekannter Stand der Seitenstruktur (siehe `sync_structure`).
+    pub structure: Vec<(foliocraft_core::PageId, u16)>,
     pub search: SearchState,
     pub selection: Option<TextSelection>,
     /// Laufender Mauszug eines Zeichenwerkzeugs.
@@ -43,7 +46,6 @@ pub struct OpenDocument {
 pub struct FolioApp {
     /// `Err` enthält die Fehlermeldung, wenn PDFium nicht geladen werden konnte.
     pub(crate) render: Result<RenderService, String>,
-    next_doc_id: DocId,
     pub(crate) document: Option<OpenDocument>,
     /// Fehlermeldung, die als Dialog angezeigt wird.
     pub(crate) error: Option<String>,
@@ -59,6 +61,14 @@ pub struct FolioApp {
     /// Dauerhafte Einstellungen (werden beim Beenden gespeichert).
     pub(crate) settings: Settings,
     pub(crate) show_settings_window: bool,
+    pub(crate) insert_dialog: Option<crate::page_dialogs::InsertDialog>,
+    pub(crate) merge_dialog: Option<crate::page_dialogs::MergeDialog>,
+    pub(crate) extract_dialog: Option<crate::page_dialogs::ExtractDialog>,
+    pub(crate) split_dialog: Option<crate::page_dialogs::SplitDialog>,
+    /// Laufender Hintergrund-Job (höchstens einer gleichzeitig).
+    pub(crate) job: Option<crate::jobs::Job>,
+    /// Erfolgsmeldung, die als Dialog angezeigt wird.
+    pub(crate) info: Option<String>,
 }
 
 impl FolioApp {
@@ -83,7 +93,6 @@ impl FolioApp {
 
         let mut app = Self {
             render,
-            next_doc_id: 1,
             document: None,
             error: None,
             show_thumbnails: settings.show_thumbnails,
@@ -95,6 +104,12 @@ impl FolioApp {
             window_title: String::new(),
             settings,
             show_settings_window: false,
+            insert_dialog: None,
+            merge_dialog: None,
+            extract_dialog: None,
+            split_dialog: None,
+            job: None,
+            info: None,
         };
         if let Some(path) = initial_file {
             app.open_path(&cc.egui_ctx, &path);
@@ -103,35 +118,14 @@ impl FolioApp {
     }
 
     pub fn open_path(&mut self, ctx: &egui::Context, path: &Path) {
-        let render = match &self.render {
-            Ok(r) => r,
-            Err(e) => {
-                self.error = Some(e.clone());
-                return;
-            }
-        };
+        if let Err(e) = &self.render {
+            self.error = Some(e.clone());
+            return;
+        }
+        let _ = ctx; // Fenstertitel setzt `update_title` im nächsten Frame
         match Document::open(path) {
             Ok(doc) => {
-                let id = self.next_doc_id;
-                self.next_doc_id += 1;
-                // Arc-Klon: nur der Zeiger wird kopiert, nicht die Daten.
-                render.open(id, doc.bytes().clone(), hidden_annots(&doc));
-                let sizes: Vec<_> = doc.pages().iter().map(|p| p.display_size()).collect();
-                self.document = Some(OpenDocument {
-                    thumbs: Thumbnails::new(&sizes),
-                    texts: TextCache::new(id, sizes.len()),
-                    search: SearchState::default(),
-                    selection: None,
-                    gesture: None,
-                    editor: None,
-                    selected: None,
-                    annot_drag: None,
-                    viewer: Viewer::new(id, sizes),
-                    doc,
-                    page_input: None,
-                    zoom_input: None,
-                });
-                let _ = ctx; // Fenstertitel setzt `update_title` im nächsten Frame
+                self.adopt_document(doc);
                 self.settings.add_recent(path);
                 tracing::info!(path = %path.display(), "Dokument geöffnet");
             }
@@ -143,6 +137,42 @@ impl FolioApp {
                 self.settings.prune_missing(); // z. B. verschobene Datei aus "Zuletzt geöffnet"
             }
         }
+    }
+
+    /// Macht ein geladenes Dokument zum aktuellen (ersetzt ein evtl. offenes ohne Rückfrage).
+    pub(crate) fn adopt_document(&mut self, doc: Document) {
+        let Ok(render) = &self.render else { return };
+        let id = crate::pages::new_doc_id();
+        // Ungespeicherte Änderungen (z. B. zusammengeführte Seiten) stehen noch nicht in den
+        // Dateibytes – dann bekommt der Renderer eine Momentaufnahme des aktuellen Stands.
+        if doc.is_dirty() {
+            match doc.render_snapshot() {
+                Ok(s) => render.open(id, std::sync::Arc::new(s.bytes), s.hidden),
+                Err(e) => {
+                    self.error = Some(format!("Dokument kann nicht angezeigt werden:\n{e}"));
+                    return;
+                }
+            }
+        } else {
+            // Arc-Klon: nur der Zeiger wird kopiert, nicht die Daten.
+            render.open(id, doc.bytes().clone(), hidden_annots(&doc));
+        }
+        let sizes: Vec<_> = doc.pages().iter().map(|p| p.display_size()).collect();
+        self.document = Some(OpenDocument {
+            thumbs: Thumbnails::new(&sizes),
+            texts: TextCache::new(id, sizes.len()),
+            structure: doc.pages().iter().map(|p| (p.id, p.rotation)).collect(),
+            search: SearchState::default(),
+            selection: None,
+            gesture: None,
+            editor: None,
+            selected: None,
+            annot_drag: None,
+            viewer: Viewer::new(id, sizes),
+            doc,
+            page_input: None,
+            zoom_input: None,
+        });
     }
 
     pub(crate) fn open_dialog(&mut self, ctx: &egui::Context) {
@@ -242,6 +272,38 @@ impl FolioApp {
                 self.request_open(&ctx, path);
             }
         });
+    }
+
+    /// Fortschritt des laufenden Jobs; nach dem Ende Erfolgs- bzw. Fehlermeldung.
+    fn job_ui(&mut self, ctx: &egui::Context) {
+        let Some(job) = &self.job else { return };
+        match job.poll() {
+            None => job.show(ctx),
+            Some(result) => {
+                tracing::info!(job = %job.title, ?result, "Job beendet");
+                match result {
+                    Ok(msg) => self.info = Some(msg),
+                    Err(msg) => self.error = Some(msg),
+                }
+                self.job = None;
+            }
+        }
+    }
+
+    fn info_dialog(&mut self, ctx: &egui::Context) {
+        let Some(msg) = &self.info else { return };
+        let mut close = false;
+        egui::Window::new("Fertig")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .show(ctx, |ui| {
+                ui.label(msg);
+                close = ui.button("OK").clicked();
+            });
+        if close {
+            self.info = None;
+        }
     }
 
     fn error_dialog(&mut self, ctx: &egui::Context) {
@@ -392,6 +454,9 @@ impl eframe::App for FolioApp {
         egui::Panel::bottom("statusbar").show(ui, |ui| self.status_bar(ui));
 
         if let Some(d) = &mut self.document {
+            if let Ok(render) = &self.render {
+                d.sync_structure(render);
+            }
             d.validate_selection();
             if self.show_comments {
                 egui::Panel::right("comments")
@@ -418,8 +483,12 @@ impl eframe::App for FolioApp {
                                 annot_draw::paint(painter, info, rect, a);
                             }
                         };
-                        if let Some(page) = d.viewer.show_thumbnails(ui, &mut d.thumbs, overlay) {
-                            d.viewer.scroll_to_page(page);
+                        let ids = d.doc.page_ids();
+                        let action = d.viewer.show_thumbnails(ui, &mut d.thumbs, &ids, overlay);
+                        match action {
+                            Some(ThumbAction::Navigate(page)) => d.viewer.scroll_to_page(page),
+                            Some(ThumbAction::Page(a)) => d.apply_page_action(a),
+                            None => {}
                         }
                     });
             }
@@ -444,6 +513,12 @@ impl eframe::App for FolioApp {
             egui::CentralPanel::default().show(ui, |ui| self.empty_state(ui));
         }
         self.settings_window(&ctx);
+        self.insert_dialog_ui(&ctx);
+        self.merge_dialog_ui(&ctx);
+        self.extract_dialog_ui(&ctx);
+        self.split_dialog_ui(&ctx);
+        self.job_ui(&ctx);
+        self.info_dialog(&ctx);
         self.unsaved_changes_dialog(&ctx);
         self.error_dialog(&ctx);
     }
