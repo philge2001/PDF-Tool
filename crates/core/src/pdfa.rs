@@ -141,7 +141,7 @@ fn replacement(base_font: &str) -> Option<(&'static str, &'static [u8], bool)> {
         .map(|(k, data)| (*k, *data, known))
 }
 
-fn has_font_file(pdf: &lopdf::Document, font: &Dictionary) -> bool {
+pub(crate) fn has_font_file(pdf: &lopdf::Document, font: &Dictionary) -> bool {
     font.get(b"FontDescriptor")
         .ok()
         .and_then(|o| pdf.dereference(o).ok())
@@ -151,6 +151,76 @@ fn has_font_file(pdf: &lopdf::Document, font: &Dictionary) -> bool {
                 .iter()
                 .any(|k| fd.has(k))
         })
+}
+
+/// Bettet nicht eingebettete Standardschriften als Liberation ein (auch für das
+/// automatische Taggen: PDF/UA verlangt ebenfalls eingebettete Schriften).
+pub(crate) fn embed_standard_fonts(
+    pdf: &mut lopdf::Document,
+    fixed: &mut Vec<String>,
+    problems: &mut Vec<String>,
+) -> Result<()> {
+    let mut files: HashMap<String, ObjectId> = HashMap::new();
+    let mut replaced: BTreeSet<String> = BTreeSet::new();
+    let mut approximated: BTreeSet<String> = BTreeSet::new();
+    let font_ids: Vec<ObjectId> = pdf
+        .objects
+        .iter()
+        .filter_map(|(id, o)| {
+            let d = o.as_dict().ok()?;
+            (d.get(b"Type").and_then(Object::as_name).ok() == Some(b"Font")).then_some(*id)
+        })
+        .collect();
+    for id in font_ids {
+        let Ok(font) = pdf.get_dictionary(id).cloned() else {
+            continue;
+        };
+        let subtype = font
+            .get(b"Subtype")
+            .and_then(Object::as_name)
+            .unwrap_or_default()
+            .to_vec();
+        let base = String::from_utf8_lossy(
+            font.get(b"BaseFont")
+                .and_then(Object::as_name)
+                .unwrap_or_default(),
+        )
+        .into_owned();
+        match subtype.as_slice() {
+            b"Type1" | b"MMType1" | b"TrueType" if !has_font_file(pdf, &font) => {
+                match replacement(&base) {
+                    Some((key, data, known)) => {
+                        embed_simple_font(pdf, id, key, data, &mut files)?;
+                        replaced.insert(format!("{base} (ersetzt durch {key})"));
+                        if !known {
+                            approximated.insert(base.clone());
+                        }
+                    }
+                    None => problems.push(format!(
+                        "Schrift „{base}“ ist nicht eingebettet und hat keinen Ersatz."
+                    )),
+                }
+            }
+            b"CIDFontType0" | b"CIDFontType2" if !has_font_file(pdf, &font) => problems.push(
+                format!("CID-Schrift „{base}“ ist nicht eingebettet (kein automatischer Ersatz)."),
+            ),
+            _ => {}
+        }
+    }
+    if !replaced.is_empty() {
+        fixed.push(format!(
+            "Schriften eingebettet: {}",
+            replaced.into_iter().collect::<Vec<_>>().join(", ")
+        ));
+    }
+    if !approximated.is_empty() {
+        fixed.push(format!(
+            "Ersatzschrift mit evtl. abweichenden Breiten: {}",
+            approximated.into_iter().collect::<Vec<_>>().join(", ")
+        ));
+    }
+
+    Ok(())
 }
 
 /// Bettet eine Liberation-Schrift als einfache TrueType-Schrift ein und baut das
@@ -240,8 +310,22 @@ fn embed_simple_font(
     Ok(())
 }
 
+/// Beschreibung des Namensraums `pdfuaid` für PDF/A (fremde XMP-Eigenschaften müssen in
+/// PDF/A als Erweiterungsschema erklärt werden).
+const PDFUA_EXTENSION_SCHEMA: &str = "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">\
+<pdfaSchema:schema>PDF/UA Universal Accessibility Schema</pdfaSchema:schema>\
+<pdfaSchema:namespaceURI>http://www.aiim.org/pdfua/ns/id/</pdfaSchema:namespaceURI>\
+<pdfaSchema:prefix>pdfuaid</pdfaSchema:prefix><pdfaSchema:property><rdf:Seq>\
+<rdf:li rdf:parseType=\"Resource\"><pdfaProperty:name>part</pdfaProperty:name>\
+<pdfaProperty:valueType>Integer</pdfaProperty:valueType><pdfaProperty:category>internal</pdfaProperty:category>\
+<pdfaProperty:description>Indicates, which part of ISO 14289 standard is followed</pdfaProperty:description>\
+</rdf:li></rdf:Seq></pdfaSchema:property></rdf:li></rdf:Bag></pdfaExtension:schemas>";
+
 /// Schreibt XMP-Metadaten passend zu /Info und hängt sie an den Katalog.
-fn write_metadata(pdf: &mut lopdf::Document) -> Result<()> {
+/// `pdfa` = PDF/A-2b-Kennung eintragen (und /Info auf die gespiegelten Felder beschränken),
+/// `pdfua` = PDF/UA-1-Kennung (bei PDF/A samt Erweiterungsschema, das PDF/A für fremde
+/// Namensräume verlangt).
+pub(crate) fn write_metadata(pdf: &mut lopdf::Document, pdfa: bool, pdfua: bool) -> Result<()> {
     let now = pdf_date_now();
     // /Info lesen (oder anlegen) und auf die Felder beschränken, die wir in XMP spiegeln.
     let info_id = pdf.trailer.get(b"Info").and_then(Object::as_reference).ok();
@@ -275,7 +359,7 @@ fn write_metadata(pdf: &mut lopdf::Document) -> Result<()> {
     ];
     let keys: Vec<Vec<u8>> = info.iter().map(|(k, _)| k.clone()).collect();
     for k in keys {
-        if !keep.contains(&k.as_slice()) {
+        if pdfa && !keep.contains(&k.as_slice()) {
             info.remove(&k);
         }
     }
@@ -321,13 +405,24 @@ fn write_metadata(pdf: &mut lopdf::Document) -> Result<()> {
     }
     let created_xmp = pdf_date_to_xmp(&created).unwrap_or_default();
     let modified_xmp = pdf_date_to_xmp(&now).unwrap_or_default();
+    let mut pdfaid = String::new();
+    if pdfa {
+        pdfaid.push_str("<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>");
+    }
+    if pdfua {
+        pdfaid.push_str("<pdfuaid:part>1</pdfuaid:part>");
+    }
+    if pdfa && pdfua {
+        pdfaid.push_str(PDFUA_EXTENSION_SCHEMA);
+    }
     let xmp = format!(
         "<?xpacket begin=\"\u{feff}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n\
 <x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\
 <rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" \
-xmlns:pdf=\"http://ns.adobe.com/pdf/1.3/\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">\
-<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>\
-<pdf:Producer>{producer}</pdf:Producer><xmp:CreateDate>{created_xmp}</xmp:CreateDate>\
+xmlns:pdf=\"http://ns.adobe.com/pdf/1.3/\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\" \
+xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\" xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" \
+xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\">\
+{pdfaid}<pdf:Producer>{producer}</pdf:Producer><xmp:CreateDate>{created_xmp}</xmp:CreateDate>\
 <xmp:ModifyDate>{modified_xmp}</xmp:ModifyDate><xmp:MetadataDate>{modified_xmp}</xmp:MetadataDate>{fields}\
 </rdf:Description></rdf:RDF></x:xmpmeta>\n<?xpacket end=\"w\"?>"
     );
@@ -498,7 +593,7 @@ fn fix_appearance_dicts(pdf: &mut lopdf::Document) -> (usize, usize) {
 /// Macht direkte Schrift-Dictionaries in /Font-Ressourcen zu eigenen Objekten, damit der
 /// Schrift-Schritt sie findet. Sucht rekursiv (Ressourcen von Erscheinungsbildern, /DR des
 /// Formulars …) – Erscheinungsbilder enthalten Helvetica oft direkt.
-fn promote_direct_fonts(pdf: &mut lopdf::Document) {
+pub(crate) fn promote_direct_fonts(pdf: &mut lopdf::Document) {
     /// Läuft durch ein Objekt; neue Schriftobjekte landen in `out` (Nummern ab `next`).
     fn walk(obj: &mut Object, next: &mut u32, out: &mut Vec<(ObjectId, Object)>, depth: usize) {
         if depth > 32 {
@@ -617,67 +712,7 @@ pub fn convert_to_pdfa(bytes: &[u8]) -> Result<(Vec<u8>, PdfaReport)> {
     promote_direct_fonts(&mut pdf);
 
     // 2) Schriften.
-    let mut files: HashMap<String, ObjectId> = HashMap::new();
-    let mut replaced: BTreeSet<String> = BTreeSet::new();
-    let mut approximated: BTreeSet<String> = BTreeSet::new();
-    let font_ids: Vec<ObjectId> = pdf
-        .objects
-        .iter()
-        .filter_map(|(id, o)| {
-            let d = o.as_dict().ok()?;
-            (d.get(b"Type").and_then(Object::as_name).ok() == Some(b"Font")).then_some(*id)
-        })
-        .collect();
-    for id in font_ids {
-        let Ok(font) = pdf.get_dictionary(id).cloned() else {
-            continue;
-        };
-        let subtype = font
-            .get(b"Subtype")
-            .and_then(Object::as_name)
-            .unwrap_or_default()
-            .to_vec();
-        let base = String::from_utf8_lossy(
-            font.get(b"BaseFont")
-                .and_then(Object::as_name)
-                .unwrap_or_default(),
-        )
-        .into_owned();
-        match subtype.as_slice() {
-            b"Type1" | b"MMType1" | b"TrueType" if !has_font_file(&pdf, &font) => {
-                match replacement(&base) {
-                    Some((key, data, known)) => {
-                        embed_simple_font(&mut pdf, id, key, data, &mut files)?;
-                        replaced.insert(format!("{base} (ersetzt durch {key})"));
-                        if !known {
-                            approximated.insert(base.clone());
-                        }
-                    }
-                    None => report.problems.push(format!(
-                        "Schrift „{base}“ ist nicht eingebettet und hat keinen Ersatz."
-                    )),
-                }
-            }
-            b"CIDFontType0" | b"CIDFontType2" if !has_font_file(&pdf, &font) => {
-                report.problems.push(format!(
-                    "CID-Schrift „{base}“ ist nicht eingebettet (kein automatischer Ersatz)."
-                ))
-            }
-            _ => {}
-        }
-    }
-    if !replaced.is_empty() {
-        report.fixed.push(format!(
-            "Schriften eingebettet: {}",
-            replaced.into_iter().collect::<Vec<_>>().join(", ")
-        ));
-    }
-    if !approximated.is_empty() {
-        report.fixed.push(format!(
-            "Ersatzschrift mit evtl. abweichenden Breiten: {}",
-            approximated.into_iter().collect::<Vec<_>>().join(", ")
-        ));
-    }
+    embed_standard_fonts(&mut pdf, &mut report.fixed, &mut report.problems)?;
 
     // 3) Objekte einzeln anpassen.
     let mut lzw = 0;
@@ -819,7 +854,7 @@ pub fn convert_to_pdfa(bytes: &[u8]) -> Result<(Vec<u8>, PdfaReport)> {
         }
     }
     pdf.catalog_mut()?.remove(b"AA");
-    write_metadata(&mut pdf)?;
+    write_metadata(&mut pdf, true, false)?;
     report
         .fixed
         .push("PDF/A-Metadaten (XMP, PDF/A-2b) geschrieben".into());

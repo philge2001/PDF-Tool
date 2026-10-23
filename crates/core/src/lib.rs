@@ -3,7 +3,9 @@
 //! Alles hier ist reine Logik und kann ohne PDFium-Binary getestet werden.
 //! PDF-Strukturen werden über `lopdf` gelesen und geschrieben.
 
+pub mod accessibility;
 pub mod annotation;
+pub mod autotag;
 pub mod command;
 pub mod compare;
 pub mod compress;

@@ -535,6 +535,18 @@ pub struct Interpreted {
     /// Markierte Inhalte (`BDC … <</MCID n>> … EMC`): je MCID das umfassende Rechteck und
     /// der Text darin – für Strukturbaum/Barrierefreiheit (Tagged PDF).
     pub marked: std::collections::BTreeMap<i64, MarkedContent>,
+    /// Sichtbare Inhalte außerhalb jeder Markierung (weder MCID noch Artefakt).
+    pub unmarked: Unmarked,
+}
+
+/// Zähler für Inhalte ohne Tag (siehe [`Interpreted::unmarked`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Unmarked {
+    /// Textausgaben mit sichtbaren Zeichen.
+    pub text: usize,
+    pub images: usize,
+    /// Pfade, Formular-XObjects, Farbverläufe.
+    pub other: usize,
 }
 
 /// Inhalt eines markierten Abschnitts (siehe [`Interpreted::marked`]).
@@ -662,10 +674,16 @@ pub fn interpret_with<'a>(
         extra_fonts,
         extra_images,
         marked: Default::default(),
+        unmarked: Unmarked::default(),
     };
     let items = it.run(&ops, ctm);
     let marked = std::mem::take(&mut it.marked);
-    Interpreted { ops, items, marked }
+    Interpreted {
+        ops,
+        items,
+        marked,
+        unmarked: it.unmarked,
+    }
 }
 
 struct Interp<'a> {
@@ -678,6 +696,7 @@ struct Interp<'a> {
     extra_images: Option<&'a ExtraImages>,
     /// Gesammelte markierte Inhalte (siehe [`Interpreted::marked`]).
     marked: std::collections::BTreeMap<i64, MarkedContent>,
+    unmarked: Unmarked,
 }
 
 /// Ressourcenname -> neues Bild-XObject, das noch nicht in der Datei steht.
@@ -733,14 +752,18 @@ impl<'a> Interp<'a> {
         let mut path_start: Option<usize> = None;
         let mut path_pts: Vec<Point> = Vec::new();
         let f = |o: &Object| o.as_float().unwrap_or(0.0);
-        // Verschachtelte markierte Abschnitte; je Ebene die MCID (falls vorhanden).
-        let mut mc_stack: Vec<Option<i64>> = Vec::new();
+        // Verschachtelte markierte Abschnitte; je Ebene die MCID (falls vorhanden) und ob
+        // es ein Artefakt ist (Kopfzeile, Dekoration – gehört nicht zur Struktur).
+        let mut mc_stack: Vec<(Option<i64>, bool)> = Vec::new();
 
         for (i, op) in ops.iter().enumerate() {
             let a = &op.operands;
             let items_before = items.len();
             match op.operator.as_str() {
-                "BMC" => mc_stack.push(None),
+                "BMC" => {
+                    let artifact = a.first().and_then(|o| o.as_name().ok()) == Some(b"Artifact");
+                    mc_stack.push((None, artifact));
+                }
                 "BDC" => {
                     // Eigenschaften direkt oder als Name in /Properties der Ressourcen.
                     let props = match a.get(1) {
@@ -750,7 +773,11 @@ impl<'a> Interp<'a> {
                             .and_then(|(o, _)| o.as_dict().ok()),
                         _ => None,
                     };
-                    mc_stack.push(props.and_then(|d| d.get(b"MCID").and_then(Object::as_i64).ok()));
+                    let artifact = a.first().and_then(|o| o.as_name().ok()) == Some(b"Artifact");
+                    mc_stack.push((
+                        props.and_then(|d| d.get(b"MCID").and_then(Object::as_i64).ok()),
+                        artifact,
+                    ));
                 }
                 "EMC" => {
                     mc_stack.pop();
@@ -943,7 +970,23 @@ impl<'a> Interp<'a> {
                 _ => {}
             }
             // Neue Elemente dem innersten markierten Abschnitt mit MCID zuordnen.
-            if let Some(mcid) = mc_stack.iter().rev().find_map(|m| *m) {
+            let mcid = mc_stack.iter().rev().find_map(|m| m.0);
+            if mcid.is_none() && !mc_stack.iter().any(|m| m.1) {
+                // Weder Struktur noch Artefakt: für die Barrierefreiheits-Prüfung zählen.
+                for item in &items[items_before..] {
+                    match item {
+                        Item::Text(t) if t.glyphs.iter().any(|g| !g.text.trim().is_empty()) => {
+                            self.unmarked.text += 1
+                        }
+                        Item::Image { .. } => self.unmarked.images += 1,
+                        Item::Path { painted: true, .. }
+                        | Item::Form { .. }
+                        | Item::Shading { .. } => self.unmarked.other += 1,
+                        _ => {}
+                    }
+                }
+            }
+            if let Some(mcid) = mcid {
                 for item in &items[items_before..] {
                     let entry = self.marked.entry(mcid).or_default();
                     let (bounds, text, image) = match item {
