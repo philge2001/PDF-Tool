@@ -357,19 +357,23 @@ mod tests {
         if fonts.is_empty() {
             return;
         }
-        let first = &fonts[0];
-        let data = load(first).unwrap_or_else(|| {
-            panic!(
-                "aufgeführte Schrift nicht ladbar: {} ({}, Index {})",
-                first.postscript,
-                first.path.display(),
-                first.index
-            )
-        });
+        // Jede aufgeführte Schrift muss ladbar sein (höchstens 40 prüfen, das Lesen dauert).
+        // Symbolschriften (z. B. ohne „A“) sind erlaubt, aber mindestens eine Schrift hat Latein.
+        let mut latin = false;
+        for font in fonts.iter().take(40) {
+            let data = load(font).unwrap_or_else(|| {
+                panic!(
+                    "aufgeführte Schrift nicht ladbar: {} ({}, Index {})",
+                    font.postscript,
+                    font.path.display(),
+                    font.index
+                )
+            });
+            latin |= data.has_glyph('A') && data.has_glyph('a');
+        }
         assert!(
-            data.has_glyph('A') || data.has_glyph('a'),
-            "{}",
-            first.postscript
+            latin,
+            "keine der ersten Schriften enthält lateinische Buchstaben"
         );
         if let Some(f) = find_style("Liberation Sans", true, false) {
             assert!(f.bold && !f.italic, "{f:?}");
