@@ -163,6 +163,11 @@ fn describe_one(f: &mut File, path: &Path, index: u32, off: u64) -> Option<Syste
     }
     let family = get(ttf_parser::name_id::TYPOGRAPHIC_FAMILY)
         .or_else(|| get(ttf_parser::name_id::FAMILY))?;
+    // macOS: Namen mit Punkt (".SF NS", ".New York") sind interne Systemschriften, die
+    // Apple nicht zur Verwendung in Dokumenten vorsieht.
+    if family.starts_with('.') {
+        return None;
+    }
     let style = get(ttf_parser::name_id::TYPOGRAPHIC_SUBFAMILY)
         .or_else(|| get(ttf_parser::name_id::SUBFAMILY))
         .unwrap_or_else(|| "Regular".into());
@@ -353,7 +358,14 @@ mod tests {
             return;
         }
         let first = &fonts[0];
-        let data = load(first).expect("aufgeführte Schriften sind ladbar");
+        let data = load(first).unwrap_or_else(|| {
+            panic!(
+                "aufgeführte Schrift nicht ladbar: {} ({}, Index {})",
+                first.postscript,
+                first.path.display(),
+                first.index
+            )
+        });
         assert!(
             data.has_glyph('A') || data.has_glyph('a'),
             "{}",
