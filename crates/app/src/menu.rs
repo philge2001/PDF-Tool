@@ -42,6 +42,13 @@ impl FolioApp {
                     self.open_export_dialog();
                 }
                 if ui
+                    .add_enabled(has_doc, Button::new("Sicherheit…"))
+                    .on_hover_text("Passwortschutz und Berechtigungen")
+                    .clicked()
+                {
+                    self.open_security_dialog();
+                }
+                if ui
                     .add_enabled(has_doc, Button::new("Komprimieren…"))
                     .on_hover_text("Datei verkleinern (Bilder, alte Fassungen, Objekt-Streams)")
                     .clicked()

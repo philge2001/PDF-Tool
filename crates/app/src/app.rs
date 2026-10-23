@@ -91,6 +91,9 @@ pub struct FolioApp {
     /// Ergebnis-Dokument eines laufenden Jobs (z. B. Schwärzen) und sein Pfad.
     pub(crate) pending_doc: Option<(crate::redact::DocSlot, Option<PathBuf>)>,
     pub(crate) export_dialog: Option<crate::export::ExportDialog>,
+    /// Passwortabfrage beim Öffnen und Dialog "Sicherheit".
+    pub(crate) password_prompt: Option<crate::security_ui::PasswordPrompt>,
+    pub(crate) security_dialog: Option<crate::security_ui::SecurityDialog>,
     pub(crate) compress_dialog: Option<crate::compress_ui::CompressDialog>,
     /// Dokumentvergleich: Ergebnis des laufenden Jobs, offenes Vergleichsfenster.
     pub(crate) pending_compare: Option<(
@@ -187,6 +190,8 @@ impl FolioApp {
             open_after_job: None,
             pending_doc: None,
             export_dialog: None,
+            password_prompt: None,
+            security_dialog: None,
             compress_dialog: None,
             pending_compare: None,
             compare: None,
@@ -219,6 +224,7 @@ impl FolioApp {
                 self.settings.add_recent(path);
                 tracing::info!(path = %path.display(), "Dokument geöffnet");
             }
+            Err(e) if self.handle_open_error(path, &e) => {}
             Err(e) => {
                 self.error = Some(format!(
                     "„{}“ konnte nicht geöffnet werden:\n{e}",
@@ -330,6 +336,11 @@ impl FolioApp {
                     d.viewer.current_page + 1,
                     d.doc.page_count()
                 ));
+                if let Some(s) = d.doc.security() {
+                    ui.separator();
+                    ui.label(format!("Geschützt ({})", s.method))
+                        .on_hover_text(format!("Erlaubt: {}", s.permissions.describe()));
+                }
             }
             None => {
                 ui.label("Kein Dokument");
@@ -734,6 +745,8 @@ impl eframe::App for FolioApp {
         self.redact_confirm_ui(&ctx);
         self.sanitize_dialog_ui(&ctx);
         self.export_dialog_ui(&ctx);
+        self.password_prompt_ui(&ctx);
+        self.security_dialog_ui(&ctx);
         self.compress_dialog_ui(&ctx);
         self.compare_ui(&ctx);
         #[cfg(feature = "ocr")]

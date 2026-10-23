@@ -21,6 +21,7 @@ mod page_dialogs;
 mod pages;
 mod redact;
 mod search;
+mod security_ui;
 mod settings;
 mod shortcuts;
 mod sign_ui;

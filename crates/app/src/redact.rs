@@ -155,7 +155,13 @@ impl FolioApp {
         let bytes = slot.lock().ok().and_then(|mut s| s.take());
         let Some(bytes) = bytes else { return };
         match Document::replacement(bytes, path) {
-            Ok(doc) => self.adopt_document(doc),
+            Ok(mut doc) => {
+                // Eine neu geschriebene Fassung behält den Passwortschutz des Originals.
+                if let Some(old) = &self.document {
+                    doc.inherit_security(&old.doc);
+                }
+                self.adopt_document(doc)
+            }
             Err(e) => self.error = Some(format!("Ergebnis unlesbar:\n{e}")),
         }
     }

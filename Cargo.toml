@@ -33,6 +33,8 @@ tesseract-rs = { version = "0.4", default-features = false, features = ["build-t
 png = "0.18"
 # JPEG schreiben (reines Rust) – Export und Komprimieren (Phase 8).
 jpeg-encoder = "0.7"
+# Zufallszahlen für Verschlüsselungsschlüssel (ohnehin über lopdf im Baum) – MIT/Apache (Phase 9).
+getrandom = "0.4"
 # Text-Diff für den Dokumentvergleich – Apache-2.0 (Phase 8).
 similar = "3"
 # ZIP schreiben (DOCX-Container), nur Deflate über flate2 – MIT (Phase 8).
