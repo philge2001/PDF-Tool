@@ -1,5 +1,7 @@
 name: CI
 
+# Sparsam mit Actions-Minuten (macOS zählt zehnfach, Windows doppelt):
+# Push = nur Linux; Pull Requests und main = alle drei Plattformen.
 on:
   push:
   pull_request:
@@ -8,12 +10,17 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
 
+# Neuer Push auf denselben Branch bricht den alten Lauf ab.
+concurrency:
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
 jobs:
   check:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/main') && fromJSON('["ubuntu-latest","windows-latest","macos-latest"]') || fromJSON('["ubuntu-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
