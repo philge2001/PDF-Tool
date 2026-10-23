@@ -344,7 +344,17 @@ impl<'a> Resolver<'a> {
                     None => self.noto(b, i, c),
                 }
             }
-            FontRef::Noto => self.noto(b, i, c),
+            FontRef::Noto => {
+                // Echter fetter/kursiver Noto-Schnitt, falls installiert.
+                if (b || i)
+                    && let Some(f) = self
+                        .system("Noto Sans", b, i)
+                        .filter(|f| (f.bold || !b) && (f.italic || !i) && f.has_glyph(c))
+                {
+                    return Ok(sub(f));
+                }
+                self.noto(b, i, c)
+            }
         }
     }
 

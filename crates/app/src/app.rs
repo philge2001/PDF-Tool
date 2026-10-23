@@ -74,6 +74,8 @@ pub struct PdfToolApp {
     pub(crate) show_home: bool,
     /// Fenster mit den Tastenkürzeln.
     pub(crate) show_shortcuts: bool,
+    /// Stil für neuen Text ("Text hinzufügen").
+    pub(crate) new_text_style: pdftool_core::rich_text::TextStyle,
     /// Werkzeug, das nach dem Öffnen einer Datei starten soll (Kachel auf der Startseite).
     pub(crate) pending_group: Option<crate::tools_panel::ToolGroup>,
     pub(crate) tool: Tool,
@@ -196,6 +198,10 @@ impl PdfToolApp {
             show_home: false,
             show_shortcuts: false,
             pending_group: None,
+            new_text_style: pdftool_core::rich_text::TextStyle::noto(
+                settings.font_size,
+                settings.tool_settings().color(Tool::AddText),
+            ),
             tool: Tool::default(),
             tool_settings: settings.tool_settings(),
             pending: None,
@@ -578,10 +584,7 @@ impl PdfToolApp {
                 }
             }
             t if t.is_content_tool() => {
-                d.content_edit.style = (
-                    self.tool_settings.font_size,
-                    self.tool_settings.color(Tool::AddText),
-                );
+                d.content_edit.new_style = self.new_text_style.clone();
                 if t == Tool::EditImage {
                     d.handle_image_edit(ui, &view);
                 } else {

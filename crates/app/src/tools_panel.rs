@@ -343,11 +343,28 @@ impl PdfToolApp {
         Self::section(ui, "Optionen");
         match self.tool {
             Tool::AddText => {
-                self.tool_style(ui);
-                ui.weak("Auf die Seite klicken, Text eingeben, Enter.");
+                ui.label("Format für neuen Text:");
+                let choices = crate::rich_edit::FontChoices {
+                    originals: Vec::new(),
+                };
+                if let Some(f) =
+                    crate::rich_edit::format_bar(ui, "new_text", &self.new_text_style, &choices)
+                {
+                    f(&mut self.new_text_style);
+                }
+                ui.weak("Auf die Seite klicken, Text eingeben, Strg+Enter. Im Eingabefeld lässt sich markierter Text einzeln formatieren.");
             }
             Tool::EditText => {
                 if let Some((_, _, frame)) = d.content_edit.selected.clone() {
+                    if let Some((style, choices)) = d.selected_paragraph_style() {
+                        ui.label("Ganzen Absatz formatieren:");
+                        if let Some(f) =
+                            crate::rich_edit::format_bar(ui, "paragraph", &style, &choices)
+                        {
+                            d.format_selected_paragraph(&*f);
+                        }
+                        ui.add_space(4.0);
+                    }
                     if ui
                         .button("Text ändern…")
                         .on_hover_text("Doppelklick oder Enter")
@@ -359,7 +376,7 @@ impl PdfToolApp {
                         d.toggle_selected_justify();
                     }
                 }
-                ui.weak("Absatz anklicken · ziehen = verschieben · Anfasser rechts = Breite · Doppelklick = Text ändern");
+                ui.weak("Absatz anklicken · ziehen = verschieben · Anfasser rechts = Breite · Doppelklick = Text ändern und einzelne Wörter formatieren");
             }
             Tool::EditImage => {
                 if ui.button("Bild einfügen…").clicked()

@@ -24,6 +24,7 @@ mod ocr_ui;
 mod page_dialogs;
 mod pages;
 mod redact;
+mod rich_edit;
 mod search;
 mod security_ui;
 mod settings;
