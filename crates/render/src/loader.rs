@@ -22,7 +22,12 @@ pub fn candidate_paths() -> Vec<PathBuf> {
         .ok()
         .and_then(|e| e.parent().map(Path::to_path_buf))
     {
-        out.push(dir);
+        // Wo die Installer die Bibliothek ablegen (siehe `[package.metadata.packager]`):
+        // Windows neben `pdftool.exe`, macOS in `PDF Tool.app/Contents/Resources`,
+        // Linux (deb/AppImage) in `usr/lib/pdftool` neben `usr/bin`.
+        out.push(dir.clone());
+        out.push(dir.join("..").join("Resources"));
+        out.push(dir.join("..").join("lib").join("pdftool"));
     }
     if let Ok(cwd) = std::env::current_dir() {
         out.push(cwd.join("pdfium").join("lib"));

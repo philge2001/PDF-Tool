@@ -4,3 +4,5 @@
 *.so
 *.dylib
 *.dll
+# Vorbereitete Installer-Dateien (packaging/prepare.sh)
+/packaging/dist/

@@ -1,0 +1,127 @@
+name: Installer
+
+# Baut die Installer für Windows (Setup.exe), macOS (.dmg) und Linux (.deb, .AppImage).
+# - Tag `v*` (z. B. `git tag v0.1.0 && git push origin v0.1.0`): bauen und als GitHub-Release
+#   veröffentlichen.
+# - Pull Requests, die das Paketieren betreffen, und „Run workflow“ von Hand: nur bauen
+#   (Dateien unter „Artifacts“ im Lauf).
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - ".github/workflows/release.yml"
+      - "packaging/**"
+      - "assets/icons/**"
+      - "crates/app/Cargo.toml"
+      - "crates/app/build.rs"
+      - "crates/render/src/loader.rs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win-x64
+            formats: nsis
+          - os: macos-latest
+            platform: mac-arm64
+            formats: dmg
+          # Älteres Ubuntu = ältere glibc: das Paket läuft dann auch auf älteren Distributionen.
+          - os: ubuntu-22.04
+            platform: linux-x64
+            formats: deb
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: installer
+      - name: Linux-Systembibliotheken für eframe
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libfuse2
+      - name: Werkzeuge (cargo-packager, cargo-about)
+        shell: bash
+        run: |
+          cargo install cargo-packager --version 0.11.8 --locked
+          cargo install cargo-about --version 0.9.2 --locked --features cli
+      - name: Version prüfen
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME passt nicht zur Version $version in Cargo.toml"
+            exit 1
+          fi
+      - name: PDFium und Lizenztexte vorbereiten
+        shell: bash
+        run: bash packaging/prepare.sh ${{ matrix.platform }}
+      - name: Installer bauen
+        shell: bash
+        run: cargo packager --release -p pdftool-app --formats ${{ matrix.formats }}
+      # AppImage (läuft auf fast jeder Linux-Distribution) – optional: schlägt es fehl,
+      # wird das .deb trotzdem veröffentlicht.
+      - name: AppImage bauen (optional)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        shell: bash
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: cargo packager --release -p pdftool-app --formats appimage
+      - name: Dateien einsammeln
+        shell: bash
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          mkdir -p upload
+          shopt -s nullglob
+          for f in target/release/*-setup.exe; do cp "$f" "upload/PDF-Tool-$version-Windows-Setup.exe"; done
+          for f in target/release/*.dmg; do cp "$f" "upload/PDF-Tool-$version-macOS-AppleSilicon.dmg"; done
+          for f in target/release/*.deb; do cp "$f" "upload/pdf-tool_${version}_amd64.deb"; done
+          for f in target/release/*.AppImage; do cp "$f" "upload/PDF-Tool-$version-x86_64.AppImage"; done
+          ls -la upload
+          [ -n "$(ls upload)" ] || { echo "::error::Kein Installer erzeugt"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.platform }}
+          path: upload/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    # Nur dieser Job darf Releases anlegen.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: GitHub-Release anlegen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la dist
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "PDF Tool ${GITHUB_REF_NAME#v}" \
+            --generate-notes

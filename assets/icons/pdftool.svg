@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- App-Icon von PDF Tool (eigene Zeichnung): blaues Feld, Blatt mit Eselsohr, Textzeilen, Stift. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="#2680EB"/>
+  <path d="M150 96 H304 L376 168 V400 Q376 416 360 416 H150 Q134 416 134 400 V112 Q134 96 150 96 Z" fill="#FFFFFF"/>
+  <path d="M304 96 V152 Q304 168 320 168 H376 Z" fill="#B9D6FA"/>
+  <rect x="174" y="208" width="160" height="22" rx="11" fill="#9DB4CF"/>
+  <rect x="174" y="256" width="160" height="22" rx="11" fill="#9DB4CF"/>
+  <rect x="174" y="304" width="104" height="22" rx="11" fill="#9DB4CF"/>
+  <g transform="translate(352 300) rotate(40)">
+    <rect x="-22" y="-120" width="44" height="150" rx="8" fill="#1B3F73"/>
+    <path d="M-22 30 L22 30 L0 72 Z" fill="#F5B841"/>
+    <path d="M-7 58 L7 58 L0 72 Z" fill="#1B3F73"/>
+  </g>
+</svg>

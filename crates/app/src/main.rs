@@ -1,5 +1,9 @@
 //! Einstiegspunkt der PDF-Tool-Desktop-App.
 
+// Windows: Release-Builds sind eine reine Fenster-App (kein schwarzes Konsolenfenster beim
+// Start aus dem Startmenü). Debug-Builds behalten die Konsole für die Log-Ausgabe.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod a11y_ui;
 mod annot_draw;
 mod app;
@@ -71,7 +75,8 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_title("PDF Tool")
             .with_inner_size([1200.0, 800.0])
-            .with_drag_and_drop(true),
+            .with_drag_and_drop(true)
+            .with_icon(window_icon()),
         ..Default::default()
     };
     eframe::run_native(
@@ -86,6 +91,12 @@ fn main() -> eframe::Result<()> {
             )))
         }),
     )
+}
+
+/// App-Icon für Fenster und Taskleiste (eigene Zeichnung, Quelle `assets/icons/pdftool.svg`).
+fn window_icon() -> egui::IconData {
+    eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/icons/pdftool-256.png"))
+        .unwrap_or_default()
 }
 
 /// Name für eframe (bestimmt auch den Ordner der gespeicherten Einstellungen).
