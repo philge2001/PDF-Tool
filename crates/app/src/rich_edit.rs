@@ -303,6 +303,16 @@ pub fn font_label(font: &FontRef, choices: &FontChoices) -> String {
     }
 }
 
+/// Passt `name` zur Suche? Jedes Wort der Suche muss (ohne Groß-/Kleinschreibung) vorkommen,
+/// z. B. "lib ser" findet "Liberation Serif".
+pub fn font_matches(name: &str, query: &str) -> bool {
+    let name = name.to_lowercase();
+    query
+        .to_lowercase()
+        .split_whitespace()
+        .all(|word| name.contains(word))
+}
+
 /// Eine Stiländerung aus der Formatleiste (z. B. "fett an"). `Arc`: lässt sich günstig
 /// weiterreichen; `dyn Fn`: jede Änderung ist eine eigene kleine Funktion.
 pub type StyleChange = Arc<dyn Fn(&mut TextStyle)>;
@@ -317,35 +327,67 @@ pub fn format_bar(
 ) -> Option<StyleChange> {
     let mut change: Option<StyleChange> = None;
     ui.horizontal_wrapped(|ui| {
-        // ----- Schriftart -----
-        egui::ComboBox::from_id_salt((id, "font"))
+        // ----- Schriftart (mit Suchfeld) -----
+        // Der Suchtext lebt in egui's Zwischenspeicher (`data_mut`), solange die Liste offen ist.
+        let search_id = egui::Id::unique((id, "font_search"));
+        let shown = egui::ComboBox::from_id_salt((id, "font"))
             .width(170.0)
+            .height(400.0)
             .selected_text(font_label(&current.font, choices))
             .show_ui(ui, |ui| {
-                ui.set_min_width(220.0);
-                for (f, _) in &choices.originals {
-                    if ui
-                        .selectable_label(current.font == *f, font_label(f, choices))
-                        .clicked()
-                    {
-                        let f = f.clone();
-                        change = Some(Arc::new(move |s| s.font = f.clone()));
-                    }
+                ui.set_min_width(240.0);
+                let mut query: Option<String> = ui.data_mut(|d| d.get_temp(search_id));
+                let first_frame = query.is_none();
+                let q = query.get_or_insert_with(String::new);
+                let r = ui.add(
+                    egui::TextEdit::singleline(q)
+                        .hint_text("Schrift suchen …")
+                        .desired_width(f32::INFINITY),
+                );
+                if first_frame {
+                    r.request_focus();
                 }
-                if ui
-                    .selectable_label(current.font == FontRef::Noto, "Noto Sans (eingebaut)")
-                    .clicked()
-                {
-                    change = Some(Arc::new(|s| s.font = FontRef::Noto));
-                }
+                let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 ui.separator();
-                for fam in pdftool_core::system_fonts::families() {
-                    let sel = current.font == FontRef::Family(fam.to_string());
-                    if ui.selectable_label(sel, fam).clicked() {
-                        change = Some(Arc::new(move |s| s.font = FontRef::Family(fam.to_string())));
+
+                // Alle Einträge: (Schrift, Anzeigename). Originale zuerst, dann Noto, dann System.
+                let mut entries: Vec<(FontRef, String)> = choices
+                    .originals
+                    .iter()
+                    .map(|(f, _)| (f.clone(), font_label(f, choices)))
+                    .collect();
+                entries.push((FontRef::Noto, font_label(&FontRef::Noto, choices)));
+                let originals = entries.len();
+                entries.extend(
+                    pdftool_core::system_fonts::families()
+                        .iter()
+                        .map(|fam| (FontRef::Family(fam.to_string()), fam.to_string())),
+                );
+                let mut hits = 0;
+                for (i, (f, label)) in entries.into_iter().enumerate() {
+                    if !font_matches(&label, q) {
+                        continue;
                     }
+                    if i == originals && hits > 0 {
+                        ui.separator();
+                    }
+                    let clicked = ui.selectable_label(current.font == f, &label).clicked();
+                    // Enter im Suchfeld übernimmt den ersten Treffer.
+                    if clicked || (enter && hits == 0) {
+                        change = Some(Arc::new(move |s| s.font = f.clone()));
+                        ui.close();
+                    }
+                    hits += 1;
                 }
+                if hits == 0 {
+                    ui.weak("Keine Schrift gefunden");
+                }
+                ui.data_mut(|d| d.insert_temp(search_id, query.unwrap_or_default()));
             });
+        // Liste zu: Suchtext vergessen, damit sie beim nächsten Öffnen leer startet.
+        if shown.inner.is_none() {
+            ui.data_mut(|d| d.remove::<String>(search_id));
+        }
         // ----- Größe -----
         let mut size = current.size;
         let r = ui.add(
@@ -432,6 +474,14 @@ mod tests {
             bold,
             ..TextStyle::noto(12.0, Color::BLACK)
         }
+    }
+
+    #[test]
+    fn font_search() {
+        assert!(font_matches("Liberation Serif", ""));
+        assert!(font_matches("Liberation Serif", "lib ser"));
+        assert!(font_matches("DejaVu Sans", "SANS"));
+        assert!(!font_matches("DejaVu Sans", "serif"));
     }
 
     #[test]
