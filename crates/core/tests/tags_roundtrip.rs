@@ -1,7 +1,7 @@
 //! Tagged PDF: Strukturbaum lesen, Titel/Sprache/Alternativtext ändern → speichern → neu laden.
 
-use foliocraft_core::Document;
-use foliocraft_core::tags::{DocProperties, SetAltText, SetProperties};
+use pdftool_core::Document;
+use pdftool_core::tags::{DocProperties, SetAltText, SetProperties};
 
 fn fixture(name: &str) -> Document {
     Document::open(format!(

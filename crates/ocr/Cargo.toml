@@ -1,5 +1,5 @@
 [package]
-name = "foliocraft-ocr"
+name = "pdftool-ocr"
 description = "Texterkennung (OCR) mit Tesseract – ohne UI und ohne PDFium"
 version.workspace = true
 edition.workspace = true
@@ -16,5 +16,5 @@ tesseract-rs.workspace = true
 workspace = true
 
 [dev-dependencies]
-foliocraft-core.workspace = true
+pdftool-core.workspace = true
 lopdf.workspace = true

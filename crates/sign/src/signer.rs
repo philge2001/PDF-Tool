@@ -207,7 +207,7 @@ impl Signer {
         let entry = p12_keystore::PrivateKeyChain::new(self.key.to_pkcs8()?, local_id, certs);
         let mut store = p12_keystore::KeyStore::new();
         store.add_entry(
-            "foliocraft",
+            "pdftool",
             p12_keystore::KeyStoreEntry::PrivateKeyChain(entry),
         );
         store.writer(password).write().map_err(other)

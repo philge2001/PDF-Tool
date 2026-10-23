@@ -1,7 +1,7 @@
 //! Echte Erkennung: das Bild der "gescannten" Fixture-Seite (von gen_fixtures gezeichnet).
 
-use foliocraft_core::raster::Raster;
-use foliocraft_ocr::{Engine, Image};
+use pdftool_core::raster::Raster;
+use pdftool_ocr::{Engine, Image};
 
 #[test]
 fn recognizes_scanned_letter() {

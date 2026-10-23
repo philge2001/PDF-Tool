@@ -3,7 +3,7 @@
 use crate::annot_draw;
 use crate::file_ops::PendingAction;
 use crate::search::SearchState;
-use crate::settings::{STORAGE_KEY, Settings};
+use crate::settings::{LEGACY_STORAGE_KEY, STORAGE_KEY, Settings};
 use crate::text_cache::TextCache;
 use crate::tools::create::Gesture;
 use crate::tools::editor::TextEditor;
@@ -15,8 +15,8 @@ use crate::viewer::Viewer;
 use crate::viewer::thumbnails::ThumbAction;
 use crate::viewer::thumbnails::Thumbnails;
 use eframe::egui;
-use foliocraft_core::{AnnotId, Document};
-use foliocraft_render::{Event, HiddenAnnots, RenderService};
+use pdftool_core::{AnnotId, Document};
+use pdftool_render::{Event, HiddenAnnots, RenderService};
 use std::path::{Path, PathBuf};
 
 /// Ein geöffnetes Dokument samt Ansicht.
@@ -26,7 +26,7 @@ pub struct OpenDocument {
     pub thumbs: Thumbnails,
     pub texts: TextCache,
     /// Letzter bekannter Stand der Seitenstruktur (siehe `sync_structure`).
-    pub structure: Vec<(foliocraft_core::PageId, u16, u64)>,
+    pub structure: Vec<(pdftool_core::PageId, u16, u64)>,
     pub search: SearchState,
     pub selection: Option<TextSelection>,
     /// Laufender Mauszug eines Zeichenwerkzeugs.
@@ -55,7 +55,7 @@ pub struct OpenDocument {
     pub tags: crate::tags_ui::TagState,
 }
 
-pub struct FolioApp {
+pub struct PdfToolApp {
     /// `Err` enthält die Fehlermeldung, wenn PDFium nicht geladen werden konnte.
     pub(crate) render: Result<RenderService, String>,
     pub(crate) document: Option<OpenDocument>,
@@ -83,7 +83,7 @@ pub struct FolioApp {
     pub(crate) info: Option<String>,
     /// Vertrauenswürdige Zertifikate (aus den Einstellungen) und ein Zähler, der bei jeder
     /// Änderung hochzählt – daran erkennen Dokumente, dass sie neu prüfen müssen.
-    pub(crate) trust: foliocraft_sign::TrustStore,
+    pub(crate) trust: pdftool_sign::TrustStore,
     pub(crate) trust_version: u64,
     pub(crate) show_signatures: bool,
     /// Panel "Tags" (Barrierefreiheit) statt der Kommentare.
@@ -105,7 +105,7 @@ pub struct FolioApp {
     /// Dokumentvergleich: Ergebnis des laufenden Jobs, offenes Vergleichsfenster.
     pub(crate) pending_compare: Option<(
         crate::compare::CompareSlot,
-        foliocraft_render::OffscreenRenderer,
+        pdftool_render::OffscreenRenderer,
     )>,
     pub(crate) compare: Option<crate::compare::CompareView>,
     /// Dialog "Texterkennung" und Ergebnis des laufenden OCR-Jobs.
@@ -128,7 +128,7 @@ fn install_fonts(ctx: &egui::Context) {
         NOTO_FAMILY.to_owned(),
         // `from_static`: die Bytes leben das ganze Programm (`&'static [u8]`), kein Kopieren.
         std::sync::Arc::new(egui::FontData::from_static(
-            foliocraft_core::embedded_font::NOTO_SANS,
+            pdftool_core::embedded_font::NOTO_SANS,
         )),
     );
     fonts.families.insert(
@@ -145,7 +145,7 @@ fn install_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-impl FolioApp {
+impl PdfToolApp {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
         initial_file: Option<PathBuf>,
@@ -165,7 +165,10 @@ impl FolioApp {
         // Gespeicherte Einstellungen laden (beim ersten Start: Standardwerte).
         let mut settings: Settings = cc
             .storage
-            .and_then(|s| eframe::get_value(s, STORAGE_KEY))
+            .and_then(|s| {
+                eframe::get_value(s, STORAGE_KEY)
+                    .or_else(|| eframe::get_value(s, LEGACY_STORAGE_KEY))
+            })
             .unwrap_or_default();
         settings.prune_missing();
         cc.egui_ctx.set_theme(settings.theme);
@@ -533,7 +536,7 @@ impl OpenDocument {
     }
 }
 
-impl FolioApp {
+impl PdfToolApp {
     /// Hauptansicht: Seiten zeichnen, Werkzeug-Interaktion, Overlays.
     fn document_view(&mut self, ui: &mut egui::Ui) {
         // Vor dem Ausleihen von `self.document` abfragen (beides sind Teile von `self`).
@@ -637,7 +640,7 @@ impl FolioApp {
     }
 }
 
-impl eframe::App for FolioApp {
+impl eframe::App for PdfToolApp {
     /// Wird von eframe regelmäßig und beim Beenden aufgerufen.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         self.settings.show_thumbnails = self.show_thumbnails;

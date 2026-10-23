@@ -1,7 +1,7 @@
 //! Verwaltet die GPU-Texturen gerenderter Seiten/Kacheln.
 
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
-use foliocraft_render::{ByteLru, RenderKey, RgbaImage};
+use pdftool_render::{ByteLru, RenderKey, RgbaImage};
 use std::collections::HashSet;
 
 /// Wie viel Texturspeicher wir maximal belegen (in Bytes).

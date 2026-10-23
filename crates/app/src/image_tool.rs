@@ -7,8 +7,8 @@
 use crate::app::OpenDocument;
 use crate::viewer::{ViewOutput, transform};
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, StrokeKind, vec2};
-use foliocraft_core::content::Matrix;
-use foliocraft_core::{NewImage, PageImage, Point};
+use pdftool_core::content::Matrix;
+use pdftool_core::{NewImage, PageImage, Point};
 
 /// Seitenlänge des Anfassers (Bildschirmpunkte).
 const HANDLE: f32 = 9.0;
@@ -29,7 +29,7 @@ fn screen_rect(
     d: &OpenDocument,
     view: &ViewOutput,
     page: usize,
-    r: foliocraft_core::Rect,
+    r: pdftool_core::Rect,
 ) -> Option<Rect> {
     let (_, page_rect) = view.pages.iter().find(|(p, _)| *p == page)?;
     let info = d.doc.page(page).ok()?;
@@ -37,8 +37,8 @@ fn screen_rect(
 }
 
 /// Umfassendes Rechteck des Einheitsquadrats unter einer Matrix.
-fn bounds_of(m: &Matrix) -> foliocraft_core::Rect {
-    m.apply_rect(foliocraft_core::Rect::new(0.0, 0.0, 1.0, 1.0))
+fn bounds_of(m: &Matrix) -> pdftool_core::Rect {
+    m.apply_rect(pdftool_core::Rect::new(0.0, 0.0, 1.0, 1.0))
 }
 
 impl OpenDocument {
@@ -190,7 +190,7 @@ impl OpenDocument {
     fn after_image_change(
         &mut self,
         page: usize,
-        result: foliocraft_core::Result<()>,
+        result: pdftool_core::Result<()>,
         near: Option<Point>,
     ) {
         self.content_edit.selected_image = None;

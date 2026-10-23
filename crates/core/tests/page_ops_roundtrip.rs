@@ -1,6 +1,6 @@
 //! Seitenoperationen: ausführen -> speichern -> neu laden -> vergleichen.
 
-use foliocraft_core::{
+use pdftool_core::{
     AddAnnotation, AnnotKind, Annotation, Color, DeletePages, Document, Point, ReorderPages,
     RotatePages,
 };
@@ -142,7 +142,7 @@ fn annotations_follow_moved_pages() {
 #[test]
 fn undo_after_save_restores_page_order() {
     let path = std::env::temp_dir().join(format!(
-        "foliocraft-pages-{}.pdf",
+        "pdftool-pages-{}.pdf",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

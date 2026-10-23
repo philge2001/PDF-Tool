@@ -358,7 +358,7 @@ impl Document {
         self.history.is_dirty()
     }
 
-    /// Positionen im /Annots-Array einer Seite, die FolioCraft selbst verwaltet (und
+    /// Positionen im /Annots-Array einer Seite, die PDF Tool selbst verwaltet (und
     /// daher als Overlay zeichnet): Annotationen und Widgets ausfüllbarer Formularfelder.
     /// Der Renderer blendet genau diese aus.
     pub fn managed_annot_indices(&self, page: usize) -> Vec<usize> {
@@ -546,7 +546,7 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
         source,
     };
     let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".foliocraft-tmp");
+    tmp.push(".pdftool-tmp");
     let tmp = PathBuf::from(tmp);
     std::fs::write(&tmp, bytes).map_err(io_err)?;
     std::fs::rename(&tmp, path).map_err(|e| {

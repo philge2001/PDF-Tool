@@ -1,6 +1,6 @@
 //! Zeigt die Zeichen-Rechtecke, die PDFium für Seite 1 liefert (Fehlersuche).
-//! `FOLIOCRAFT_PDFIUM_PATH=… cargo run -p foliocraft-render --example text_boxes -- datei.pdf [Text]`
-use foliocraft_render::{Event, RenderService};
+//! `PDFTOOL_PDFIUM_PATH=… cargo run -p pdftool-render --example text_boxes -- datei.pdf [Text]`
+use pdftool_render::{Event, RenderService};
 use std::sync::Arc;
 
 fn main() {

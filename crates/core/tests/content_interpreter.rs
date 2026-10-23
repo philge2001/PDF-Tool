@@ -1,7 +1,7 @@
 //! Content-Interpreter gegen die Fixture `content_mix.pdf`.
 
-use foliocraft_core::content::{Item, TextShow, interpret_form, interpret_page, page_resources};
-use foliocraft_core::font;
+use pdftool_core::content::{Item, TextShow, interpret_form, interpret_page, page_resources};
+use pdftool_core::font;
 use std::path::{Path, PathBuf};
 
 fn fixture(name: &str) -> PathBuf {
@@ -107,16 +107,12 @@ fn rotated_text_and_line_operators() {
     let t = texts(&page.items);
     // 45°: das erste Zeichen beginnt bei (300, 600); spätere liegen rechts OBEN davon.
     let rot = &t[3].glyphs;
-    assert!(
-        rot[0]
-            .rect
-            .contains(foliocraft_core::Point::new(300.5, 600.5))
-    );
+    assert!(rot[0].rect.contains(pdftool_core::Point::new(300.5, 600.5)));
     // Ursprung des letzten Zeichens: Breite von "Gedreht 4" entlang der 45°-Richtung.
     // 0.7071 steht so in der Fixture (Tm) – bewusst nicht die exakte Konstante 1/√2.
     #[allow(clippy::approx_constant)]
     let d = font::text_width("Gedreht 4", 14.0) * 0.7071;
-    let origin = foliocraft_core::Point::new(300.0 + d + 0.5, 600.0 + d + 0.5);
+    let origin = pdftool_core::Point::new(300.0 + d + 0.5, 600.0 + d + 0.5);
     let last = rot.last().unwrap().rect;
     assert!(last.contains(origin), "{last:?} {origin:?}");
 
@@ -145,7 +141,7 @@ fn paths_images_and_forms() {
             _ => {}
         }
     }
-    let rect = |r: foliocraft_core::Rect| (r.x0, r.y0, r.x1, r.y1);
+    let rect = |r: pdftool_core::Rect| (r.x0, r.y0, r.x1, r.y1);
     assert_eq!(paths.len(), 2);
     assert_eq!(rect(paths[0].0), (72.0, 500.0, 172.0, 550.0));
     assert_eq!(rect(paths[1].0), (200.0, 500.0, 300.0, 550.0));

@@ -1,6 +1,6 @@
 //! Obere Werkzeugleiste: Werkzeuge, Rückgängig/Wiederholen, Seitennavigation, Zoom.
 
-use crate::app::FolioApp;
+use crate::app::PdfToolApp;
 use crate::tools::Tool;
 use crate::viewer::{ZOOM_STEPS, ZoomMode};
 use eframe::egui;
@@ -15,7 +15,7 @@ fn pick_image() -> Option<Vec<u8>> {
         .ok()
 }
 
-impl FolioApp {
+impl PdfToolApp {
     pub(crate) fn toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             for tool in Tool::NAVIGATION {
@@ -207,7 +207,7 @@ impl FolioApp {
                         .on_hover_text("Textfarbe")
                         .changed()
                     {
-                        s.set_color(Tool::AddText, foliocraft_core::Color::from_rgb8(rgb));
+                        s.set_color(Tool::AddText, pdftool_core::Color::from_rgb8(rgb));
                     }
                     ui.add(
                         egui::DragValue::new(&mut s.font_size)
@@ -316,7 +316,7 @@ impl FolioApp {
                     .on_hover_text("Farbe der Auswahl")
                     .changed()
                 {
-                    d.set_selected_color(foliocraft_core::Color::from_rgb8(rgb));
+                    d.set_selected_color(pdftool_core::Color::from_rgb8(rgb));
                 }
                 if ui.button("Löschen").on_hover_text("Entf").clicked() {
                     d.delete_selected();
@@ -336,7 +336,7 @@ impl FolioApp {
                 .on_hover_text("Farbe")
                 .changed()
             {
-                s.set_color(self.tool, foliocraft_core::Color::from_rgb8(rgb));
+                s.set_color(self.tool, pdftool_core::Color::from_rgb8(rgb));
             }
             if self.tool.uses_stroke_width() {
                 ui.label("Linie");

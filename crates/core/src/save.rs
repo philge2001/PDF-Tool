@@ -15,7 +15,7 @@ pub(crate) struct SaveOutput {
     pub bytes: Vec<u8>,
     /// Neu geschriebene Annotationen: (ID, Objektnummer, /NM, /M).
     pub written: Vec<(AnnotId, ObjectId, String, String)>,
-    /// Pro Seitenindex: Positionen in /Annots, die FolioCraft selbst zeichnet
+    /// Pro Seitenindex: Positionen in /Annots, die PDF Tool selbst zeichnet
     /// (der Renderer blendet genau diese aus).
     pub hidden: HashMap<u32, Vec<usize>>,
     /// Neu angelegte Formularobjekte: (Feld, Objektnummer des Felds, Nummern der Widgets).
@@ -169,7 +169,7 @@ fn unique_name(id: AnnotId) -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    format!("foliocraft-{nanos:x}-{}", id.0)
+    format!("pdftool-{nanos:x}-{}", id.0)
 }
 
 pub(crate) fn incremental(doc: &Document) -> Result<SaveOutput> {

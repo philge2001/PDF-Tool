@@ -1,9 +1,9 @@
-# FolioCraft
+# PDF Tool
 
 Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
-„FolioCraft“ ist ein Arbeitstitel. Lizenz: MIT OR Apache-2.0.
+Lizenz: MIT OR Apache-2.0. Sicherheitslücken bitte vertraulich melden, siehe [SECURITY.md](SECURITY.md).
 
-**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare), Phase 4 (Signaturen), Phase 5 (Schwärzen & Bereinigen), Phase 6 (Text und Bilder bearbeiten) Phase 7 (Texterkennung) und Phase 8 (Export, Vergleich, Komprimierung, PDF/A) abgeschlossen.
+**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare), Phase 4 (Signaturen), Phase 5 (Schwärzen & Bereinigen), Phase 6 (Text und Bilder bearbeiten), Phase 7 (Texterkennung), Phase 8 (Export, Vergleich, Komprimierung, PDF/A) und Phase 9 (Sicherheit & Barrierefreiheit) abgeschlossen.
 
 ## Funktionen (Phase 1)
 
@@ -82,7 +82,7 @@ Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 - „Datei → Exportieren…“: Seiten als PNG oder JPEG (Auflösung, Qualität), Text als TXT, einfaches Word (DOCX)
   mit Absätzen und Bildern
 - „Datei → Vergleichen mit…“: Textunterschiede zu einer anderen PDF – Liste und beide Seiten nebeneinander
-  (gelöscht rot, eingefügt grün); auch per `foliocraft alt.pdf --vergleichen neu.pdf`
+  (gelöscht rot, eingefügt grün); auch per `pdftool alt.pdf --vergleichen neu.pdf`
 - „Datei → Komprimieren…“: Bilder auf eine Ziel-Auflösung verkleinern (JPEG), alte Fassungen und unbenutzte
   Objekte entfernen, Objekt-Streams – mit Größe vorher/nachher
 - „Datei → Nach PDF/A umwandeln“: PDF/A-2b für die Archivierung (Schriften einbetten, Farbprofil, Metadaten,
@@ -143,11 +143,11 @@ Leptonica (~50 MB) herunter und baut sie mit CMake (einmalig 5–15 Minuten). Da
 - Windows: `winget install Kitware.CMake` (die C++-Build-Tools von Visual Studio braucht Rust ohnehin),
   danach ein neues Terminal öffnen.
 - macOS: `brew install cmake` · Linux: `sudo apt install cmake g++`
-- Ohne Texterkennung bauen: `cargo build -p foliocraft-app --no-default-features`
+- Ohne Texterkennung bauen: `cargo build -p pdftool-app --no-default-features`
 
 ```bash
 cargo build --release
-cargo run -p foliocraft-app -- pfad/zur/datei.pdf   # startet die App, optional mit Datei
+cargo run -p pdftool-app -- pfad/zur/datei.pdf   # startet die App, optional mit Datei
 cargo test --workspace                              # Tests (brauchen KEIN PDFium)
 cargo clippy --workspace --all-targets -- -D warnings
 ```
@@ -157,7 +157,7 @@ Linux braucht zusätzlich die üblichen Fenster-Bibliotheken, z. B. unter Debian
 
 ## PDFium beschaffen
 
-FolioCraft rendert PDFs mit [PDFium](https://pdfium.googlesource.com/pdfium/) (Apache-2.0),
+PDF Tool rendert PDFs mit [PDFium](https://pdfium.googlesource.com/pdfium/) (Apache-2.0),
 das **zur Laufzeit dynamisch geladen** wird. Fertige Binaries gibt es bei
 [bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries/releases) (Apache-2.0/BSD).
 
@@ -176,8 +176,8 @@ Beispiel Linux/macOS:
 mkdir -p pdfium && cd pdfium
 curl -L -o pdfium.tgz https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz
 tar xzf pdfium.tgz && cd ..
-export FOLIOCRAFT_PDFIUM_PATH="$PWD/pdfium/lib"   # Ordner ODER direkter Dateipfad
-cargo run -p foliocraft-app
+export PDFTOOL_PDFIUM_PATH="$PWD/pdfium/lib"   # Ordner ODER direkter Dateipfad
+cargo run -p pdftool-app
 ```
 
 Windows (PowerShell):
@@ -186,13 +186,13 @@ Windows (PowerShell):
 mkdir pdfium; cd pdfium
 curl.exe -L -o pdfium.tgz https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-win-x64.tgz
 tar xzf pdfium.tgz; cd ..
-$env:FOLIOCRAFT_PDFIUM_PATH = "$PWD\pdfium\bin"
-cargo run -p foliocraft-app
+$env:PDFTOOL_PDFIUM_PATH = "$PWD\pdfium\bin"
+cargo run -p pdftool-app
 ```
 
 Die App sucht PDFium in dieser Reihenfolge:
-1. Umgebungsvariable `FOLIOCRAFT_PDFIUM_PATH` (Ordner oder Datei)
-2. Ordner der ausführbaren Datei (für Auslieferung: Bibliothek neben `foliocraft[.exe]` legen)
+1. Umgebungsvariable `PDFTOOL_PDFIUM_PATH` (Ordner oder Datei)
+2. Ordner der ausführbaren Datei (für Auslieferung: Bibliothek neben `pdftool[.exe]` legen)
 3. Unterordner `pdfium/lib` bzw. `pdfium/bin` im aktuellen Arbeitsverzeichnis
 4. Systembibliothek (z. B. `/usr/lib`)
 
@@ -203,22 +203,22 @@ Fehlt PDFium, zeigt die App einen Hinweis statt abzustürzen.
 Alle Dateien in `tests/fixtures/` sind selbst erzeugt:
 
 ```bash
-cargo run -p foliocraft-core --example gen_fixtures                    # Fixtures neu erzeugen
-cargo run -p foliocraft-core --example gen_fixtures -- big 500 big.pdf # 500-Seiten-PDF für Performance-Tests
-cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf     # jeden Annotationstyp schreiben (Gegenprobe in anderen Readern)
-cargo run -p foliocraft-core --example redact_demo -- in.pdf out.pdf 1:x0,y0,x1,y1                # Bereich schwärzen
-cargo run -p foliocraft-core --example sanitize_demo -- in.pdf [out.pdf]                           # versteckte Inhalte zeigen/entfernen
-cargo run -p foliocraft-sign --example sign_check -- datei.pdf [vertraut.pem]                     # Signaturen prüfen
-cargo run -p foliocraft-sign --example sign_demo -- in.pdf out.pdf [id.p12 passwort]              # signieren (ohne ID: Testzertifikat)
-cargo run -p foliocraft-core --example form_fill -- tests/fixtures/form.pdf                        # Formularfelder auflisten
-cargo run -p foliocraft-core --example form_fill -- in.pdf out.pdf "person.name=Erika" agb=an     # Formular füllen
-cargo run -p foliocraft-core --example text_edit_demo -- in.pdf                                   # Textblöcke von Seite 1
-cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "Lorem=Neuer Text" "+72,500=Hallo"  # bearbeiten/hinzufügen
-cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "!bild.png@300,400,120" "#0=foto.jpg" "-#1"  # Bilder
-cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "¶Lorem|72,720,260,j=Neuer Absatz …"      # Absatz neu setzen
-cargo run -p foliocraft-core --example security_demo -- schützen in.pdf out.pdf benutzer besitzer [nur-lesen]  # verschlüsseln
-cargo run -p foliocraft-core --example security_demo -- öffnen datei.pdf [passwort]                # Schutz anzeigen
-cargo run -p foliocraft-core --example autotag_demo -- in.pdf [out.pdf] [de-DE] [Titel]          # prüfen / automatisch taggen
+cargo run -p pdftool-core --example gen_fixtures                    # Fixtures neu erzeugen
+cargo run -p pdftool-core --example gen_fixtures -- big 500 big.pdf # 500-Seiten-PDF für Performance-Tests
+cargo run -p pdftool-core --example annot_demo -- in.pdf out.pdf     # jeden Annotationstyp schreiben (Gegenprobe in anderen Readern)
+cargo run -p pdftool-core --example redact_demo -- in.pdf out.pdf 1:x0,y0,x1,y1                # Bereich schwärzen
+cargo run -p pdftool-core --example sanitize_demo -- in.pdf [out.pdf]                           # versteckte Inhalte zeigen/entfernen
+cargo run -p pdftool-sign --example sign_check -- datei.pdf [vertraut.pem]                     # Signaturen prüfen
+cargo run -p pdftool-sign --example sign_demo -- in.pdf out.pdf [id.p12 passwort]              # signieren (ohne ID: Testzertifikat)
+cargo run -p pdftool-core --example form_fill -- tests/fixtures/form.pdf                        # Formularfelder auflisten
+cargo run -p pdftool-core --example form_fill -- in.pdf out.pdf "person.name=Erika" agb=an     # Formular füllen
+cargo run -p pdftool-core --example text_edit_demo -- in.pdf                                   # Textblöcke von Seite 1
+cargo run -p pdftool-core --example text_edit_demo -- in.pdf out.pdf "Lorem=Neuer Text" "+72,500=Hallo"  # bearbeiten/hinzufügen
+cargo run -p pdftool-core --example text_edit_demo -- in.pdf out.pdf "!bild.png@300,400,120" "#0=foto.jpg" "-#1"  # Bilder
+cargo run -p pdftool-core --example text_edit_demo -- in.pdf out.pdf "¶Lorem|72,720,260,j=Neuer Absatz …"      # Absatz neu setzen
+cargo run -p pdftool-core --example security_demo -- schützen in.pdf out.pdf benutzer besitzer [nur-lesen]  # verschlüsseln
+cargo run -p pdftool-core --example security_demo -- öffnen datei.pdf [passwort]                # Schutz anzeigen
+cargo run -p pdftool-core --example autotag_demo -- in.pdf [out.pdf] [de-DE] [Titel]          # prüfen / automatisch taggen
 ```
 
 ## Projektstruktur

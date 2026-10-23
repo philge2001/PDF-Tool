@@ -4,7 +4,7 @@ use crate::annot_draw::color32;
 use crate::app::OpenDocument;
 use crate::viewer::transform;
 use eframe::egui::{self, RichText, Sense, Stroke, StrokeKind, vec2};
-use foliocraft_core::{AnnotId, Annotation, Color};
+use pdftool_core::{AnnotId, Annotation, Color};
 
 /// "D:20261022103045Z" -> "22.10.2026 10:30" (Zeitzone wird nicht umgerechnet).
 pub fn format_pdf_date(d: &str) -> String {

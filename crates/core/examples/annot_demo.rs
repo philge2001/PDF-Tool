@@ -1,8 +1,8 @@
 //! Schreibt eine Annotation jedes Typs in eine Kopie einer PDF – zum Prüfen in anderen Readern.
 //!
-//!   cargo run -p foliocraft-core --example annot_demo -- eingabe.pdf ausgabe.pdf
+//!   cargo run -p pdftool-core --example annot_demo -- eingabe.pdf ausgabe.pdf
 
-use foliocraft_core::{AddAnnotation, AnnotKind, Annotation, Color, Document, Point, Quad, Rect};
+use pdftool_core::{AddAnnotation, AnnotKind, Annotation, Color, Document, Point, Quad, Rect};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let add = |doc: &mut Document, kind: AnnotKind, color: Color, text: &str| {
         let mut a = Annotation::new(0, kind, color);
         a.id = doc.allocate_annotation_id();
-        a.author = "FolioCraft-Demo".into();
+        a.author = "PDF-Tool-Demo".into();
         a.contents = text.into();
         doc.execute(Box::new(AddAnnotation::new(a)))
             .expect("hinzufügen");

@@ -88,7 +88,7 @@ pub fn extract_pages(source: &lopdf::Document, pages: &[usize]) -> Result<Vec<u8
     doc.max_id = copier.next_id - 1;
     doc.trailer.set("Root", catalog_id);
     let info = doc.add_object(dictionary! {
-        "Producer" => Object::string_literal("FolioCraft"),
+        "Producer" => Object::string_literal("PDF Tool"),
         "CreationDate" => Object::string_literal(crate::date::pdf_date_now()),
     });
     doc.trailer.set("Info", info);

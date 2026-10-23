@@ -5,14 +5,18 @@ use pdfium_render::prelude::*;
 use std::path::{Path, PathBuf};
 
 /// Name der Umgebungsvariable, mit der man den Pfad überschreiben kann.
-pub const PDFIUM_ENV: &str = "FOLIOCRAFT_PDFIUM_PATH";
+pub const PDFIUM_ENV: &str = "PDFTOOL_PDFIUM_PATH";
+/// Früherer Name der Variable (wird weiterhin gelesen).
+const LEGACY_PDFIUM_ENV: &str = "FOLIOCRAFT_PDFIUM_PATH";
 
 /// Kandidaten in der Reihenfolge aus der README. Ein Eintrag kann ein Ordner
 /// oder direkt die Bibliotheksdatei sein.
 pub fn candidate_paths() -> Vec<PathBuf> {
     let mut out = Vec::new();
-    if let Some(p) = std::env::var_os(PDFIUM_ENV) {
-        out.push(PathBuf::from(p));
+    for var in [PDFIUM_ENV, LEGACY_PDFIUM_ENV] {
+        if let Some(p) = std::env::var_os(var) {
+            out.push(PathBuf::from(p));
+        }
     }
     if let Some(dir) = std::env::current_exe()
         .ok()

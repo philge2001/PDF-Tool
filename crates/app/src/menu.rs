@@ -1,12 +1,12 @@
 //! Menüleiste: Datei, Bearbeiten, Ansicht.
 
-use crate::app::FolioApp;
+use crate::app::PdfToolApp;
 use crate::pages::PageAction;
 use crate::tools::Tool;
 use crate::viewer::ZoomMode;
 use eframe::egui::{self, Button, ThemePreference};
 
-impl FolioApp {
+impl PdfToolApp {
     pub(crate) fn menu_bar(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         egui::MenuBar::new().ui(ui, |ui| {

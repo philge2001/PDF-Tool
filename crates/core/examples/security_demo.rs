@@ -1,9 +1,9 @@
 //! Passwortschutz zur Gegenprobe (qpdf, pdfinfo -upw …).
 //!
-//! `cargo run -p foliocraft-core --example security_demo -- schützen in.pdf out.pdf benutzer besitzer [nur-lesen]`
-//! `cargo run -p foliocraft-core --example security_demo -- öffnen datei.pdf [passwort]`
-use foliocraft_core::Document;
-use foliocraft_core::security::{Permissions, Protection};
+//! `cargo run -p pdftool-core --example security_demo -- schützen in.pdf out.pdf benutzer besitzer [nur-lesen]`
+//! `cargo run -p pdftool-core --example security_demo -- öffnen datei.pdf [passwort]`
+use pdftool_core::Document;
+use pdftool_core::security::{Permissions, Protection};
 
 fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();

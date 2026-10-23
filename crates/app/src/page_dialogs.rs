@@ -1,8 +1,8 @@
 //! Dialoge für Seitenorganisation: Seiten aus Datei einfügen, Dateien zusammenführen.
 
-use crate::app::FolioApp;
+use crate::app::PdfToolApp;
 use eframe::egui;
-use foliocraft_core::{Document, parse_page_ranges};
+use pdftool_core::{Document, parse_page_ranges};
 use std::path::PathBuf;
 
 /// Wohin eingefügt wird.
@@ -44,7 +44,7 @@ fn file_name(p: &std::path::Path) -> String {
         .unwrap_or_default()
 }
 
-impl FolioApp {
+impl PdfToolApp {
     /// Datei wählen und den Einfüge-Dialog öffnen.
     pub(crate) fn start_insert_from_file(&mut self) {
         let Some(path) = rfd::FileDialog::new()
@@ -226,7 +226,7 @@ impl FolioApp {
 /// Erste Datei öffnen, alle weiteren hinten anfügen. Das Ergebnis hat keinen Dateipfad
 /// (Speichern fragt nach einem Namen) und lässt sich per Rückgängig wieder aufteilen.
 fn merge_files(files: &[PathBuf]) -> Result<Document, String> {
-    let err = |p: &PathBuf, e: foliocraft_core::CoreError| format!("„{}“: {e}", file_name(p));
+    let err = |p: &PathBuf, e: pdftool_core::CoreError| format!("„{}“: {e}", file_name(p));
     let (first, rest) = files.split_first().ok_or("Keine Dateien ausgewählt")?;
     let mut doc = Document::open(first).map_err(|e| err(first, e))?;
     doc.forget_path();
@@ -242,7 +242,7 @@ fn merge_files(files: &[PathBuf]) -> Result<Document, String> {
     Ok(doc)
 }
 
-impl FolioApp {
+impl PdfToolApp {
     pub(crate) fn open_merge_dialog(&mut self) {
         let mut dlg = MergeDialog::default();
         // Ist schon ein Dokument mit Dateipfad offen, steht es vorne in der Liste.
@@ -322,7 +322,7 @@ pub fn format_ranges(pages: &[usize]) -> String {
     parts.join(", ")
 }
 
-impl FolioApp {
+impl PdfToolApp {
     fn document_stem(&self) -> String {
         self.document
             .as_ref()
@@ -422,7 +422,7 @@ impl FolioApp {
             move |job| {
                 job.progress(0.1, "Seiten kopieren …");
                 let bytes =
-                    foliocraft_core::extract_pages(&snapshot, &pages).map_err(|e| e.to_string())?;
+                    pdftool_core::extract_pages(&snapshot, &pages).map_err(|e| e.to_string())?;
                 job.progress(0.8, "Datei schreiben …");
                 std::fs::write(&target, bytes)
                     .map_err(|e| format!("„{}“: {e}", target.display()))?;
@@ -481,7 +481,7 @@ impl FolioApp {
         }
 
         let groups = if dlg.by_ranges {
-            match foliocraft_core::split_by_ranges(&dlg.ranges, n) {
+            match pdftool_core::split_by_ranges(&dlg.ranges, n) {
                 Ok(g) => g,
                 Err(e) => {
                     dlg.error = Some(e.to_string());
@@ -489,7 +489,7 @@ impl FolioApp {
                 }
             }
         } else {
-            foliocraft_core::split_every(n, dlg.every)
+            pdftool_core::split_every(n, dlg.every)
         };
         let Some(folder) = rfd::FileDialog::new().pick_folder() else {
             return;
@@ -532,8 +532,8 @@ impl FolioApp {
                         i as f32 / total as f32,
                         format!("Datei {} von {total} …", i + 1),
                     );
-                    let bytes = foliocraft_core::extract_pages(&snapshot, pages)
-                        .map_err(|e| e.to_string())?;
+                    let bytes =
+                        pdftool_core::extract_pages(&snapshot, pages).map_err(|e| e.to_string())?;
                     std::fs::write(target, bytes)
                         .map_err(|e| format!("„{}“: {e}", target.display()))?;
                 }

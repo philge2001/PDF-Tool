@@ -342,7 +342,7 @@ pub(crate) fn write_metadata(pdf: &mut lopdf::Document, pdfa: bool, pdfua: bool)
     let keywords = text(&info, b"Keywords");
     let creator = text(&info, b"Creator");
     let created = text(&info, b"CreationDate").unwrap_or_else(|| now.clone());
-    let producer = "FolioCraft";
+    let producer = "PDF Tool";
     info.set("Producer", pdf_string::encode(producer));
     info.set("CreationDate", Object::string_literal(created.clone()));
     info.set("ModDate", Object::string_literal(now.clone()));

@@ -1,6 +1,6 @@
 //! Globale Tastenkürzel.
 
-use crate::app::FolioApp;
+use crate::app::PdfToolApp;
 use crate::tools::Tool;
 use crate::viewer::ZoomMode;
 use eframe::egui::{self, Key, Modifiers, vec2};
@@ -8,7 +8,7 @@ use eframe::egui::{self, Key, Modifiers, vec2};
 /// Wie weit Pfeiltasten scrollen (egui-Punkte).
 const ARROW_SCROLL: f32 = 50.0;
 
-impl FolioApp {
+impl PdfToolApp {
     pub(crate) fn handle_shortcuts(&mut self, ctx: &egui::Context) {
         // `consume_key` prüft UND entfernt das Ereignis, damit es kein anderes Widget bekommt.
         let cmd = |key| ctx.input_mut(|i| i.consume_key(Modifiers::COMMAND, key));

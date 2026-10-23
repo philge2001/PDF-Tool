@@ -1,6 +1,6 @@
 //! Bereinigen: finden -> entfernen -> nichts davon darf mehr in der Datei stehen.
 
-use foliocraft_core::sanitize::{SanitizeOptions, inspect, sanitize_pdf};
+use pdftool_core::sanitize::{SanitizeOptions, inspect, sanitize_pdf};
 use std::path::{Path, PathBuf};
 
 fn fixture(name: &str) -> PathBuf {
@@ -82,7 +82,7 @@ fn removes_everything_selected() {
     let f = inspect(&out).unwrap();
     assert_eq!(f, Default::default(), "nichts mehr zu finden");
     // Das Formularfeld selbst bleibt, nur ohne Wert.
-    let doc = foliocraft_core::Document::from_bytes(out).unwrap();
+    let doc = pdftool_core::Document::from_bytes(out).unwrap();
     assert!(doc.forms().by_name("kunde").is_some());
 }
 

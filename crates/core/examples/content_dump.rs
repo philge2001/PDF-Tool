@@ -1,15 +1,15 @@
 //! Gibt die vom Content-Interpreter gefundenen Objekte einer Seite aus (zur Gegenprobe).
 //!
-//! `cargo run -p foliocraft-core --example content_dump -- datei.pdf [Seite]`
+//! `cargo run -p pdftool-core --example content_dump -- datei.pdf [Seite]`
 
-use foliocraft_core::content::{Item, interpret_page};
+use pdftool_core::content::{Item, interpret_page};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let pdf = lopdf::Document::load(&args[0]).expect("PDF laden");
     let n: u32 = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(1);
     let page = pdf.get_pages()[&n];
-    let height = foliocraft_core::Document::open(&args[0])
+    let height = pdftool_core::Document::open(&args[0])
         .map(|d| d.pages()[n as usize - 1].crop_box.y1)
         .unwrap_or(842.0);
     for item in interpret_page(&pdf, page).expect("interpretieren").items {
@@ -17,8 +17,8 @@ fn main() {
             Item::Text(t) => {
                 // Wörter wie pdftotext -bbox: x links/rechts, y von oben gemessen.
                 let mut word = String::new();
-                let mut rect: Option<foliocraft_core::Rect> = None;
-                let flush = |w: &mut String, r: &mut Option<foliocraft_core::Rect>| {
+                let mut rect: Option<pdftool_core::Rect> = None;
+                let flush = |w: &mut String, r: &mut Option<pdftool_core::Rect>| {
                     if let Some(r) = r.take() {
                         println!(
                             "{:<22} x {:7.2}..{:7.2}  y {:7.2}..{:7.2}",

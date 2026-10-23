@@ -1,7 +1,7 @@
 //! PDF komprimieren – zur Gegenprobe (`pdfimages -list`, `pdftoppm`, `qpdf --check`).
 //!
-//! `cargo run -p foliocraft-core --example compress_demo -- in.pdf out.pdf [dpi] [qualität]`
-use foliocraft_core::compress::{CompressOptions, compress_pdf};
+//! `cargo run -p pdftool-core --example compress_demo -- in.pdf out.pdf [dpi] [qualität]`
+use pdftool_core::compress::{CompressOptions, compress_pdf};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

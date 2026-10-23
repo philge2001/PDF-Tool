@@ -1,14 +1,14 @@
 //! PDF signieren – zur Gegenprobe mit anderen Programmen.
 //!
-//! `cargo run -p foliocraft-sign --example sign_demo -- in.pdf out.pdf [id.p12 passwort]`
+//! `cargo run -p pdftool-sign --example sign_demo -- in.pdf out.pdf [id.p12 passwort]`
 //! Ohne .p12 wird ein Testzertifikat erzeugt und als `out.pdf.p12` (Passwort "test")
 //! sowie `out.pdf.cer` gespeichert.
 //! `--tsa-openssl tsa.cnf` holt einen Zeitstempel bei einem lokalen OpenSSL-Zeitstempeldienst
 //! (`openssl ts -reply`), `--tsa-http URL` per `curl` bei einem echten Dienst.
 
-use foliocraft_core::Rect;
-use foliocraft_core::signature_prep::{SigPlacement, SignatureSpec};
-use foliocraft_sign::{KeyKind, Signer, sign_pdf};
+use pdftool_core::Rect;
+use pdftool_core::signature_prep::{SigPlacement, SignatureSpec};
+use pdftool_sign::{KeyKind, Signer, sign_pdf};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -31,7 +31,7 @@ fn main() {
             } else {
                 KeyKind::P256
             };
-            let s = Signer::self_signed("FolioCraft Test", "FolioCraft", "", kind, 1)
+            let s = Signer::self_signed("PDF Tool Test", "PDF Tool", "", kind, 1)
                 .expect("Testzertifikat");
             std::fs::write(
                 format!("{}.p12", args[1]),
@@ -47,17 +47,17 @@ fn main() {
         placement: SigPlacement::New {
             page: 0,
             rect: Rect::new(320.0, 60.0, 540.0, 120.0),
-            name: "FolioCraftSignatur".into(),
+            name: "PdfToolSignatur".into(),
         },
         sub_filter: String::new(),
         name: String::new(),
         reason: "Gegenprobe".into(),
         location: "Container".into(),
         contact: String::new(),
-        date: foliocraft_core::date::pdf_date_now(),
+        date: pdftool_core::date::pdf_date_now(),
         appearance_lines: vec![
             format!("Digital signiert von {}", signer.info().name),
-            foliocraft_core::date::display_pdf_date(&foliocraft_core::date::pdf_date_now()),
+            pdftool_core::date::display_pdf_date(&pdftool_core::date::pdf_date_now()),
             "Grund: Gegenprobe".into(),
         ],
         contents_len: 0,
@@ -99,7 +99,7 @@ fn main() {
             })
         }
     });
-    let tsa: Option<foliocraft_sign::timestamp::TsaTransport> = match (&tsa_openssl, &tsa_http) {
+    let tsa: Option<pdftool_sign::timestamp::TsaTransport> = match (&tsa_openssl, &tsa_http) {
         (Some(f), _) => Some(f),
         (_, Some(f)) => Some(f),
         _ => None,
@@ -115,10 +115,7 @@ fn run_tsa(
     command: impl FnOnce(&std::path::Path, &std::path::Path) -> std::process::Command,
 ) -> Result<Vec<u8>, String> {
     let dir = std::env::temp_dir();
-    let (q, a) = (
-        dir.join("foliocraft-demo.tsq"),
-        dir.join("foliocraft-demo.tsr"),
-    );
+    let (q, a) = (dir.join("pdftool-demo.tsq"), dir.join("pdftool-demo.tsr"));
     std::fs::write(&q, req).map_err(|e| e.to_string())?;
     let status = command(&q, &a).status().map_err(|e| e.to_string())?;
     if !status.success() {

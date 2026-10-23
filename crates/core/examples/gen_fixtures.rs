@@ -1,8 +1,8 @@
 //! Erzeugt die Test-PDFs unter `tests/fixtures/`.
 //!
 //! Aufruf (im Workspace-Root):
-//!   cargo run -p foliocraft-core --example gen_fixtures
-//!   cargo run -p foliocraft-core --example gen_fixtures -- big 500 /tmp/big.pdf
+//!   cargo run -p pdftool-core --example gen_fixtures
+//!   cargo run -p pdftool-core --example gen_fixtures -- big 500 /tmp/big.pdf
 //!
 //! Die Dateien sind komplett selbst erzeugt (keine fremden Inhalte).
 
@@ -158,7 +158,7 @@ fn text_two_pages(path: &Path) {
         A4,
         0,
         &[
-            (72.0, 760.0, 24.0, "FolioCraft Testdokument"),
+            (72.0, 760.0, 24.0, "PDF Tool Testdokument"),
             (
                 72.0,
                 720.0,
@@ -816,7 +816,7 @@ impl TextRaster {
     /// Schreibt `text` ab (x, Grundlinie y) in Pixeln, Schriftgröße `size` in Pixeln.
     fn text(&mut self, x: f32, y: f32, size: f32, text: &str) {
         let face =
-            ttf_parser::Face::parse(foliocraft_core::embedded_font::NOTO_SANS, 0).expect("Schrift");
+            ttf_parser::Face::parse(pdftool_core::embedded_font::NOTO_SANS, 0).expect("Schrift");
         let scale = size / f32::from(face.units_per_em());
         let mut pen = x;
         for c in text.chars() {

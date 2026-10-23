@@ -1610,83 +1610,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
-name = "foliocraft-app"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "der",
- "eframe",
- "foliocraft-core",
- "foliocraft-ocr",
- "foliocraft-render",
- "foliocraft-sign",
- "rfd",
- "serde",
- "tracing",
- "tracing-subscriber",
- "ureq",
-]
-
-[[package]]
-name = "foliocraft-core"
-version = "0.1.0"
-dependencies = [
- "getrandom 0.4.3",
- "jpeg-encoder",
- "lopdf",
- "png",
- "similar",
- "subsetter",
- "thiserror 2.0.21",
- "tracing",
- "ttf-parser",
- "zip 9.0.5",
- "zune-jpeg",
-]
-
-[[package]]
-name = "foliocraft-ocr"
-version = "0.1.0"
-dependencies = [
- "foliocraft-core",
- "lopdf",
- "tesseract-rs",
- "thiserror 2.0.21",
- "tracing",
-]
-
-[[package]]
-name = "foliocraft-render"
-version = "0.1.0"
-dependencies = [
- "foliocraft-core",
- "pdfium-render",
- "thiserror 2.0.21",
- "tracing",
-]
-
-[[package]]
-name = "foliocraft-sign"
-version = "0.1.0"
-dependencies = [
- "cms",
- "der",
- "foliocraft-core",
- "lopdf",
- "p12-keystore",
- "p256",
- "p384",
- "rand_core 0.6.4",
- "rsa",
- "sha1",
- "sha2 0.10.9",
- "spki",
- "thiserror 2.0.21",
- "tracing",
- "x509-cert",
-]
-
-[[package]]
 name = "font-types"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3371,6 +3294,83 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+]
+
+[[package]]
+name = "pdftool-app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "der",
+ "eframe",
+ "pdftool-core",
+ "pdftool-ocr",
+ "pdftool-render",
+ "pdftool-sign",
+ "rfd",
+ "serde",
+ "tracing",
+ "tracing-subscriber",
+ "ureq",
+]
+
+[[package]]
+name = "pdftool-core"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.4.3",
+ "jpeg-encoder",
+ "lopdf",
+ "png",
+ "similar",
+ "subsetter",
+ "thiserror 2.0.21",
+ "tracing",
+ "ttf-parser",
+ "zip 9.0.5",
+ "zune-jpeg",
+]
+
+[[package]]
+name = "pdftool-ocr"
+version = "0.1.0"
+dependencies = [
+ "lopdf",
+ "pdftool-core",
+ "tesseract-rs",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
+name = "pdftool-render"
+version = "0.1.0"
+dependencies = [
+ "pdfium-render",
+ "pdftool-core",
+ "thiserror 2.0.21",
+ "tracing",
+]
+
+[[package]]
+name = "pdftool-sign"
+version = "0.1.0"
+dependencies = [
+ "cms",
+ "der",
+ "lopdf",
+ "p12-keystore",
+ "p256",
+ "p384",
+ "pdftool-core",
+ "rand_core 0.6.4",
+ "rsa",
+ "sha1",
+ "sha2 0.10.9",
+ "spki",
+ "thiserror 2.0.21",
+ "tracing",
+ "x509-cert",
 ]
 
 [[package]]

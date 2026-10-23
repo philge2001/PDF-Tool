@@ -1,9 +1,9 @@
 //! Bereiche schwärzen – zur Gegenprobe mit anderen Readern.
 //!
-//! `cargo run -p foliocraft-core --example redact_demo -- in.pdf out.pdf SEITE:x0,y0,x1,y1 …`
+//! `cargo run -p pdftool-core --example redact_demo -- in.pdf out.pdf SEITE:x0,y0,x1,y1 …`
 //! (Seite 1-basiert, Koordinaten in Punkt, Ursprung unten links)
 
-use foliocraft_core::{AddAnnotation, AnnotKind, Annotation, Color, Document, Quad, Rect};
+use pdftool_core::{AddAnnotation, AnnotKind, Annotation, Color, Document, Quad, Rect};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -26,7 +26,7 @@ fn main() {
             .expect("markieren");
     }
     let (bytes, areas) = doc.redaction_input().expect("vorbereiten");
-    let (out, report) = foliocraft_core::redact::redact_pdf(&bytes, &areas).expect("schwärzen");
+    let (out, report) = pdftool_core::redact::redact_pdf(&bytes, &areas).expect("schwärzen");
     std::fs::write(&args[1], out).expect("schreiben");
     println!("{}", report.summary());
 }

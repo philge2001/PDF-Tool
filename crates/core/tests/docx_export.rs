@@ -1,6 +1,6 @@
 //! Word-Export: Inhalt der DOCX-Datei prüfen (ZIP öffnen, XML lesen).
 
-use foliocraft_core::Document;
+use pdftool_core::Document;
 use std::io::Read;
 
 fn fixture(name: &str) -> Document {
@@ -23,7 +23,7 @@ fn unzip(bytes: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
 #[test]
 fn paragraphs_page_breaks_and_images() {
     let doc = fixture("text_two_pages.pdf");
-    let files = unzip(&foliocraft_core::docx::export_docx(&doc, &[0, 1], &|_, _| true).unwrap());
+    let files = unzip(&pdftool_core::docx::export_docx(&doc, &[0, 1], &|_, _| true).unwrap());
     let xml = String::from_utf8(files["word/document.xml"].clone()).unwrap();
     assert!(xml.contains("Grüße aus Köln"), "Umlaute als UTF-8");
     // Absatz aus vier Zeilen = ein w:p.
@@ -43,14 +43,14 @@ fn paragraphs_page_breaks_and_images() {
     }
 
     let doc = fixture("content_mix.pdf");
-    let files = unzip(&foliocraft_core::docx::export_docx(&doc, &[0], &|_, _| true).unwrap());
+    let files = unzip(&pdftool_core::docx::export_docx(&doc, &[0], &|_, _| true).unwrap());
     let png = &files["word/media/bild1.png"];
-    let img = foliocraft_core::NewImage::from_bytes(png).unwrap();
+    let img = pdftool_core::NewImage::from_bytes(png).unwrap();
     assert_eq!((img.width, img.height), (4, 4));
     let xml = String::from_utf8(files["word/document.xml"].clone()).unwrap();
     // 100 × 60 pt = 1 270 000 × 762 000 EMU.
     assert!(xml.contains(r#"cx="1270000" cy="762000""#));
 
     // Abbrechen.
-    assert!(foliocraft_core::docx::export_docx(&doc, &[0], &|_, _| false).is_err());
+    assert!(pdftool_core::docx::export_docx(&doc, &[0], &|_, _| false).is_err());
 }

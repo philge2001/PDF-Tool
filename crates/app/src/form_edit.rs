@@ -9,8 +9,8 @@ use crate::forms::FieldFocus;
 use crate::tools::Tool;
 use crate::viewer::{ViewOutput, transform};
 use eframe::egui::{self, Align2, Color32, FontId, Rect, Stroke, StrokeKind, vec2};
-use foliocraft_core::form::ChoiceOption;
-use foliocraft_core::{
+use pdftool_core::form::ChoiceOption;
+use pdftool_core::{
     AddField, FieldKind, FormField, Point, Rect as PdfRect, RemoveField, UpdateField,
 };
 
@@ -71,7 +71,7 @@ fn kind_for(tool: Tool) -> Option<(FieldKind, &'static str, (f32, f32))> {
 }
 
 impl OpenDocument {
-    fn widget(&self, f: FieldFocus) -> Option<(&FormField, &foliocraft_core::Widget)> {
+    fn widget(&self, f: FieldFocus) -> Option<(&FormField, &pdftool_core::Widget)> {
         let field = self.doc.forms().get(f.field)?;
         Some((field, field.widgets.get(f.widget)?))
     }

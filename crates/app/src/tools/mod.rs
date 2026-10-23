@@ -5,7 +5,7 @@ pub mod editor;
 pub mod select;
 pub mod text_select;
 
-use foliocraft_core::Color;
+use pdftool_core::Color;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

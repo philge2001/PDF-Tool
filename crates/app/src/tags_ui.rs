@@ -10,9 +10,9 @@
 use crate::app::OpenDocument;
 use crate::viewer::{ViewOutput, transform};
 use eframe::egui::{self, Color32, RichText, Stroke, StrokeKind};
-use foliocraft_core::ObjectId;
-use foliocraft_core::content::MarkedContent;
-use foliocraft_core::tags::{DocProperties, SetAltText, SetProperties};
+use pdftool_core::ObjectId;
+use pdftool_core::content::MarkedContent;
+use pdftool_core::tags::{DocProperties, SetAltText, SetProperties};
 use std::collections::{BTreeMap, HashMap};
 
 /// Häufige Sprachkennungen für das Auswahlmenü (BCP 47).
@@ -152,7 +152,7 @@ impl OpenDocument {
     }
 
     /// Rechteck eines Elements samt Nachfahren auf der ersten Seite, auf der es Inhalt hat.
-    fn row_bounds(&mut self, i: usize) -> Option<(usize, foliocraft_core::Rect)> {
+    fn row_bounds(&mut self, i: usize) -> Option<(usize, pdftool_core::Rect)> {
         let end = self.tags.rows[i].end;
         let content: Vec<(usize, i64)> = self.tags.rows[i..end]
             .iter()
@@ -185,7 +185,7 @@ impl OpenDocument {
         }
     }
 
-    fn execute_tag_command(&mut self, cmd: Box<dyn foliocraft_core::command::Command>) {
+    fn execute_tag_command(&mut self, cmd: Box<dyn pdftool_core::command::Command>) {
         if let Err(e) = self.doc.execute(cmd) {
             self.tags.error = Some(e.to_string());
         }

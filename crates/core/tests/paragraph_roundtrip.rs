@@ -1,6 +1,6 @@
 //! Absätze: erkennen → neu setzen (Text, Kasten verschieben, Breite ändern) → speichern → neu laden.
 
-use foliocraft_core::{Document, ParaFrame, Paragraph, Point};
+use pdftool_core::{Document, ParaFrame, Paragraph, Point};
 
 fn fixture(name: &str) -> Document {
     let path = format!("{}/../../tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
@@ -28,7 +28,7 @@ fn detects_paragraph_of_four_lines() {
     assert!((p.line_height - 20.0).abs() < 0.01);
     assert!((p.origin.x - 72.0).abs() < 0.01 && (p.origin.y - 720.0).abs() < 0.01);
     // Die Überschrift (24 pt) ist ein eigener Absatz.
-    assert_eq!(para(&paras, "FolioCraft").lines, 1);
+    assert_eq!(para(&paras, "PDF Tool").lines, 1);
 }
 
 #[test]
@@ -57,7 +57,7 @@ fn rewrite_wraps_to_frame_and_can_be_moved_and_resized() {
         "alter Text weg"
     );
     // Die Überschrift bleibt, wo sie ist.
-    let head = para(&paras, "FolioCraft");
+    let head = para(&paras, "PDF Tool");
     assert!((head.origin.y - 760.0).abs() < 0.01);
 
     // Erneut setzen mit dem gemessenen Kasten: gleicher Umbruch (stabil).

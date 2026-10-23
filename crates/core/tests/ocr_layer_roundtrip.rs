@@ -1,6 +1,6 @@
 //! Unsichtbare Textebene: Wörter → Textebene → speichern → neu laden → Text ist da.
 
-use foliocraft_core::{Document, OcrWord};
+use pdftool_core::{Document, OcrWord};
 
 fn fixture(name: &str) -> Document {
     let path = format!("{}/../../tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));

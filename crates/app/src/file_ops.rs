@@ -1,8 +1,8 @@
 //! Speichern, "Speichern unter", Rückfrage bei ungespeicherten Änderungen, Fenstertitel.
 
-use crate::app::{FolioApp, OpenDocument};
+use crate::app::{OpenDocument, PdfToolApp};
 use eframe::egui;
-use foliocraft_render::RenderService;
+use pdftool_render::RenderService;
 use std::path::PathBuf;
 
 /// Was nach der Rückfrage "Änderungen speichern?" passieren soll.
@@ -10,7 +10,7 @@ pub enum PendingAction {
     Close,
     Open(PathBuf),
     /// Ein bereits geladenes Dokument übernehmen (z. B. Ergebnis von "Zusammenführen").
-    Adopt(Box<foliocraft_core::Document>),
+    Adopt(Box<pdftool_core::Document>),
 }
 
 impl OpenDocument {
@@ -36,7 +36,7 @@ impl OpenDocument {
     }
 }
 
-impl FolioApp {
+impl PdfToolApp {
     /// Speichert das Dokument. `force_dialog` = "Speichern unter". Gibt `true` bei Erfolg zurück.
     pub(crate) fn save_document(&mut self, force_dialog: bool) -> bool {
         let Some(d) = &mut self.document else {
@@ -85,7 +85,7 @@ impl FolioApp {
     }
 
     /// Übernimmt ein geladenes Dokument – fragt vorher nach, wenn es ungespeicherte Änderungen gibt.
-    pub(crate) fn request_adopt(&mut self, doc: foliocraft_core::Document) {
+    pub(crate) fn request_adopt(&mut self, doc: pdftool_core::Document) {
         if self.document.as_ref().is_some_and(|d| d.doc.is_dirty()) {
             self.pending = Some(PendingAction::Adopt(Box::new(doc)));
         } else {
@@ -166,9 +166,9 @@ impl FolioApp {
         let title = match &self.document {
             Some(d) => {
                 let dirty = if d.doc.is_dirty() { "*" } else { "" };
-                format!("{}{dirty} – FolioCraft", d.file_name())
+                format!("{}{dirty} – PDF Tool", d.file_name())
             }
-            None => "FolioCraft".to_string(),
+            None => "PDF Tool".to_string(),
         };
         if title != self.window_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));

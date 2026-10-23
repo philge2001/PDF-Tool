@@ -15,7 +15,7 @@ use crate::app::OpenDocument;
 use crate::tools::Tool;
 use crate::viewer::{ViewOutput, transform};
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, StrokeKind, pos2, vec2};
-use foliocraft_core::{PageId, ParaFrame, Paragraph, Point};
+use pdftool_core::{PageId, ParaFrame, Paragraph, Point};
 use std::collections::HashMap;
 
 /// Breite/Höhe des Anfassers am rechten Rand (Bildschirmpunkte).
@@ -23,7 +23,7 @@ const HANDLE: Pos2 = pos2(8.0, 18.0);
 
 pub struct ContentEdit {
     /// Schriftgröße und Farbe für neuen Text (setzt die App aus den Werkzeugeinstellungen).
-    pub style: (f32, foliocraft_core::Color),
+    pub style: (f32, pdftool_core::Color),
     /// Absätze pro Seite samt Inhaltsstempel, aus dem sie stammen.
     paragraphs: HashMap<PageId, (u64, Vec<Paragraph>)>,
     /// Ausgewählter Absatz (Seite, Absatz) und sein (evtl. schon geänderter) Kasten.
@@ -35,19 +35,19 @@ pub struct ContentEdit {
     /// Fehlermeldung für den Dialog der App.
     pub error: Option<String>,
     /// Bilder pro Seite samt Inhaltsstempel.
-    pub(crate) images: HashMap<PageId, (u64, Vec<foliocraft_core::PageImage>)>,
+    pub(crate) images: HashMap<PageId, (u64, Vec<pdftool_core::PageImage>)>,
     /// Ausgewähltes Bild (Seite, Bild).
-    pub selected_image: Option<(usize, foliocraft_core::PageImage)>,
+    pub selected_image: Option<(usize, pdftool_core::PageImage)>,
     /// Laufendes Verschieben/Skalieren.
     pub(crate) image_drag: Option<crate::image_tool::ImageDrag>,
     /// Bild, das mit dem nächsten Klick platziert wird.
-    pub placing_image: Option<foliocraft_core::NewImage>,
+    pub placing_image: Option<pdftool_core::NewImage>,
 }
 
 impl Default for ContentEdit {
     fn default() -> Self {
         Self {
-            style: (12.0, foliocraft_core::Color::BLACK),
+            style: (12.0, pdftool_core::Color::BLACK),
             paragraphs: HashMap::new(),
             selected: None,
             drag: None,
@@ -126,7 +126,7 @@ impl OpenDocument {
                 frame_screen(self, view, page, p, &p.frame()).is_some_and(|r| r.contains(pos))
             })
             .min_by(|a, b| {
-                let area = |r: &foliocraft_core::Rect| r.width() * r.height();
+                let area = |r: &pdftool_core::Rect| r.width() * r.height();
                 area(&a.bounds).total_cmp(&area(&b.bounds))
             })
             .map(|p| (page, p))
@@ -296,7 +296,7 @@ impl OpenDocument {
     fn after_paragraph_change(
         &mut self,
         page: usize,
-        result: foliocraft_core::Result<()>,
+        result: pdftool_core::Result<()>,
         frame: ParaFrame,
     ) {
         let origin = frame.origin;

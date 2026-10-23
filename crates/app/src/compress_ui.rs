@@ -2,10 +2,10 @@
 //! umwandeln". Das Ergebnis ist – wie beim Schwärzen – eine neue, noch ungespeicherte
 //! Fassung des Dokuments.
 
-use crate::app::FolioApp;
+use crate::app::PdfToolApp;
 use crate::redact::DocSlot;
 use eframe::egui;
-use foliocraft_core::compress::{CompressOptions, compress_pdf, human};
+use pdftool_core::compress::{CompressOptions, compress_pdf, human};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -32,7 +32,7 @@ impl Default for CompressDialog {
     }
 }
 
-impl FolioApp {
+impl PdfToolApp {
     pub(crate) fn open_compress_dialog(&mut self) {
         if self.document.is_some() {
             self.compress_dialog = Some(CompressDialog::default());
@@ -110,7 +110,7 @@ impl FolioApp {
         let out = slot.clone();
         let job = crate::jobs::Job::spawn("PDF/A", ctx, move |c| {
             c.progress(0.3, "Umwandeln …");
-            let (result, report) = foliocraft_core::pdfa::convert_to_pdfa(&bytes)
+            let (result, report) = pdftool_core::pdfa::convert_to_pdfa(&bytes)
                 .map_err(|e| format!("Umwandlung fehlgeschlagen:\n{e}"))?;
             if let Ok(mut s) = out.lock() {
                 *s = Some(result);

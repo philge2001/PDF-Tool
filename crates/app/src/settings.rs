@@ -6,12 +6,14 @@
 
 use crate::tools::{Tool, ToolSettings};
 use eframe::egui::ThemePreference;
-use foliocraft_core::Color;
+use pdftool_core::Color;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Schlüssel im eframe-Speicher.
-pub const STORAGE_KEY: &str = "foliocraft_settings";
+pub const STORAGE_KEY: &str = "pdftool_settings";
+/// Schlüssel aus der Zeit vor der Umbenennung (wird beim ersten Start übernommen).
+pub const LEGACY_STORAGE_KEY: &str = "foliocraft_settings";
 
 /// Maximale Länge der Liste "Zuletzt geöffnet".
 const MAX_RECENT: usize = 10;

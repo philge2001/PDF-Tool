@@ -1,11 +1,11 @@
 //! Barrierefreiheit prüfen und automatisch taggen.
 //!
-//! `cargo run -p foliocraft-core --example autotag_demo -- in.pdf [out.pdf] [sprache] [titel]`
+//! `cargo run -p pdftool-core --example autotag_demo -- in.pdf [out.pdf] [sprache] [titel]`
 //! Ohne `out.pdf` wird nur geprüft.
 
-use foliocraft_core::Document;
-use foliocraft_core::accessibility::CheckStatus;
-use foliocraft_core::autotag::{AutoTagOptions, auto_tag_pdf};
+use pdftool_core::Document;
+use pdftool_core::accessibility::CheckStatus;
+use pdftool_core::autotag::{AutoTagOptions, auto_tag_pdf};
 
 fn print_check(doc: &Document) -> Result<(), Box<dyn std::error::Error>> {
     for c in doc.accessibility_check()? {

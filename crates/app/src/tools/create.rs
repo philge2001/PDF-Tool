@@ -6,7 +6,7 @@ use crate::annot_draw;
 use crate::app::OpenDocument;
 use crate::viewer::{ViewOutput, transform};
 use eframe::egui::{self, CursorIcon, Pos2};
-use foliocraft_core::{
+use pdftool_core::{
     AddAnnotation, AnnotKind, Annotation, Batch, Command, Point, Quad, Rect, date::pdf_date_now,
 };
 

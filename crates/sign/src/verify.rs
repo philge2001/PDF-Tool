@@ -17,9 +17,9 @@ use cms::signed_data::{SignedData, SignerIdentifier, SignerInfo};
 use der::asn1::OctetStringRef;
 use der::oid::ObjectIdentifier;
 use der::{Decode, Encode, Reader, SliceReader};
-use foliocraft_core::geometry::Rect;
-use foliocraft_core::{Document, FieldKind, pdf_string};
 use lopdf::{Dictionary, Object};
+use pdftool_core::geometry::Rect;
+use pdftool_core::{Document, FieldKind, pdf_string};
 use std::time::SystemTime;
 use x509_cert::Certificate;
 
@@ -154,7 +154,7 @@ pub fn verify_signature(bytes: &[u8], dict: &Dictionary, trust: &TrustStore) -> 
             .get(b"M")
             .ok()
             .and_then(|o| o.as_str().ok())
-            .map(|s| foliocraft_core::date::display_pdf_date(&String::from_utf8_lossy(s))),
+            .map(|s| pdftool_core::date::display_pdf_date(&String::from_utf8_lossy(s))),
         sub_filter: dict
             .get(b"SubFilter")
             .and_then(Object::as_name)

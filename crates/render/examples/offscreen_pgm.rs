@@ -1,5 +1,5 @@
 //! Rendert Seite 1 offscreen als PGM (Fehlersuche).
-use foliocraft_render::RenderService;
+use pdftool_render::RenderService;
 use std::sync::Arc;
 
 fn main() {

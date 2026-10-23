@@ -1,9 +1,9 @@
 //! Barrierefreiheit: Prüfbericht und automatisches Tagging (taggen → neu laden → prüfen).
 
-use foliocraft_core::Document;
-use foliocraft_core::accessibility::{CheckKind, CheckStatus};
-use foliocraft_core::autotag::{AutoTagOptions, auto_tag_pdf};
-use foliocraft_core::tags::SetAltText;
+use pdftool_core::Document;
+use pdftool_core::accessibility::{CheckKind, CheckStatus};
+use pdftool_core::autotag::{AutoTagOptions, auto_tag_pdf};
+use pdftool_core::tags::SetAltText;
 
 fn path(name: &str) -> String {
     format!("{}/../../tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"))

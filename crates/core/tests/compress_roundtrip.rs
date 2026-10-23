@@ -1,8 +1,8 @@
 //! Komprimieren: Bilder verkleinern, Text bleibt, Datei wird kleiner und bleibt gültig.
 
-use foliocraft_core::Document;
-use foliocraft_core::compress::{CompressOptions, compress_pdf};
-use foliocraft_core::raster::Raster;
+use pdftool_core::Document;
+use pdftool_core::compress::{CompressOptions, compress_pdf};
+use pdftool_core::raster::Raster;
 
 fn fixture_bytes(name: &str) -> Vec<u8> {
     std::fs::read(format!(

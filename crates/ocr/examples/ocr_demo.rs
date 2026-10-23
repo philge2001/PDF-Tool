@@ -1,9 +1,9 @@
 //! Texterkennung auf einem Graustufenbild (PGM, binär "P5") – zur Gegenprobe.
 //!
-//! `cargo run -p foliocraft-ocr --example ocr_demo -- bild.pgm [deu+eng] [dpi]`
+//! `cargo run -p pdftool-ocr --example ocr_demo -- bild.pgm [deu+eng] [dpi]`
 //! (PGM z. B. mit `convert bild.png -colorspace gray bild.pgm` erzeugen)
 
-use foliocraft_ocr::{Engine, Image};
+use pdftool_ocr::{Engine, Image};
 
 /// Liest ein binäres PGM: Kopf "P5 breite höhe maxwert", dann ein Byte pro Pixel.
 fn read_pgm(bytes: &[u8]) -> (u32, u32, &[u8]) {

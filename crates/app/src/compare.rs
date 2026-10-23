@@ -5,12 +5,12 @@
 //! und die betroffenen Seiten nebeneinander: Gelöschtes links rot, Eingefügtes rechts grün.
 //! Die Seitenbilder rendert bei Bedarf ein Hilfsthread (ebenfalls offscreen).
 
-use crate::app::FolioApp;
+use crate::app::PdfToolApp;
 use crate::viewer::transform;
 use eframe::egui::{self, Color32, Rect, Stroke, StrokeKind, vec2};
-use foliocraft_core::compare::{self, Change, ChangeKind};
-use foliocraft_core::{Document, PageInfo};
-use foliocraft_render::{OffscreenRenderer, RgbaImage};
+use pdftool_core::compare::{self, Change, ChangeKind};
+use pdftool_core::{Document, PageInfo};
+use pdftool_render::{OffscreenRenderer, RgbaImage};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};
@@ -73,7 +73,7 @@ fn document_words(
     Ok(words)
 }
 
-impl FolioApp {
+impl PdfToolApp {
     /// "Vergleichen mit…": andere Datei wählen und den Vergleich starten.
     pub(crate) fn start_compare(&mut self, ctx: &egui::Context) {
         let Some(path) = rfd::FileDialog::new()

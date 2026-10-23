@@ -1,10 +1,10 @@
 //! Rendert eine Fixture-Seite mit echtem PDFium. Wird übersprungen (nicht fehlgeschlagen),
 //! wenn die PDFium-Bibliothek nicht gefunden wird – z. B. in CI.
 //!
-//! Lokal: FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo test -p foliocraft-render
+//! Lokal: PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo test -p pdftool-render
 
-use foliocraft_core::{AddAnnotation, AnnotKind, Annotation, Color, Document, Quad, Rect};
-use foliocraft_render::{Event, Priority, RenderKey, RenderRequest, RenderService};
+use pdftool_core::{AddAnnotation, AnnotKind, Annotation, Color, Document, Quad, Rect};
+use pdftool_render::{Event, Priority, RenderKey, RenderRequest, RenderService};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -107,8 +107,8 @@ fn renders_page_and_tile() {
         "Wortbreite: {r:?}"
     );
     assert!(
-        text.text_in(foliocraft_core::TextRange::new(0, 40))
-            .contains("FolioCraft Testdokument")
+        text.text_in(pdftool_core::TextRange::new(0, 40))
+            .contains("PDF Tool Testdokument")
     );
 
     // ---- Annotationen: von core gespeichert, von PDFium gezeichnet bzw. ausgeblendet ----

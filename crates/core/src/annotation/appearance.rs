@@ -1,5 +1,5 @@
 //! Erzeugt Appearance Streams (/AP /N): die PDF-Zeichenbefehle, mit denen jeder
-//! Reader die Annotation genau so darstellt wie FolioCraft.
+//! Reader die Annotation genau so darstellt wie PDF Tool.
 //!
 //! Die Form-XObjects benutzen dieselben Koordinaten wie die Seite (BBox = /Rect,
 //! Matrix = Identität) – dadurch sind keine Umrechnungen nötig.

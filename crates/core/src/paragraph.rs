@@ -28,7 +28,7 @@ use crate::text_edit::{
 use lopdf::content::{Content, Operation};
 use lopdf::{Object, StringFormat};
 
-/// Name des Abschnitts, in dem FolioCraft neu gesetzte Absätze ablegt.
+/// Name des Abschnitts, in dem PDF Tool neu gesetzte Absätze ablegt.
 const MARK: &[u8] = b"FcPara";
 
 /// Ein erkannter Absatz.

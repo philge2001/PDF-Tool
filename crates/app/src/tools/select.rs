@@ -5,7 +5,7 @@ use crate::annot_draw;
 use crate::app::OpenDocument;
 use crate::viewer::{ViewOutput, transform};
 use eframe::egui::{self, CursorIcon, Pos2};
-use foliocraft_core::{
+use pdftool_core::{
     AnnotId, AnnotKind, Annotation, Color, Point, RemoveAnnotation, UpdateAnnotation,
 };
 
@@ -115,7 +115,7 @@ impl OpenDocument {
                 && drag.preview != drag.before
             {
                 let mut after = drag.preview;
-                after.modified = foliocraft_core::date::pdf_date_now();
+                after.modified = pdftool_core::date::pdf_date_now();
                 self.execute(Box::new(UpdateAnnotation::new(drag.before, after)));
             }
             return true;
@@ -144,7 +144,7 @@ impl OpenDocument {
         if after == before {
             return;
         }
-        after.modified = foliocraft_core::date::pdf_date_now();
+        after.modified = pdftool_core::date::pdf_date_now();
         let cmd = UpdateAnnotation::new(before, after).mergeable();
         if let Err(e) = self.doc.execute_merging(Box::new(cmd)) {
             tracing::error!(error = %e, "Änderung fehlgeschlagen");

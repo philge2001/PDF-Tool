@@ -1,4 +1,4 @@
-# CLAUDE.md – FolioCraft
+# CLAUDE.md – PDF Tool
 
 Plattformübergreifender PDF-Editor in Rust (egui/eframe + PDFium + lopdf).
 Eigenständige Neuentwicklung: keine fremden Codes, Marken, Logos, Icons oder Assets.
@@ -11,18 +11,18 @@ cargo build
 cargo clippy --workspace --all-targets -- -D warnings   # muss warnungsfrei sein
 cargo test --workspace                                  # braucht kein PDFium
 cargo fmt --all
-cargo run -p foliocraft-core --example gen_fixtures      # tests/fixtures neu erzeugen
-FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.pdf
+cargo run -p pdftool-core --example gen_fixtures      # tests/fixtures neu erzeugen
+PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 ```
 
 ## Workspace
 | Crate | Pfad | Aufgabe | Darf abhängen von |
 |---|---|---|---|
-| foliocraft-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg, ttf-parser, subsetter, png, jpeg-encoder, zip, similar, getrandom (Zufallsschlüssel für AES-256) |
-| foliocraft-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
-| foliocraft-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore |
-| foliocraft-ocr | crates/ocr | Texterkennung (Tesseract), Wörter mit Pixelrechteck | tesseract-rs (baut Tesseract/Leptonica mit CMake) |
-| foliocraft-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, ocr (Feature `ocr`, Standard), eframe, rfd, der, ureq |
+| pdftool-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg, ttf-parser, subsetter, png, jpeg-encoder, zip, similar, getrandom (Zufallsschlüssel für AES-256) |
+| pdftool-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
+| pdftool-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore |
+| pdftool-ocr | crates/ocr | Texterkennung (Tesseract), Wörter mit Pixelrechteck | tesseract-rs (baut Tesseract/Leptonica mit CMake) |
+| pdftool-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, ocr (Feature `ocr`, Standard), eframe, rfd, der, ureq |
 
 ## Architekturregeln
 - **core** kennt weder UI noch PDFium und ist vollständig unit-testbar.
@@ -147,7 +147,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Bilder bearbeiten: nur Bilder direkt im Seiteninhalt (nicht in Formular-XObjects); Zeichenreihenfolge bleibt;
   PNG-Farbprofile/Gamma werden ignoriert.
 - Formularfelder im Overlay mit egui-Schrift; eigene Erscheinungsbilder von Kontrollkästchen/Optionsfeldern
-  (z. B. Kreuz statt Häkchen) zeigt FolioCraft vereinfacht – in der Datei bleiben sie erhalten.
+  (z. B. Kreuz statt Häkchen) zeigt PDF Tool vereinfacht – in der Datei bleiben sie erhalten.
   Felder auf gedrehten Seiten: Text nicht mitgedreht. Formular-JavaScript (Berechnungen, Formate) wird nicht ausgeführt.
 - Schwärzen: Pfade, die einen Bereich kreuzen, verschwinden ganz (kein Zuschneiden); Bilder in JPEG 2000, JBIG2,
   CCITT werden ganz entfernt; Ersatztexte nur in direkten BDC-Dictionaries (nicht über /Properties-Ressourcen).
@@ -228,7 +228,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - `render::worker::OffscreenRenderer` – zusätzlich `page_text` (Lesereihenfolge) und `page_chars` (`PageText`)
 - `app::export` – Datei → Exportieren… (PNG/JPEG je Seite mit dpi/Qualität, TXT mit Seitenvorschub, DOCX);
   testbar über `export_images`/`export_text` (mit PDFium), `page_file_name`
-- `app::compare` – Datei → Vergleichen mit… bzw. `foliocraft alt.pdf --vergleichen neu.pdf`; Job (Wörter beider
+- `app::compare` – Datei → Vergleichen mit… bzw. `pdftool alt.pdf --vergleichen neu.pdf`; Job (Wörter beider
   Dokumente offscreen) → `CompareView` (Liste + Seiten nebeneinander, Vorschaubilder per Hilfsthread)
 - `app::compress_ui` – Datei → Komprimieren… (dpi, Qualität) und Datei → Nach PDF/A umwandeln; Ergebnis per
   `pending_doc` als ungespeicherte Fassung, Bericht als Meldung
@@ -265,7 +265,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - `app::file_ops` – Speichern/Speichern unter, Rückfrage bei ungespeicherten Änderungen
   (`PendingAction`), Fenstertitel mit `*`; nach dem Speichern lädt der Worker neu (`reload_renderer`)
 - `app::menu` – Menüleiste Datei/Bearbeiten/Ansicht
-- `app::settings` – dauerhafte Einstellungen (serde + eframe-Persistenz, Schlüssel `foliocraft_settings`):
+- `app::settings` – dauerhafte Einstellungen (serde + eframe-Persistenz, Schlüssel `pdftool_settings`, alter Schlüssel `foliocraft_settings` und alter Ordner werden übernommen):
   zuletzt geöffnet, Design, Panels, Werkzeugstil, Autor
 - `app::pages` – `PageAction`, `sync_structure` (erkennt jede Strukturänderung inkl. Undo/Redo, biegt
   Texturen/Text per `PageId` auf neue Indizes um, lädt den Worker mit `render_snapshot` und NEUER DocId),
@@ -275,7 +275,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   „Dokument teilen“
   (Ergebnis = neues unbenanntes Dokument, `adopt_document` zeigt es über eine Momentaufnahme an)
 - `app::jobs` – Hintergrund-Jobs (`Job::spawn`, Fortschritt, Abbrechen, modales Fortschrittsfenster);
-  höchstens ein Job gleichzeitig (`FolioApp::job`), Ergebnis als Info- oder Fehlerdialog
+  höchstens ein Job gleichzeitig (`PdfToolApp::job`), Ergebnis als Info- oder Fehlerdialog
 - `core::form` – `FormField`/`FieldKind`/`FieldValue`/`Widget`, `FormStore` (Dateireihenfolge = Tab-Reihenfolge);
   `import` (Feldbaum mit vererbten /FT /Ff /V /DA …, voller Name), `appearance` (`layout` = gemeinsame
   Textanordnung für Overlay und Datei, `build` = /AP-Streams, Helvetica WinAnsi)
@@ -350,7 +350,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - `app::tags_ui` – Panel „Tags“ (`TagState`: Baum gecacht nach Bytes/Seiten/Alt-Texten, markierte Inhalte je Seite
   nach Stempel), Overlay `paint_tags` (Auswahl, nummerierte Lesereihenfolge)
 - `app::a11y_ui` – Menü „Barrierefreiheit“: Prüfbericht-Fenster, Dialog „Automatisch taggen“ (Job, `pending_doc`)
-- `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
+- `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl PdfToolApp`-Block)
 
 ## Tastenkürzel
 Strg+O öffnen · Strg+S speichern · Strg+Umschalt+S speichern unter · Strg+Z/Strg+Y (oder Strg+Umschalt+Z) Rückgängig/Wiederholen · Entf löscht Auswahl · Strg+C kopiert markierten Text · Esc hebt Auswahl auf · Strg+F suchen (Enter/F3 weiter, Umschalt+Enter/Umschalt+F3 zurück, Esc schließen) · Strg+Plus/Minus zoomen · Strg+1 = 100 % · Strg+2 = Seitenbreite · Strg+0 = Ganze Seite ·
@@ -360,29 +360,29 @@ Strg+Mausrad zoomt um den Mauszeiger · Bild↑/↓ Seite · Pos1/Ende · Pfeilt
 ## Testen im Container (ohne Bildschirm)
 Datei-/Ordnerdialoge (rfd über xdg-portal) funktionieren im Container nicht – Logik dahinter per Test absichern.
 PDFium liegt lokal in `pdfium/lib` (gitignored).
-`cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf` schreibt jeden Annotationstyp –
+`cargo run -p pdftool-core --example annot_demo -- in.pdf out.pdf` schreibt jeden Annotationstyp –
 zur Gegenprobe mit anderen Readern (z. B. `pdftoppm -png out.pdf x`).
-`cargo run -p foliocraft-core --example redact_demo -- in.pdf out.pdf 1:x0,y0,x1,y1 …` schwärzt Bereiche
+`cargo run -p pdftool-core --example redact_demo -- in.pdf out.pdf 1:x0,y0,x1,y1 …` schwärzt Bereiche
 (Gegenprobe: `pdftotext`, `pdftoppm`).
-`cargo run -p foliocraft-core --example sanitize_demo -- in.pdf [out.pdf]` zeigt/entfernt versteckte Inhalte
+`cargo run -p pdftool-core --example sanitize_demo -- in.pdf [out.pdf]` zeigt/entfernt versteckte Inhalte
 (Gegenprobe: `pdfinfo`, `pdfdetach -list`, `pdftotext`).
-`cargo run -p foliocraft-core --example content_dump -- datei.pdf [Seite]` zeigt die Interpreter-Ergebnisse
+`cargo run -p pdftool-core --example content_dump -- datei.pdf [Seite]` zeigt die Interpreter-Ergebnisse
 (Gegenprobe: `pdftotext -bbox`, gleiche x-Positionen).
-`cargo run -p foliocraft-sign --example sign_demo -- in.pdf out.pdf [id.p12 pw] [rsa]` signiert (ohne ID mit Testzertifikat).
+`cargo run -p pdftool-sign --example sign_demo -- in.pdf out.pdf [id.p12 pw] [rsa]` signiert (ohne ID mit Testzertifikat).
 Zeitstempel: `--tsa-openssl tsa.cnf` (lokale OpenSSL-TSA, `openssl ts -reply`) oder `--tsa-http URL`.
 Öffentliche TSAs sind aus dem Container nicht erreichbar (Netzwerkregel).
 Gegenprobe: `pdfsig out.pdf`; CMS mit `openssl cms -verify -binary -inform DER -content daten.bin`.
-`cargo run -p foliocraft-sign --example sign_check -- datei.pdf [vertraut.pem]` prüft Signaturen (Gegenprobe: `pdfsig`).
+`cargo run -p pdftool-sign --example sign_check -- datei.pdf [vertraut.pem]` prüft Signaturen (Gegenprobe: `pdfsig`).
 Unabhängig signierte Test-PDFs: OpenSSL (`openssl cms -sign -binary -outform DER`) über die ByteRange.
-`cargo run -p foliocraft-core --example docx_demo -- in.pdf out.docx` (Gegenprobe: python-docx, `soffice --convert-to pdf`).
-`cargo run -p foliocraft-core --example compress_demo -- in.pdf out.pdf [dpi] [qualität]` (Gegenprobe: `pdfimages -list`).
-`cargo run -p foliocraft-core --example autotag_demo -- in.pdf [out.pdf] [de-DE] [Titel]` prüft/taggt
+`cargo run -p pdftool-core --example docx_demo -- in.pdf out.docx` (Gegenprobe: python-docx, `soffice --convert-to pdf`).
+`cargo run -p pdftool-core --example compress_demo -- in.pdf out.pdf [dpi] [qualität]` (Gegenprobe: `pdfimages -list`).
+`cargo run -p pdftool-core --example autotag_demo -- in.pdf [out.pdf] [de-DE] [Titel]` prüft/taggt
 (Gegenprobe veraPDF mit `--flavour ua1`), `… --example security_demo -- schützen|öffnen …` (Gegenprobe `qpdf --check`, `pdfinfo`).
-`cargo run -p foliocraft-core --example pdfa_demo -- in.pdf out.pdf`, Prüfung mit veraPDF (nur Testwerkzeug, nicht im Repo):
+`cargo run -p pdftool-core --example pdfa_demo -- in.pdf out.pdf`, Prüfung mit veraPDF (nur Testwerkzeug, nicht im Repo):
 `curl -o ~/tools/verapdf.jar https://maven-central.storage-download.googleapis.com/maven2/org/verapdf/apps/greenfield-apps/1.28.2/greenfield-apps-1.28.2.jar`,
 `java -cp ~/tools/verapdf.jar org.verapdf.apps.GreenfieldCliWrapper --flavour 2b --format text -v datei.pdf`.
 Platz: `target/` wächst schnell (> 25 GB) – im Container mit `CARGO_INCREMENTAL=0` bauen und bei Bedarf `cargo clean`.
-`cargo run -p foliocraft-ocr --example ocr_demo -- bild.pgm [deu+eng] [dpi]` erkennt Text in einem 8-Bit-PGM.
-`FOLIOCRAFT_PDFIUM_PATH=… cargo run -p foliocraft-render --example offscreen_pgm -- datei.pdf out.pgm 4.1667` rendert
+`cargo run -p pdftool-ocr --example ocr_demo -- bild.pgm [deu+eng] [dpi]` erkennt Text in einem 8-Bit-PGM.
+`PDFTOOL_PDFIUM_PATH=… cargo run -p pdftool-render --example offscreen_pgm -- datei.pdf out.pgm 4.1667` rendert
 Seite 1 offscreen (300 dpi), `… --example text_boxes -- datei.pdf [Zeichen]` zeigt PDFiums Zeichen-Rechtecke.
-`cargo run -p foliocraft-core --example form_fill -- in.pdf [out.pdf name=Wert …]` listet/füllt Formularfelder. Screenshots über Xvfb + xdotool + ImageMagick `import`.
+`cargo run -p pdftool-core --example form_fill -- in.pdf [out.pdf name=Wert …]` listet/füllt Formularfelder. Screenshots über Xvfb + xdotool + ImageMagick `import`.

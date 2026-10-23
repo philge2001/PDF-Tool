@@ -1,7 +1,7 @@
 //! Passwortschutz (Phase 9): verschlüsselte PDFs öffnen, Schutz setzen und entfernen.
 //!
 //! **Arbeitsweise:** Ein verschlüsseltes Dokument wird beim Öffnen entschlüsselt; intern
-//! arbeitet FolioCraft auf einer Klartext-Fassung (Anzeige, Bearbeiten, inkrementelles
+//! arbeitet PDF Tool auf einer Klartext-Fassung (Anzeige, Bearbeiten, inkrementelles
 //! Speichern im Speicher). Erst beim Schreiben der Datei wird wieder verschlüsselt:
 //! - unverändert mit dem **ursprünglichen Schlüssel** (gleiche Passwörter, gleiche
 //!   Berechtigungen – auch wenn nur das Benutzerpasswort bekannt ist),
@@ -10,7 +10,7 @@
 //! Weil der Schlüssel neu angewendet wird, ist das Speichern geschützter Dateien immer ein
 //! komplettes Neuschreiben (vorhandene Signaturen werden dadurch ungültig).
 //!
-//! **Berechtigungen** sind in PDF eine Bitte an Programme, keine Kryptografie. FolioCraft hält
+//! **Berechtigungen** sind in PDF eine Bitte an Programme, keine Kryptografie. PDF Tool hält
 //! sich daran: Wer das Besitzerpasswort nicht kennt, kann ein Dokument, das keine Änderungen
 //! erlaubt, nicht speichern.
 

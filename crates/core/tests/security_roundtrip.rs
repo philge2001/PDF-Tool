@@ -1,7 +1,7 @@
 //! Passwortschutz: schützen → speichern → mit/ohne Passwort öffnen → ändern → Schutz entfernen.
 
-use foliocraft_core::security::{Permissions, Protection};
-use foliocraft_core::{CoreError, Document};
+use pdftool_core::security::{Permissions, Protection};
+use pdftool_core::{CoreError, Document};
 use std::path::PathBuf;
 
 fn fixture(name: &str) -> Document {
@@ -65,7 +65,7 @@ fn open_with_and_without_password() {
 
     // Benutzerpasswort: lesen ja, speichern nein (keine Änderungen erlaubt).
     let mut doc = Document::open_with_password(&path, Some("geheim")).unwrap();
-    assert_eq!(first_text(&doc), "FolioCraft Testdokument");
+    assert_eq!(first_text(&doc), "PDF Tool Testdokument");
     let sec = doc.security().unwrap();
     assert!(sec.needs_password && !sec.owner_known && !sec.can_save());
     assert_eq!(sec.permissions, READ_ONLY);

@@ -1,9 +1,9 @@
 //! Schwärzen: markieren -> anwenden -> der Inhalt darf NIRGENDS mehr in der Datei stehen.
 
-use foliocraft_core::content::{Item, TextShow, interpret_page};
-use foliocraft_core::raster::Raster;
-use foliocraft_core::redact::redact_pdf;
-use foliocraft_core::{AddAnnotation, AnnotKind, Annotation, Color, Document, Quad, Rect};
+use pdftool_core::content::{Item, TextShow, interpret_page};
+use pdftool_core::raster::Raster;
+use pdftool_core::redact::redact_pdf;
+use pdftool_core::{AddAnnotation, AnnotKind, Annotation, Color, Document, Quad, Rect};
 use std::path::{Path, PathBuf};
 
 fn fixture(name: &str) -> PathBuf {
@@ -13,10 +13,7 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 /// Markiert die Bereiche zum Schwärzen und wendet sie an.
-fn redact(
-    name: &str,
-    areas: &[(usize, Rect)],
-) -> (Vec<u8>, foliocraft_core::redact::RedactionReport) {
+fn redact(name: &str, areas: &[(usize, Rect)]) -> (Vec<u8>, pdftool_core::redact::RedactionReport) {
     let mut doc = Document::open(fixture(name)).unwrap();
     for &(page, r) in areas {
         let mut a = Annotation::new(
@@ -154,8 +151,7 @@ fn paths_images_and_forms() {
     for item in &page.items {
         match item {
             Item::Image { name: Some(n), .. } => {
-                let res =
-                    foliocraft_core::content::page_resources(&pdf, pdf.get_pages()[&1]).unwrap();
+                let res = pdftool_core::content::page_resources(&pdf, pdf.get_pages()[&1]).unwrap();
                 let xo = res.get(b"XObject").unwrap().as_dict().unwrap();
                 let id = xo.get(n).unwrap().as_reference().unwrap();
                 let s = pdf.get_object(id).unwrap().as_stream().unwrap();
@@ -172,7 +168,7 @@ fn paths_images_and_forms() {
                     panic!()
                 };
                 let mut s = s.clone();
-                s.dict = foliocraft_core::raster::normalize_inline(&s.dict);
+                s.dict = pdftool_core::raster::normalize_inline(&s.dict);
                 let r = Raster::decode(&pdf, &s).unwrap();
                 assert_eq!(r.data, vec![0x00, 0x55, 0x00, 0xFF]);
             }

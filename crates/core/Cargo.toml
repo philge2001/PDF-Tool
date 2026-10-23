@@ -1,5 +1,5 @@
 [package]
-name = "foliocraft-core"
+name = "pdftool-core"
 description = "Dokumentmodell, Annotationen, Undo/Redo und Speichern – ohne UI und ohne PDFium"
 version.workspace = true
 edition.workspace = true

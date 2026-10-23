@@ -11,10 +11,10 @@ publish = false
 
 # Zentrale Versionsverwaltung: Crates erben mit `foo.workspace = true`.
 [workspace.dependencies]
-foliocraft-core = { path = "crates/core" }
-foliocraft-render = { path = "crates/render" }
-foliocraft-sign = { path = "crates/sign" }
-foliocraft-ocr = { path = "crates/ocr" }
+pdftool-core = { path = "crates/core" }
+pdftool-render = { path = "crates/render" }
+pdftool-sign = { path = "crates/sign" }
+pdftool-ocr = { path = "crates/ocr" }
 
 anyhow = "1.0"
 thiserror = "2.0"

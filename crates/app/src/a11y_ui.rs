@@ -4,17 +4,17 @@
 //! sich Dateibytes, Titel/Sprache oder Alternativtexte ändern. Das Taggen läuft wie
 //! Komprimieren/PDF/A als Hintergrund-Job; das Ergebnis ist eine neue, ungespeicherte Fassung.
 
-use crate::app::FolioApp;
+use crate::app::PdfToolApp;
 use crate::redact::DocSlot;
 use crate::signatures::{AMBER, GREEN, RED, status_dot};
 use eframe::egui::{self, RichText};
-use foliocraft_core::accessibility::{Check, CheckKind, CheckStatus};
-use foliocraft_core::autotag::{AutoTagOptions, auto_tag_pdf};
+use pdftool_core::accessibility::{Check, CheckKind, CheckStatus};
+use pdftool_core::autotag::{AutoTagOptions, auto_tag_pdf};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 /// Wofür der Bericht gilt (Bytes-Zeiger, Titel/Sprache, Alternativtexte).
-type ReportKey = (usize, foliocraft_core::tags::DocProperties, usize);
+type ReportKey = (usize, pdftool_core::tags::DocProperties, usize);
 
 #[derive(Default)]
 pub struct A11yReport {
@@ -50,7 +50,7 @@ fn fix_for(kind: CheckKind, tagged: bool) -> Option<(&'static str, Fix)> {
     }
 }
 
-impl FolioApp {
+impl PdfToolApp {
     pub(crate) fn open_a11y_report(&mut self) {
         if self.document.is_some() {
             self.a11y_report = Some(A11yReport::default());

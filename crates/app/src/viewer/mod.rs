@@ -6,11 +6,11 @@ pub mod thumbnails;
 pub mod transform;
 
 use eframe::egui::{self, Color32, Pos2, Rect, ScrollArea, Sense, Vec2, pos2, vec2};
-use foliocraft_render::{
+use layout::{GAP, Layout};
+use pdftool_render::{
     DocId, Priority, RenderKey, RenderRequest, RenderService, needs_tiles, page_pixel_size,
     tile_grid, tile_rect,
 };
-use layout::{GAP, Layout};
 use std::collections::HashSet;
 use textures::PageTextures;
 
@@ -133,8 +133,8 @@ impl Viewer {
     }
 
     /// Verarbeitet ein Ergebnis des Render-Workers.
-    pub fn on_render_event(&mut self, ctx: &egui::Context, event: foliocraft_render::Event) {
-        use foliocraft_render::Event;
+    pub fn on_render_event(&mut self, ctx: &egui::Context, event: pdftool_render::Event) {
+        use pdftool_render::Event;
         match event {
             Event::Rendered { key, image } if key.doc == self.doc_id => {
                 self.textures.insert(ctx, key, image)

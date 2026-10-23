@@ -1,6 +1,6 @@
 //! Text bearbeiten und hinzufügen – zur Gegenprobe mit anderen Readern.
 //!
-//! `cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "alter Anfang=neuer Text" …`
+//! `cargo run -p pdftool-core --example text_edit_demo -- in.pdf out.pdf "alter Anfang=neuer Text" …`
 //! ersetzt auf Seite 1 jeden Textblock, der mit "alter Anfang" beginnt.
 //! `+x,y=Text` fügt neuen Text an (x, y) hinzu (Punkt, Ursprung unten links).
 //! `!bild.png@x,y,breite` fügt ein Bild ein (Mitte x, y), `#n=bild.jpg` ersetzt das n-te Bild
@@ -9,7 +9,7 @@
 //! (linker Rand der ersten Grundlinie x, y; `j` = Blocksatz). Ohne `|…` bleibt der Kasten.
 //! Ohne Ersetzungen werden die Textblöcke von Seite 1 aufgelistet.
 
-use foliocraft_core::{Color, Document, NewImage, ParaFrame, Point};
+use pdftool_core::{Color, Document, NewImage, ParaFrame, Point};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

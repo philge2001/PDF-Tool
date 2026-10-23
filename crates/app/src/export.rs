@@ -3,11 +3,11 @@
 //! Exportiert wird der aktuelle Stand (Momentaufnahme inkl. ungespeicherter Änderungen).
 //! Das Rendern übernimmt der Render-Thread (`OffscreenRenderer`), der Rest läuft als Job.
 
-use crate::app::FolioApp;
+use crate::app::PdfToolApp;
 use eframe::egui;
-use foliocraft_core::image_codec::{self, PixelFormat};
-use foliocraft_core::parse_page_ranges;
-use foliocraft_render::OffscreenRenderer;
+use pdftool_core::image_codec::{self, PixelFormat};
+use pdftool_core::parse_page_ranges;
+use pdftool_render::OffscreenRenderer;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -173,7 +173,7 @@ pub fn export_text(
     Ok(out)
 }
 
-impl FolioApp {
+impl PdfToolApp {
     pub(crate) fn open_export_dialog(&mut self) {
         if self.document.is_some() {
             self.export_dialog = Some(ExportDialog::default());
@@ -330,10 +330,10 @@ impl FolioApp {
                     Ok(format!("Text gespeichert:\n{}", target.display()))
                 }
                 ExportFormat::Docx => {
-                    let doc = foliocraft_core::Document::from_bytes(snapshot.to_vec())
+                    let doc = pdftool_core::Document::from_bytes(snapshot.to_vec())
                         .map_err(|e| e.to_string())?;
                     let bytes =
-                        foliocraft_core::docx::export_docx(&doc, &pages, &|f, t| progress(f, t))
+                        pdftool_core::docx::export_docx(&doc, &pages, &|f, t| progress(f, t))
                             .map_err(|e| e.to_string())?;
                     std::fs::write(&target, bytes).map_err(|e| e.to_string())?;
                     Ok(format!("Word-Datei gespeichert:\n{}", target.display()))
@@ -360,7 +360,7 @@ mod tests {
     /// Echter Export (nur mit PDFium, sonst übersprungen).
     #[test]
     fn exports_images_and_text() {
-        let Ok(svc) = foliocraft_render::RenderService::start(|| {}) else {
+        let Ok(svc) = pdftool_render::RenderService::start(|| {}) else {
             eprintln!("PDFium nicht gefunden – Test übersprungen");
             return;
         };
@@ -387,11 +387,11 @@ mod tests {
             let n = export_images(&off, &bytes, &pages, &opts, &dest, &|_, _| true).unwrap();
             assert_eq!(n, 2);
             let file = dir.join(page_file_name("t", 1, 2, format.extension()));
-            let img = foliocraft_core::NewImage::from_bytes(&std::fs::read(file).unwrap()).unwrap();
+            let img = pdftool_core::NewImage::from_bytes(&std::fs::read(file).unwrap()).unwrap();
             assert_eq!((img.width, img.height), (595, 842));
         }
         let text = export_text(&off, &bytes, &[0, 1], &|_, _| true).unwrap();
-        assert!(text.contains("FolioCraft Testdokument"));
+        assert!(text.contains("PDF Tool Testdokument"));
         assert_eq!(text.matches('\u{c}').count(), 2);
         // Abbrechen wird beachtet.
         assert!(export_text(&off, &bytes, &[0], &|_, _| false).is_err());

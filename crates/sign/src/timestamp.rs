@@ -337,8 +337,8 @@ pub(crate) mod tests {
 
     #[test]
     fn signed_pdf_with_timestamp_roundtrip() {
-        use foliocraft_core::Document;
-        use foliocraft_core::signature_prep::{SigPlacement, SignatureSpec};
+        use pdftool_core::Document;
+        use pdftool_core::signature_prep::{SigPlacement, SignatureSpec};
         let signer = Signer::self_signed("Erika", "", "", KeyKind::P256, 1).unwrap();
         let tsa = Signer::self_signed("Test-TSA", "", "", KeyKind::P256, 1).unwrap();
         let base = std::fs::read(
@@ -352,7 +352,7 @@ pub(crate) mod tests {
             reason: String::new(),
             location: String::new(),
             contact: String::new(),
-            date: foliocraft_core::date::pdf_date_now(),
+            date: pdftool_core::date::pdf_date_now(),
             appearance_lines: vec![],
             contents_len: 0,
         };

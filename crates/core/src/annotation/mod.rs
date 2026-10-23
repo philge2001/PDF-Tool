@@ -112,7 +112,7 @@ impl AnnotKind {
     }
 }
 
-/// Alle Subtypen, die FolioCraft selbst verwaltet (importiert, zeichnet, speichert).
+/// Alle Subtypen, die PDF Tool selbst verwaltet (importiert, zeichnet, speichert).
 pub const MANAGED_SUBTYPES: [&str; 10] = [
     "Highlight",
     "Underline",

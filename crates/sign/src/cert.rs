@@ -75,7 +75,7 @@ pub fn format_time(t: SystemTime) -> String {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    foliocraft_core::date::display_from_unix(secs)
+    pdftool_core::date::display_from_unix(secs)
 }
 
 /// Zertifikat als PEM-Text ("-----BEGIN CERTIFICATE-----…").

@@ -6,6 +6,10 @@ on:
   push:
   pull_request:
 
+# Der Workflow darf nur lesen (kein Schreibzugriff auf Code, Releases, Issues).
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings

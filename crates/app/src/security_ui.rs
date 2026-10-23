@@ -3,10 +3,10 @@
 //!
 //! Passwörter stehen nur im Speicher (Dialog-Felder), nie in den Einstellungen.
 
-use crate::app::FolioApp;
+use crate::app::PdfToolApp;
 use eframe::egui;
-use foliocraft_core::security::{Permissions, Protection};
-use foliocraft_core::{CoreError, Document};
+use pdftool_core::security::{Permissions, Protection};
+use pdftool_core::{CoreError, Document};
 use std::path::PathBuf;
 
 /// Offene Passwortabfrage für eine Datei.
@@ -87,7 +87,7 @@ fn password_field(ui: &mut egui::Ui, value: &mut String) -> egui::Response {
     )
 }
 
-impl FolioApp {
+impl PdfToolApp {
     /// Öffnen mit Passwortabfrage: Fehlt das Passwort, erscheint der Dialog.
     /// `true`, wenn der Fehler hier behandelt wurde.
     pub(crate) fn handle_open_error(&mut self, path: &std::path::Path, error: &CoreError) -> bool {

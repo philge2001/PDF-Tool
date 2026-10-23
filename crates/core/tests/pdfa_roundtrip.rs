@@ -1,9 +1,9 @@
 //! PDF/A-2b-Umwandlung: strukturelle Anforderungen prüfen (veraPDF läuft nur manuell, siehe
 //! CLAUDE.md – dort bestehen alle Fixtures außer content_mix.pdf mit nicht eingebetteter CID-Schrift).
 
-use foliocraft_core::pdfa::convert_to_pdfa;
+use pdftool_core::pdfa::convert_to_pdfa;
 
-fn convert(name: &str) -> (lopdf::Document, foliocraft_core::pdfa::PdfaReport) {
+fn convert(name: &str) -> (lopdf::Document, pdftool_core::pdfa::PdfaReport) {
     let bytes = std::fs::read(format!(
         "{}/../../tests/fixtures/{name}",
         env!("CARGO_MANIFEST_DIR")
@@ -57,7 +57,7 @@ fn text_document_becomes_pdfa() {
     assert!(xmp.contains("<pdfaid:part>2</pdfaid:part>") && xmp.contains("<pdfaid:conformance>B"));
     assert!(fonts_embedded(&pdf));
     // Text unverändert lesbar.
-    let doc = foliocraft_core::Document::from_bytes({
+    let doc = pdftool_core::Document::from_bytes({
         let mut b = Vec::new();
         pdf.clone().save_to(&mut b).unwrap();
         b
@@ -66,7 +66,7 @@ fn text_document_becomes_pdfa() {
     assert!(
         doc.text_blocks(0).unwrap()[0]
             .text
-            .contains("FolioCraft Testdokument")
+            .contains("PDF Tool Testdokument")
     );
 }
 

@@ -48,8 +48,7 @@ pub const LANGUAGES: &[(&str, &str, &[u8])] = &[
 /// Verzeichnis mit den Sprachdaten; legt sie beim ersten Aufruf im Cache-Ordner ab
 /// (je Programmversion, damit neue Daten alte nie mischen).
 pub fn tessdata_dir() -> Result<PathBuf> {
-    let dir =
-        std::env::temp_dir().join(format!("foliocraft-tessdata-{}", env!("CARGO_PKG_VERSION")));
+    let dir = std::env::temp_dir().join(format!("pdftool-tessdata-{}", env!("CARGO_PKG_VERSION")));
     let io = |path: &Path| {
         let path = path.to_path_buf();
         move |source| OcrError::Io { path, source }

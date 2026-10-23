@@ -6,9 +6,9 @@
 
 use crate::error::{RenderError, Result};
 use crate::loader;
-use foliocraft_core::geometry::Rect;
-use foliocraft_core::text::{CharBox, PageText};
 use pdfium_render::prelude::*;
+use pdftool_core::geometry::Rect;
+use pdftool_core::text::{CharBox, PageText};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -239,7 +239,7 @@ impl RenderService {
         let (init_tx, init_rx) = mpsc::channel::<Result<()>>();
 
         let thread = std::thread::Builder::new()
-            .name("foliocraft-render".into())
+            .name("pdftool-render".into())
             // `move` verschiebt die Channel-Enden und den Waker in den Thread (Ownership-Übergabe).
             .spawn(move || match loader::bind_pdfium() {
                 Ok(pdfium) => {

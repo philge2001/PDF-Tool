@@ -9,8 +9,8 @@ use eframe::egui::{
     self, Align2, Color32, CursorIcon, FontId, Rect, ScrollArea, Sense, Stroke, StrokeKind, pos2,
     vec2,
 };
-use foliocraft_core::PageId;
-use foliocraft_render::{Priority, RenderKey};
+use pdftool_core::PageId;
+use pdftool_render::{Priority, RenderKey};
 use std::collections::BTreeSet;
 
 /// Breite der breitesten Miniatur in egui-Punkten.

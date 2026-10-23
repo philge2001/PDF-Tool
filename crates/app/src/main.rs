@@ -1,4 +1,4 @@
-//! Einstiegspunkt der FolioCraft-Desktop-App.
+//! Einstiegspunkt der PDF-Tool-Desktop-App.
 
 mod a11y_ui;
 mod annot_draw;
@@ -41,11 +41,11 @@ fn main() -> eframe::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,foliocraft=debug".into()),
+                .unwrap_or_else(|_| "info,pdftool=debug".into()),
         )
         .init();
 
-    // Kommandozeile: `foliocraft [datei.pdf] [--vergleichen andere.pdf]`.
+    // Kommandozeile: `pdftool [datei.pdf] [--vergleichen andere.pdf]`.
     let mut initial_file = None;
     let mut compare_with = None;
     let mut args = std::env::args_os().skip(1);
@@ -57,17 +57,55 @@ fn main() -> eframe::Result<()> {
         }
     }
 
+    migrate_storage();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("FolioCraft")
+            .with_title("PDF Tool")
             .with_inner_size([1200.0, 800.0])
             .with_drag_and_drop(true),
         ..Default::default()
     };
     eframe::run_native(
-        "FolioCraft",
+        APP_ID,
         options,
         // Die Closure wird einmal beim Start aufgerufen; `move` übergibt die Pfade hinein.
-        Box::new(move |cc| Ok(Box::new(app::FolioApp::new(cc, initial_file, compare_with)))),
+        Box::new(move |cc| {
+            Ok(Box::new(app::PdfToolApp::new(
+                cc,
+                initial_file,
+                compare_with,
+            )))
+        }),
     )
+}
+
+/// Name für eframe (bestimmt auch den Ordner der gespeicherten Einstellungen).
+const APP_ID: &str = "PDF Tool";
+/// Früherer Name der App.
+const LEGACY_APP_ID: &str = "FolioCraft";
+
+/// Übernimmt beim ersten Start nach der Umbenennung die Einstellungen aus dem alten
+/// Ordner (zuletzt geöffnet, vertraute Zertifikate …). Fehler sind egal: dann startet die
+/// App eben mit Standardwerten.
+fn migrate_storage() {
+    let (Some(new), Some(old)) = (
+        eframe::storage_dir(APP_ID),
+        eframe::storage_dir(LEGACY_APP_ID),
+    ) else {
+        return;
+    };
+    if new.exists() || !old.is_dir() {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(&old) else {
+        return;
+    };
+    if std::fs::create_dir_all(&new).is_err() {
+        return;
+    }
+    for e in entries.flatten() {
+        if e.path().is_file() {
+            let _ = std::fs::copy(e.path(), new.join(e.file_name()));
+        }
+    }
 }

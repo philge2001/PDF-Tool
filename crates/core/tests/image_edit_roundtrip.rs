@@ -1,8 +1,8 @@
 //! Bilder bearbeiten: verschieben, skalieren, löschen, ersetzen, einfügen → speichern → neu laden.
 
-use foliocraft_core::content::Matrix;
-use foliocraft_core::raster::Raster;
-use foliocraft_core::{Document, NewImage, PageImage, Point, Rect};
+use pdftool_core::content::Matrix;
+use pdftool_core::raster::Raster;
+use pdftool_core::{Document, NewImage, PageImage, Point, Rect};
 
 /// 8×4 Pixel, rot (mit ImageMagick erzeugt: `convert -size 8x4 xc:red -strip red.jpg`).
 const RED_JPEG: &[u8] = &[
@@ -175,7 +175,7 @@ fn replace_with_png_keeps_aspect_and_alpha() {
 
     // Pixel des neuen Bilds prüfen (über die Ressourcen der gespeicherten Seite).
     let page = saved.pages()[0].object_id;
-    let res = foliocraft_core::content::page_resources(saved.pdf(), page).unwrap();
+    let res = pdftool_core::content::page_resources(saved.pdf(), page).unwrap();
     let xobjects = saved
         .pdf()
         .dereference(res.get(b"XObject").unwrap())

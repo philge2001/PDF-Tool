@@ -6,9 +6,9 @@
 //! (in Anzeige-Einheiten) in `OcrSlot`. Nach dem Job übernimmt die UI sie als unsichtbare
 //! Textebene – ein Undo-Schritt, danach funktionieren Suche, Markieren und Kopieren.
 
-use crate::app::FolioApp;
+use crate::app::PdfToolApp;
 use eframe::egui;
-use foliocraft_core::{OcrWord, parse_page_ranges};
+use pdftool_core::{OcrWord, parse_page_ranges};
 use std::sync::{Arc, Mutex};
 
 /// Auflösung für die Erkennung (Tesseract arbeitet am besten um 300 dpi).
@@ -28,7 +28,7 @@ impl Default for OcrDialog {
         Self {
             ranges: String::new(),
             only_without_text: true,
-            languages: foliocraft_ocr::LANGUAGES
+            languages: pdftool_ocr::LANGUAGES
                 .iter()
                 .map(|(code, _, _)| *code == "deu" || *code == "eng")
                 .collect(),
@@ -49,7 +49,7 @@ fn to_gray(rgba: &[u8]) -> Vec<u8> {
         .collect()
 }
 
-impl FolioApp {
+impl PdfToolApp {
     pub(crate) fn open_ocr_dialog(&mut self) {
         if self.document.is_some() {
             self.ocr_dialog = Some(OcrDialog::default());
@@ -88,8 +88,7 @@ impl FolioApp {
                     .on_hover_text("Seiten, die schon Text enthalten, werden übersprungen");
                 ui.horizontal(|ui| {
                     ui.label("Sprachen:");
-                    for ((_, name, _), on) in
-                        foliocraft_ocr::LANGUAGES.iter().zip(&mut dlg.languages)
+                    for ((_, name, _), on) in pdftool_ocr::LANGUAGES.iter().zip(&mut dlg.languages)
                     {
                         ui.checkbox(on, *name);
                     }
@@ -128,7 +127,7 @@ impl FolioApp {
                 Some("Keine passenden Seiten – alle gewählten Seiten enthalten schon Text.".into());
             return;
         }
-        let languages: Vec<&str> = foliocraft_ocr::LANGUAGES
+        let languages: Vec<&str> = pdftool_ocr::LANGUAGES
             .iter()
             .zip(&dlg.languages)
             .filter(|(_, on)| **on)
@@ -173,7 +172,7 @@ impl FolioApp {
 
         let job = crate::jobs::Job::spawn("Texterkennung", ctx, move |c| {
             c.progress(0.0, "Tesseract wird gestartet …");
-            let engine = foliocraft_ocr::Engine::new(&languages).map_err(|e| e.to_string())?;
+            let engine = pdftool_ocr::Engine::new(&languages).map_err(|e| e.to_string())?;
             let total = sizes.len();
             let mut result = Vec::with_capacity(total);
             let mut word_count = 0;
@@ -190,7 +189,7 @@ impl FolioApp {
                     .map_err(|e| format!("Seite {} rendern: {e}", page + 1))?;
                 let gray = to_gray(&image.pixels);
                 let words = engine
-                    .recognize(&foliocraft_ocr::Image {
+                    .recognize(&pdftool_ocr::Image {
                         data: &gray,
                         width: image.width,
                         height: image.height,
