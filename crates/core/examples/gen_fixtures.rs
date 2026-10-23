@@ -1137,6 +1137,60 @@ fn bookmarks(path: &Path) {
     b.finish(path);
 }
 
+/// Drei Bildarten auf einer Seite: direktes Bild-XObject (rot/grün, 40×20 px), Bild in einem
+/// Formular-XObject mit Beschneidung (wie viele Programme es schreiben, blau, 30×30 px) und
+/// ein Inline-Bild (2×2 Graustufen).
+fn images(path: &Path) {
+    let mut b = Builder::new();
+    let rgb = |w: usize, h: usize, f: &dyn Fn(usize, usize) -> [u8; 3]| {
+        let mut v = Vec::with_capacity(w * h * 3);
+        for y in 0..h {
+            for x in 0..w {
+                v.extend_from_slice(&f(x, y));
+            }
+        }
+        v
+    };
+    let img = |doc: &mut Document, w: usize, h: usize, data: Vec<u8>| {
+        doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Image", "Width" => w as i64, "Height" => h as i64,
+                "ColorSpace" => "DeviceRGB", "BitsPerComponent" => 8,
+            },
+            data,
+        ))
+    };
+    let direct = rgb(40, 20, &|x, _| {
+        if x < 20 { [220, 30, 30] } else { [30, 160, 60] }
+    });
+    let direct = img(&mut b.doc, 40, 20, direct);
+    let blue = rgb(30, 30, &|_, _| [40, 80, 220]);
+    let blue = img(&mut b.doc, 30, 30, blue);
+    // Formular: Beschneidung auf einen Kreis-ähnlichen Bereich, dann das Bild.
+    let form = b.doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Form",
+            "BBox" => vec![0.into(), 0.into(), 1.into(), 1.into()],
+            "Resources" => dictionary! { "XObject" => dictionary! { "Blau" => blue } },
+        },
+        b"q 0.05 0.05 0.9 0.9 re W n 1 0 0 1 0 0 cm /Blau Do Q".to_vec(),
+    ));
+    let font = b.font_id;
+    b.raw_page(
+        A4,
+        b"BT /F1 14 Tf 72 760 Td (Bilder) Tj ET
+          q 160 0 0 80 72 600 cm /Direkt Do Q
+          q 120 0 0 120 300 560 cm /Fm1 Do Q
+          q 60 0 0 60 72 450 cm BI /W 2 /H 2 /CS /G /BPC 8 ID \x00\x80\x80\xff EI Q"
+            .to_vec(),
+        dictionary! {
+            "Font" => dictionary! { "F1" => font },
+            "XObject" => dictionary! { "Direkt" => direct, "Fm1" => form },
+        },
+    );
+    b.finish(path);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("big") {
@@ -1164,4 +1218,5 @@ fn main() {
     photo(&dir.join("photo.pdf"));
     tagged(&dir.join("tagged.pdf"));
     bookmarks(&dir.join("bookmarks.pdf"));
+    images(&dir.join("images.pdf"));
 }

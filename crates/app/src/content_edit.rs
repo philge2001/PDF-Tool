@@ -44,6 +44,10 @@ pub struct ContentEdit {
     pub(crate) image_drag: Option<crate::image_tool::ImageDrag>,
     /// Bild, das mit dem nächsten Klick platziert wird.
     pub placing_image: Option<pdftool_core::NewImage>,
+    /// Bild unter dem letzten Rechtsklick (für das Kontextmenü).
+    pub context_image: Option<(usize, pdftool_core::PageImage)>,
+    /// Mitte des sichtbaren Bereichs (Seite, PDF-Punkt) – Ziel für eingefügte Bilder.
+    pub visible_center: Option<(usize, pdftool_core::Point)>,
     /// Stil des ausgewählten Absatzes für die Formatleiste (Seite, Stempel, erste Op).
     style_cache: Option<((usize, u64, usize), TextStyle, FontChoices)>,
 }
@@ -62,6 +66,8 @@ impl Default for ContentEdit {
             image_drag: None,
             placing_image: None,
             style_cache: None,
+            context_image: None,
+            visible_center: None,
         }
     }
 }

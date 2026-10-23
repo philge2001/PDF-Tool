@@ -16,6 +16,7 @@ mod form_props;
 mod forms;
 mod home;
 mod icons;
+mod image_clip;
 mod image_tool;
 mod jobs;
 mod menu;

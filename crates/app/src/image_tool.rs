@@ -57,7 +57,7 @@ impl OpenDocument {
     }
 
     /// Oberstes Bild unter dem Mauszeiger (zuletzt gezeichnetes zuerst).
-    fn image_at(&mut self, view: &ViewOutput, pos: Pos2) -> Option<(usize, PageImage)> {
+    pub(crate) fn image_at(&mut self, view: &ViewOutput, pos: Pos2) -> Option<(usize, PageImage)> {
         let (page, page_rect) = view.page_at(pos)?;
         let info = self.doc.page(page).ok()?.clone();
         let p = transform::screen_to_pdf(&info, page_rect, pos);
@@ -68,7 +68,7 @@ impl OpenDocument {
             .map(|i| (page, i))
     }
 
-    fn image_handle_rect(&self, view: &ViewOutput) -> Option<Rect> {
+    pub(crate) fn image_handle_rect(&self, view: &ViewOutput) -> Option<Rect> {
         let (page, img) = self.content_edit.selected_image.as_ref()?;
         let r = screen_rect(self, view, *page, img.bounds)?;
         Some(Rect::from_center_size(
@@ -266,6 +266,12 @@ impl OpenDocument {
                 painter.rect_filled(h, 1.0, accent);
             }
         }
+        self.paint_image_drag(&painter, view);
+    }
+
+    /// Vorschau beim Ziehen eines Bilds.
+    pub(crate) fn paint_image_drag(&self, painter: &egui::Painter, view: &ViewOutput) {
+        let accent = Color32::from_rgb(40, 120, 230);
         if let Some(drag) = &self.content_edit.image_drag
             && let Some(r) = screen_rect(
                 self,

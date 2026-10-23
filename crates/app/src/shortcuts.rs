@@ -82,7 +82,7 @@ impl PdfToolApp {
         if ctx.input(|i| i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace)) {
             if self.tool.is_form_tool() {
                 d.delete_selected_field();
-            } else if self.tool.is_content_tool() {
+            } else if self.tool.is_content_tool() || d.content_edit.selected_image.is_some() {
                 d.delete_selected_image();
             } else {
                 d.delete_selected();
@@ -90,8 +90,16 @@ impl PdfToolApp {
         }
 
         // egui meldet Strg+C nicht als Taste, sondern als eigenes `Copy`-Ereignis.
+        // Ausgewähltes Bild ohne markierten Text: das Bild kopieren.
+        let mut copy_image = false;
         if ctx.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Copy))) {
-            d.copy_selection(ctx);
+            if d.selected_text().is_none_or(|t| t.is_empty())
+                && d.content_edit.selected_image.is_some()
+            {
+                copy_image = true;
+            } else {
+                d.copy_selection(ctx);
+            }
         }
         if ctx.input(|i| i.key_pressed(Key::Escape)) {
             // Esc der Reihe nach: laufenden Zug abbrechen, Auswahl aufheben, zurück zur Textauswahl.
@@ -130,6 +138,9 @@ impl PdfToolApp {
         }
         if pressed(Key::ArrowUp) {
             v.scroll_by(vec2(0.0, -ARROW_SCROLL));
+        }
+        if copy_image {
+            self.copy_selected_image(ctx);
         }
     }
 }

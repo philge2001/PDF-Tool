@@ -555,7 +555,22 @@ impl PdfToolApp {
         match tool {
             _ if over_field || placing => {}
             Tool::Select => {
-                d.handle_annotation_select(ui, &view, true);
+                // Über einem Bild (und keiner Annotation) oder während eines Bild-Zugs:
+                // Bild auswählen, verschieben, skalieren. Sonst Annotationen.
+                let pointer = ui
+                    .input(|i| i.pointer.press_origin())
+                    .or(view.response.hover_pos());
+                let on_annot = pointer.is_some_and(|p| d.annotation_at(&view, p).is_some());
+                let on_image = !on_annot && pointer.is_some_and(|p| d.image_under(&view, p));
+                if d.content_edit.image_drag.is_some() || on_image {
+                    d.selected = None;
+                    d.handle_image_edit(ui, &view);
+                } else {
+                    if view.response.clicked() {
+                        d.content_edit.selected_image = None;
+                    }
+                    d.handle_annotation_select(ui, &view, true);
+                }
             }
             // Im Textmodus kann man Annotationen anklicken (auswählen, Doppelklick = bearbeiten);
             // Ziehen markiert weiterhin Text.
@@ -620,7 +635,28 @@ impl PdfToolApp {
         d.paint_selection(ui, &view);
         if tool == Tool::EditImage {
             d.paint_image_edit(ui, &view);
+        } else if tool == Tool::Select {
+            d.paint_selected_image(ui, &view);
         }
+        // Sichtbare Mitte merken: Strg+V legt Bilder dort ab, nicht in der (evtl. verdeckten) Seitenmitte.
+        let mid = view.clip.center();
+        d.content_edit.visible_center = view
+            .pages
+            .iter()
+            .min_by(|a, b| {
+                a.1.distance_to_pos(mid)
+                    .total_cmp(&b.1.distance_to_pos(mid))
+            })
+            .and_then(|&(page, rect)| {
+                let info = d.doc.page(page).ok()?;
+                let p = rect.intersect(view.clip).center();
+                Some((page, crate::viewer::transform::screen_to_pdf(info, rect, p)))
+            });
+        let image_action = if tool.is_form_tool() {
+            None
+        } else {
+            d.image_context_menu(&view, tool)
+        };
         if tool.is_content_tool() {
             d.paint_content_edit(ui, &view, tool);
         } else if d.content_edit.editing.is_some() {
@@ -631,6 +667,10 @@ impl PdfToolApp {
             self.error = Some(e);
         }
         self.paint_sign_area(ui, &view);
+        if let Some((action, page, img)) = image_action {
+            let ctx = ui.ctx().clone();
+            self.image_action(&ctx, action, page, img);
+        }
     }
 }
 
@@ -649,6 +689,7 @@ impl eframe::App for PdfToolApp {
         self.handle_close_request(&ctx);
         self.handle_dropped_files(&ctx);
         self.handle_shortcuts(&ctx);
+        self.handle_image_paste(&ctx);
         self.update_title(&ctx);
 
         self.sync_tool_group();
