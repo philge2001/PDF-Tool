@@ -275,7 +275,7 @@ impl<'a> FontInfo<'a> {
 
     /// Eine Teilmenge der eingebauten Schrift, die (noch) nur im Modell existiert.
     pub fn from_subset(font: &crate::embedded_font::SubsetFont) -> Self {
-        let (ascent, descent) = crate::embedded_font::ascent_descent();
+        let (ascent, descent) = font.font().ascent_descent();
         Self {
             two_byte: true,
             widths: Widths::Cid {
@@ -287,7 +287,7 @@ impl<'a> FontInfo<'a> {
             descent: descent / 1000.0,
             scale: 0.001,
             encoding: None,
-            base_font: "NotoSans-Regular".into(),
+            base_font: font.font().postscript.clone(),
             embedded: true,
             unicode: Some(
                 font.texts()
