@@ -18,7 +18,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 ## Workspace
 | Crate | Pfad | Aufgabe | Darf abhängen von |
 |---|---|---|---|
-| foliocraft-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg, ttf-parser, subsetter, png, jpeg-encoder, zip, similar |
+| foliocraft-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg, ttf-parser, subsetter, png, jpeg-encoder, zip, similar, getrandom (Zufallsschlüssel für AES-256) |
 | foliocraft-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
 | foliocraft-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore |
 | foliocraft-ocr | crates/ocr | Texterkennung (Tesseract), Wörter mit Pixelrechteck | tesseract-rs (baut Tesseract/Leptonica mit CMake) |
@@ -48,6 +48,12 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Kommentare und UI-Texte auf Deutsch, Bezeichner auf Englisch.
 - Tests für core: Roundtrip „erstellen → speichern → neu laden → vergleichen“ mit den Fixtures.
 - Fixtures in `tests/fixtures/` werden ausschließlich per `gen_fixtures` erzeugt.
+
+## Meilensteine Phase 9 (Sicherheit & Barrierefreiheit)
+- [x] 9.1 Passwortgeschützte PDFs öffnen
+- [x] 9.2 Schutz setzen/entfernen (AES-256)
+- [x] 9.3 Tagged PDF (Strukturbaum, Titel/Sprache, Alternativtexte, Panel „Tags“)
+- [x] 9.4 Barrierefreiheit prüfen, automatisch taggen + Abschluss
 
 ## Meilensteine Phase 8 (Export, Vergleich, Komprimierung, PDF/A)
 - [x] 8.1 Export Bilder (PNG/JPEG) & Text
@@ -114,7 +120,15 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Gelöschte Seiten sind nach inkrementellem Speichern nicht mehr erreichbar, ihre Bytes stehen aber
   noch in der Datei – „Schwärzen → Dokument bereinigen“ schreibt die Datei komplett neu.
 - Dokumente werden im UI-Thread geladen (lopdf); sehr große Dateien (> 100 MB) blockieren kurz.
-- Verschlüsselte PDFs mit Benutzerpasswort werden noch nicht unterstützt (Passwortdialog fehlt).
+- Verschlüsselung: Gespeichert wird immer komplett neu (verschlüsselt), nicht inkrementell – Signaturen werden
+  dabei ungültig (Warnung im Dialog). Neuer Schutz nur als AES-256; Zertifikats-Verschlüsselung (/PubSec) fehlt.
+  Ohne Besitzerpasswort bleiben Berechtigungen beim Speichern unverändert.
+- Barrierefreiheit: Die Prüfung ist eine Auswahl wichtiger PDF/UA-Punkte (keine vollständige Validierung, z. B.
+  keine Kontrastprüfung, keine Prüfung der Überschriften-Hierarchie). Automatisches Taggen ist heuristisch:
+  Lesereihenfolge = Reihenfolge im Content-Stream, Überschriften nur über die Schriftgröße, keine Listen/Tabellen,
+  Text in Formular-XObjects wird als Ganzes ein Absatz; nur ungetaggte Dokumente. Nach dem Taggen in der App
+  neu angelegte Annotationen bekommen keinen Tag. Geänderte Titel aktualisieren /Info, nicht das XMP (dc:title).
+  Strukturelemente ändern/verschieben ist nicht möglich (nur Alternativtext, Titel, Sprache).
 - Annotationen auf gedrehten Seiten: Geometrie korrekt, Freitext-Overlay nicht mitgedreht.
 - Absätze bearbeiten: Formatierung innerhalb des Absatzes (z. B. ein fettes Wort) wird auf den Stil der ersten
   Zeile vereinheitlicht; nur links-/Blocksatz (zentriert/rechtsbündig wird linksbündig neu gesetzt); Kerning geht verloren;
@@ -320,6 +334,22 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   Rückfrage (Signaturwarnung), Schwärzen als Job, Ergebnis per `pending_doc`/`DocSlot` als
   ungespeicherte Fassung (`Document::replacement`); `redact_search_hits` (alle Suchtreffer → Redact, 1 Undo-Schritt), `pending_redactions`;
   Werkzeuge `Tool::RedactText` (wie Hervorheben) und `Tool::RedactArea` (Rechteck), Menü „Schwärzen“
+- `core::security` – `load` (entschlüsselt beim Öffnen, Fehler `PasswordRequired`/`WrongPassword`), `Security`
+  (Verfahren, Berechtigungen, Besitzerpasswort bekannt?), `Protection` → AES-256 (V5/R6, CF mit /Length und /AuthEvent
+  für Poppler); `Document::{open_with_password, security, unlock, set_protection}`, Speichern verschlüsselt komplett neu
+- `core::tags` – `Document::{is_tagged, structure_tree, marked_content, properties}`, `StructNode` (RoleMap aufgelöst,
+  Inhalte als (Seite, MCID)), Commands `SetProperties` (Titel/Sprache in `Model::properties`) und `SetAltText`
+  (`Model::alt_texts`); `tags::write` beim Speichern (/Lang, /Info /Title, DisplayDocTitle, /Alt).
+  Interpreter: `Interpreted::marked` (Text/Rechteck je MCID), `unmarked` (Inhalte weder MCID noch Artefakt)
+- `core::accessibility` – `Document::accessibility_check` → `Check { kind, status, title, detail }`
+- `core::autotag` – `auto_tag_pdf(bytes, AutoTagOptions { lang, title, embed_fonts }, progress)`: Absätze/Überschriften
+  (Schriftgröße ≥ 1,15 × Fließtext, H1–H3), Bilder → Figure, Pfade/Kopf-/Fußzeilen → Artefakt, jede Ausgabe einzeln in
+  BDC/EMC, Annotationen als Link/Form/Annot mit OBJR und /Alt, ParentTree, /Tabs /S, MarkInfo, XMP mit
+  `pdfuaid:part=1` (bei PDF/A-2 mit Erweiterungsschema), Schriften über `pdfa::embed_standard_fonts`
+- `app::security_ui` – Passwortabfrage beim Öffnen, Dialog „Sicherheit“
+- `app::tags_ui` – Panel „Tags“ (`TagState`: Baum gecacht nach Bytes/Seiten/Alt-Texten, markierte Inhalte je Seite
+  nach Stempel), Overlay `paint_tags` (Auswahl, nummerierte Lesereihenfolge)
+- `app::a11y_ui` – Menü „Barrierefreiheit“: Prüfbericht-Fenster, Dialog „Automatisch taggen“ (Job, `pending_doc`)
 - `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
 
 ## Tastenkürzel
@@ -346,6 +376,8 @@ Gegenprobe: `pdfsig out.pdf`; CMS mit `openssl cms -verify -binary -inform DER -
 Unabhängig signierte Test-PDFs: OpenSSL (`openssl cms -sign -binary -outform DER`) über die ByteRange.
 `cargo run -p foliocraft-core --example docx_demo -- in.pdf out.docx` (Gegenprobe: python-docx, `soffice --convert-to pdf`).
 `cargo run -p foliocraft-core --example compress_demo -- in.pdf out.pdf [dpi] [qualität]` (Gegenprobe: `pdfimages -list`).
+`cargo run -p foliocraft-core --example autotag_demo -- in.pdf [out.pdf] [de-DE] [Titel]` prüft/taggt
+(Gegenprobe veraPDF mit `--flavour ua1`), `… --example security_demo -- schützen|öffnen …` (Gegenprobe `qpdf --check`, `pdfinfo`).
 `cargo run -p foliocraft-core --example pdfa_demo -- in.pdf out.pdf`, Prüfung mit veraPDF (nur Testwerkzeug, nicht im Repo):
 `curl -o ~/tools/verapdf.jar https://maven-central.storage-download.googleapis.com/maven2/org/verapdf/apps/greenfield-apps/1.28.2/greenfield-apps-1.28.2.jar`,
 `java -cp ~/tools/verapdf.jar org.verapdf.apps.GreenfieldCliWrapper --flavour 2b --format text -v datei.pdf`.

@@ -65,6 +65,18 @@ Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
   Formulardaten – mit Anzeige, was gefunden wurde
 - Warnung, wenn signierte Dokumente betroffen sind
 
+## Funktionen (Phase 9 – Sicherheit & Barrierefreiheit)
+
+- Passwortgeschützte PDFs öffnen (RC4, AES-128, AES-256); beim Speichern bleibt der Schutz erhalten
+- „Datei → Sicherheit…“: Schutz festlegen (AES-256) mit Passwort zum Öffnen, Besitzerpasswort und
+  Berechtigungen (Drucken, Kopieren, Kommentieren, Ändern) – oder Schutz entfernen (mit Besitzerpasswort)
+- „Barrierefreiheit → Prüfen…“: Bericht mit Ampel (getaggt? Sprache? Titel? Alternativtexte? Schriften
+  eingebettet? Inhalte ohne Tag? Scans? Tab-Reihenfolge? Lesezeichen?) und passenden Knöpfen zum Beheben
+- „Barrierefreiheit → Automatisch taggen…“: Überschriften, Absätze, Bilder, Links und Felder werden aus dem
+  Layout erkannt, Linien und Kopf-/Fußzeilen als Artefakt markiert; Sprache, Titel und Schriften gleich mit
+- Panel „Tags“: Titel und Sprache ändern, Strukturbaum in Lesereihenfolge (Klick zeigt die Stelle auf der
+  Seite), Alternativtexte für Abbildungen, nummerierte Lesereihenfolge auf den Seiten
+
 ## Funktionen (Phase 8 – Export, Vergleich, Komprimierung, PDF/A)
 
 - „Datei → Exportieren…“: Seiten als PNG oder JPEG (Auflösung, Qualität), Text als TXT, einfaches Word (DOCX)
@@ -204,6 +216,9 @@ cargo run -p foliocraft-core --example text_edit_demo -- in.pdf                 
 cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "Lorem=Neuer Text" "+72,500=Hallo"  # bearbeiten/hinzufügen
 cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "!bild.png@300,400,120" "#0=foto.jpg" "-#1"  # Bilder
 cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "¶Lorem|72,720,260,j=Neuer Absatz …"      # Absatz neu setzen
+cargo run -p foliocraft-core --example security_demo -- schützen in.pdf out.pdf benutzer besitzer [nur-lesen]  # verschlüsseln
+cargo run -p foliocraft-core --example security_demo -- öffnen datei.pdf [passwort]                # Schutz anzeigen
+cargo run -p foliocraft-core --example autotag_demo -- in.pdf [out.pdf] [de-DE] [Titel]          # prüfen / automatisch taggen
 ```
 
 ## Projektstruktur
