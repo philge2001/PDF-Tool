@@ -26,6 +26,7 @@ mod settings;
 mod shortcuts;
 mod sign_ui;
 mod signatures;
+mod tags_ui;
 mod text_cache;
 mod toolbar;
 mod tools;

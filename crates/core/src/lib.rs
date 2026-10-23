@@ -46,6 +46,8 @@ pub use error::{CoreError, Result};
 pub use form::{FieldId, FieldKind, FieldValue, FormField, FormStore, Widget};
 pub use geometry::{Color, Point, Quad, Rect};
 pub use image_edit::{NewImage, PageImage};
+/// Objektnummer im PDF (z. B. eines Strukturelements), für die App ohne eigene lopdf-Abhängigkeit.
+pub use lopdf::ObjectId;
 pub use ocr_layer::OcrWord;
 pub use page_export::{extract_pages, split_by_ranges, split_every};
 pub use page_import::{InsertPages, parse_page_ranges};

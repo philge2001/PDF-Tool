@@ -292,6 +292,7 @@ impl FolioApp {
                 ui.checkbox(&mut self.show_thumbnails, "Seitenleiste");
                 ui.checkbox(&mut self.show_comments, "Kommentare");
                 ui.checkbox(&mut self.show_signatures, "Signaturen");
+                ui.checkbox(&mut self.show_tags, "Tags (Barrierefreiheit)");
                 ui.separator();
                 ui.label("Design");
                 self.theme_radios(ui);

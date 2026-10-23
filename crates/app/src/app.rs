@@ -51,6 +51,8 @@ pub struct OpenDocument {
     pub signatures: crate::signatures::SigState,
     /// Inhalt bearbeiten: Textblöcke, laufende Eingabe.
     pub content_edit: crate::content_edit::ContentEdit,
+    /// Panel "Tags": Strukturbaum, Auswahl, Eingaben.
+    pub tags: crate::tags_ui::TagState,
 }
 
 pub struct FolioApp {
@@ -84,6 +86,8 @@ pub struct FolioApp {
     pub(crate) trust: foliocraft_sign::TrustStore,
     pub(crate) trust_version: u64,
     pub(crate) show_signatures: bool,
+    /// Panel "Tags" (Barrierefreiheit) statt der Kommentare.
+    pub(crate) show_tags: bool,
     pub(crate) sign_dialog: Option<crate::sign_ui::SignDialog>,
     pub(crate) cert_dialog: Option<crate::sign_ui::CertDialog>,
     /// Nach erfolgreichem Job diese Datei öffnen (z. B. frisch signierte Fassung).
@@ -185,6 +189,7 @@ impl FolioApp {
             trust: Default::default(),
             trust_version: 0,
             show_signatures: false,
+            show_tags: false,
             sign_dialog: None,
             cert_dialog: None,
             open_after_job: None,
@@ -270,6 +275,7 @@ impl FolioApp {
             prop_inputs: Default::default(),
             signatures: Default::default(),
             content_edit: Default::default(),
+            tags: Default::default(),
             editor: None,
             selected: None,
             annot_drag: None,
@@ -605,6 +611,9 @@ impl FolioApp {
         d.paint_annotations(ui, &view);
         d.paint_annotation_selection(ui, &view);
         d.paint_gesture_preview(ui, &view, tool, &self.tool_settings);
+        if self.show_tags {
+            d.paint_tags(ui, &view);
+        }
         d.paint_search_hits(ui, &view);
         d.paint_selection(ui, &view);
         if tool == Tool::EditImage {
@@ -674,6 +683,11 @@ impl eframe::App for FolioApp {
                     .default_size(280.0)
                     .size_range(220.0..=500.0)
                     .show(ui, |ui| d.field_properties(ui));
+            } else if self.show_tags && !self.show_signatures {
+                egui::Panel::right("tags")
+                    .default_size(320.0)
+                    .size_range(220.0..=560.0)
+                    .show(ui, |ui| d.tags_panel(ui));
             } else if self.show_comments && !self.show_signatures {
                 egui::Panel::right("comments")
                     .default_size(280.0)
