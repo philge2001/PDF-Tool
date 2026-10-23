@@ -1,5 +1,6 @@
 //! Einstiegspunkt der FolioCraft-Desktop-App.
 
+mod a11y_ui;
 mod annot_draw;
 mod app;
 mod comments;

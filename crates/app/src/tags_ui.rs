@@ -66,6 +66,8 @@ pub struct TagState {
     alt_input: String,
     alt_for: Option<(usize, Option<String>)>,
     error: Option<String>,
+    /// Knopf "Automatisch taggen…" gedrückt (die App öffnet den Dialog).
+    pub request_autotag: bool,
 }
 
 impl OpenDocument {
@@ -254,6 +256,9 @@ impl OpenDocument {
                 )
                 .weak(),
             );
+            if ui.button("Automatisch taggen…").clicked() {
+                self.tags.request_autotag = true;
+            }
             self.show_tag_error(ui);
             return;
         }
@@ -327,6 +332,11 @@ impl OpenDocument {
                                 Some(a) => format!("„{a}“"),
                                 None => "kein Alternativtext".into(),
                             }
+                        } else if text.is_empty()
+                            && let Some(a) = &row.alt
+                        {
+                            // z. B. Links und Kommentare: ihre Beschreibung.
+                            format!("„{a}“")
                         } else {
                             text
                         };

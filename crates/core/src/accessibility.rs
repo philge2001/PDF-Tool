@@ -224,7 +224,7 @@ impl Document {
                 Fail,
                 "Schriften eingebettet",
                 format!(
-                    "Nicht eingebettet: {}. Abhilfe: „Nach PDF/A umwandeln“ bettet \
+                    "Nicht eingebettet: {}. Abhilfe: „Automatisch taggen“ oder „Nach PDF/A umwandeln“ betten \
                      Standardschriften ein.",
                     names.join(", ")
                 ),

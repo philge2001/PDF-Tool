@@ -99,6 +99,9 @@ pub struct FolioApp {
     pub(crate) password_prompt: Option<crate::security_ui::PasswordPrompt>,
     pub(crate) security_dialog: Option<crate::security_ui::SecurityDialog>,
     pub(crate) compress_dialog: Option<crate::compress_ui::CompressDialog>,
+    /// Fenster "Barrierefreiheit prüfen" und Dialog "Automatisch taggen".
+    pub(crate) a11y_report: Option<crate::a11y_ui::A11yReport>,
+    pub(crate) autotag_dialog: Option<crate::a11y_ui::AutoTagDialog>,
     /// Dokumentvergleich: Ergebnis des laufenden Jobs, offenes Vergleichsfenster.
     pub(crate) pending_compare: Option<(
         crate::compare::CompareSlot,
@@ -198,6 +201,8 @@ impl FolioApp {
             password_prompt: None,
             security_dialog: None,
             compress_dialog: None,
+            a11y_report: None,
+            autotag_dialog: None,
             pending_compare: None,
             compare: None,
             #[cfg(feature = "ocr")]
@@ -677,6 +682,7 @@ impl eframe::App for FolioApp {
                 .size_range(220.0..=520.0)
                 .show(ui, |ui| self.signatures_panel(ui));
         }
+        let mut open_autotag = false;
         if let Some(d) = &mut self.document {
             if self.tool.is_form_tool() {
                 egui::Panel::right("field_properties")
@@ -688,6 +694,9 @@ impl eframe::App for FolioApp {
                     .default_size(320.0)
                     .size_range(220.0..=560.0)
                     .show(ui, |ui| d.tags_panel(ui));
+                if std::mem::take(&mut d.tags.request_autotag) {
+                    open_autotag = true;
+                }
             } else if self.show_comments && !self.show_signatures {
                 egui::Panel::right("comments")
                     .default_size(280.0)
@@ -732,6 +741,9 @@ impl eframe::App for FolioApp {
                     });
             }
         }
+        if open_autotag {
+            self.open_autotag_dialog();
+        }
         if self.document.is_some() {
             // Grauer Hintergrund hinter den (weißen) Seiten – im hellen Design sonst unsichtbar.
             let backdrop = if ui.visuals().dark_mode {
@@ -762,6 +774,8 @@ impl eframe::App for FolioApp {
         self.password_prompt_ui(&ctx);
         self.security_dialog_ui(&ctx);
         self.compress_dialog_ui(&ctx);
+        self.a11y_report_ui(&ctx);
+        self.autotag_dialog_ui(&ctx);
         self.compare_ui(&ctx);
         #[cfg(feature = "ocr")]
         self.ocr_dialog_ui(&ctx);

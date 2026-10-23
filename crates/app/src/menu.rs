@@ -288,6 +288,22 @@ impl FolioApp {
                 ui.separator();
                 ui.checkbox(&mut self.show_signatures, "Signatur-Panel");
             });
+            ui.menu_button("Barrierefreiheit", |ui| {
+                let has_doc = self.document.is_some();
+                if ui.add_enabled(has_doc, Button::new("Prüfen…")).clicked() {
+                    self.open_a11y_report();
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(has_doc, Button::new("Automatisch taggen…"))
+                    .clicked()
+                {
+                    self.open_autotag_dialog();
+                    ui.close();
+                }
+                ui.separator();
+                ui.checkbox(&mut self.show_tags, "Panel „Tags“");
+            });
             ui.menu_button("Ansicht", |ui| {
                 ui.checkbox(&mut self.show_thumbnails, "Seitenleiste");
                 ui.checkbox(&mut self.show_comments, "Kommentare");
