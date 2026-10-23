@@ -58,7 +58,11 @@ pub struct OpenDocument {
 pub struct PdfToolApp {
     /// `Err` enthält die Fehlermeldung, wenn PDFium nicht geladen werden konnte.
     pub(crate) render: Result<RenderService, String>,
+    /// Aktives Dokument (Tab). Weitere offene Dokumente liegen in `others`, siehe `tabs`.
     pub(crate) document: Option<OpenDocument>,
+    pub(crate) others: Vec<OpenDocument>,
+    /// Position des aktiven Tabs in der Tab-Reihenfolge.
+    pub(crate) active_pos: usize,
     /// Fehlermeldung, die als Dialog angezeigt wird.
     pub(crate) error: Option<String>,
     /// Offenes Panel rechts (Kommentare, Miniaturen, …) – `None` = nur die Symbolleiste.
@@ -154,7 +158,7 @@ fn install_fonts(ctx: &egui::Context) {
 impl PdfToolApp {
     pub fn new(
         cc: &eframe::CreationContext<'_>,
-        initial_file: Option<PathBuf>,
+        initial_files: Vec<PathBuf>,
         compare_with: Option<PathBuf>,
     ) -> Self {
         // egui würde Strg+Plus/Minus sonst für die UI-Vergrößerung nutzen – wir zoomen das Dokument.
@@ -183,6 +187,8 @@ impl PdfToolApp {
         let mut app = Self {
             render,
             document: None,
+            others: Vec::new(),
+            active_pos: 0,
             error: None,
             right_pane: settings.right_pane,
             tools_panel: settings.tools_panel,
@@ -225,7 +231,7 @@ impl PdfToolApp {
             sanitize_dialog: None,
         };
         app.rebuild_trust();
-        if let Some(path) = initial_file {
+        for path in initial_files {
             app.open_path(&cc.egui_ctx, &path);
         }
         if let Some(other) = compare_with {
@@ -240,9 +246,12 @@ impl PdfToolApp {
             return;
         }
         let _ = ctx; // Fenstertitel setzt `update_title` im nächsten Frame
+        if self.focus_open_file(path) {
+            return;
+        }
         match Document::open(path) {
             Ok(doc) => {
-                self.adopt_document(doc);
+                self.open_in_new_tab(doc);
                 self.settings.add_recent(path);
                 tracing::info!(path = %path.display(), "Dokument geöffnet");
             }
@@ -329,7 +338,8 @@ impl PdfToolApp {
             match (&mut self.document, event) {
                 (Some(d), Event::OpenFailed { doc, error }) if doc == d.viewer.doc_id => {
                     self.error = Some(format!("PDFium kann das Dokument nicht öffnen: {error}"));
-                    self.document = None;
+                    self.close_active_tab();
+                    break;
                 }
                 (Some(d), Event::Text { doc, page, text }) => d.texts.insert(doc, page, text),
                 (Some(d), ev) => d.viewer.on_render_event(ctx, ev),

@@ -150,7 +150,7 @@ impl PdfToolApp {
         match Document::open_with_password(&path, Some(&password)) {
             Ok(doc) => {
                 self.password_prompt = None;
-                self.adopt_document(doc);
+                self.open_in_new_tab(doc);
                 self.settings.add_recent(&path);
             }
             Err(CoreError::WrongPassword) => {

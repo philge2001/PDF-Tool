@@ -3,7 +3,7 @@
 Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 Lizenz: MIT OR Apache-2.0. Sicherheitslücken bitte vertraulich melden, siehe [SECURITY.md](SECURITY.md).
 
-**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare), Phase 4 (Signaturen), Phase 5 (Schwärzen & Bereinigen), Phase 6 (Text und Bilder bearbeiten), Phase 7 (Texterkennung), Phase 8 (Export, Vergleich, Komprimierung, PDF/A) und Phase 9 (Sicherheit & Barrierefreiheit) abgeschlossen.
+**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare), Phase 4 (Signaturen), Phase 5 (Schwärzen & Bereinigen), Phase 6 (Text und Bilder bearbeiten), Phase 7 (Texterkennung), Phase 8 (Export, Vergleich, Komprimierung, PDF/A), Phase 9 (Sicherheit & Barrierefreiheit) und Phase 10 (neues Oberflächen-Layout) abgeschlossen.
 
 ## Funktionen (Phase 1)
 
@@ -65,6 +65,20 @@ Lizenz: MIT OR Apache-2.0. Sicherheitslücken bitte vertraulich melden, siehe [S
   Formulardaten – mit Anzeige, was gefunden wurde
 - Warnung, wenn signierte Dokumente betroffen sind
 
+## Oberfläche (Phase 10)
+
+- **Kopfleiste:** „Menü“ mit allen Befehlen, Tabs für Startseite und jedes offene Dokument (mehrere PDFs
+  gleichzeitig, Kreuz schließt), rechts Design hell/dunkel, Einstellungen, Tastenkürzel
+- **Dokumentleiste:** „Alle Werkzeuge“, „Bearbeiten“, „Konvertieren“ (Export, Komprimieren, PDF/A),
+  „Signieren“; rechts Rückgängig/Wiederholen, Suchen, Speichern und weitere Optionen
+- **Werkzeugbereich links:** alle Werkzeuge in einer Liste; ein Klick öffnet das Panel des Werkzeugs mit
+  Unterwerkzeugen und Optionen (z. B. Kommentieren mit Farbe und Linienbreite, Seiten organisieren)
+- **Rechte Symbolleiste:** Kommentare, Seitenminiaturen, Lesezeichen, Signaturen, Tags
+- **Schwebend über dem Dokument:** Schnellwerkzeuge (Auswahl, Hand, Kommentar, Markieren, Zeichnen, Text)
+  links, Seitennavigation und Zoom unten rechts
+- **Startseite:** empfohlene Werkzeuge und „Zuletzt verwendet“ mit Ort, Datum und Größe
+- `pdftool a.pdf b.pdf` öffnet mehrere Dateien als Tabs
+
 ## Funktionen (Phase 9 – Sicherheit & Barrierefreiheit)
 
 - Passwortgeschützte PDFs öffnen (RC4, AES-128, AES-256); beim Speichern bleibt der Schutz erhalten
@@ -125,7 +139,7 @@ Lizenz: MIT OR Apache-2.0. Sicherheitslücken bitte vertraulich melden, siehe [S
 | Formular: Kästchen/Option umschalten | Leertaste |
 | Formular bearbeiten: Feld löschen | Entf |
 
-Annotationswerkzeuge stehen in der Leiste „Kommentieren“. Markup-Werkzeuge (Hervorheben usw.)
+Annotationswerkzeuge stehen unter „Alle Werkzeuge → Kommentieren“ (die wichtigsten auch in der schwebenden Leiste links). Markup-Werkzeuge (Hervorheben usw.)
 wirken auf markierten Text: entweder erst Text markieren und dann das Werkzeug anklicken, oder
 Werkzeug wählen und über den Text ziehen. Doppelklick auf eine Notiz oder einen Freitext bearbeitet ihn.
 

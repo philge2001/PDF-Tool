@@ -89,20 +89,29 @@ impl PdfToolApp {
             if icons::tab(ui, Icon::Home, "Startseite", home, false).clicked() {
                 self.show_home = true;
             }
-            let mut close = false;
-            if let Some(d) = &self.document {
+            let mut switch = None;
+            let mut close = None;
+            for i in 0..self.tab_count() {
+                let Some(d) = self.tab(i) else { continue };
                 let name = format!(
                     "{}{}",
                     d.file_name(),
                     if d.doc.is_dirty() { " •" } else { "" }
                 );
-                let tab = icons::tab(ui, Icon::Export, &name, !home, true);
-                if tab.clicked() {
-                    self.show_home = false;
+                let active = !home && i == self.active_pos;
+                let tab = icons::tab(ui, Icon::Export, &name, active, true);
+                if tab.close_clicked {
+                    close = Some(i);
+                } else if tab.clicked() {
+                    switch = Some(i);
                 }
-                close = tab.close_clicked;
             }
-            if close {
+            if let Some(i) = switch {
+                self.switch_tab(i);
+            }
+            if let Some(i) = close {
+                // Erst zum Tab wechseln, damit die Rückfrage das richtige Dokument nennt.
+                self.switch_tab(i);
                 self.request_close_document();
             }
 

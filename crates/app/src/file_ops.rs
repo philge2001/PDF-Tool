@@ -7,12 +7,10 @@ use std::path::PathBuf;
 
 /// Was nach der Rückfrage "Änderungen speichern?" passieren soll.
 pub enum PendingAction {
+    /// Fenster schließen (fragt nacheinander für jedes geänderte Dokument).
     Close,
-    /// Nur das Dokument schließen (Tab), nicht das Fenster.
+    /// Nur das aktive Dokument schließen (Tab), nicht das Fenster.
     CloseDocument,
-    Open(PathBuf),
-    /// Ein bereits geladenes Dokument übernehmen (z. B. Ergebnis von "Zusammenführen").
-    Adopt(Box<pdftool_core::Document>),
 }
 
 impl OpenDocument {
@@ -77,22 +75,14 @@ impl PdfToolApp {
         }
     }
 
-    /// Öffnet eine Datei – fragt vorher nach, wenn es ungespeicherte Änderungen gibt.
+    /// Öffnet eine Datei in einem neuen Tab (oder wechselt zu ihr, wenn sie schon offen ist).
     pub(crate) fn request_open(&mut self, ctx: &egui::Context, path: PathBuf) {
-        if self.document.as_ref().is_some_and(|d| d.doc.is_dirty()) {
-            self.pending = Some(PendingAction::Open(path));
-        } else {
-            self.open_path(ctx, &path);
-        }
+        self.open_path(ctx, &path);
     }
 
-    /// Übernimmt ein geladenes Dokument – fragt vorher nach, wenn es ungespeicherte Änderungen gibt.
+    /// Übernimmt ein geladenes Dokument (z. B. Ergebnis von "Zusammenführen") als neuen Tab.
     pub(crate) fn request_adopt(&mut self, doc: pdftool_core::Document) {
-        if self.document.as_ref().is_some_and(|d| d.doc.is_dirty()) {
-            self.pending = Some(PendingAction::Adopt(Box::new(doc)));
-        } else {
-            self.adopt_document(doc);
-        }
+        self.open_in_new_tab(doc);
     }
 
     /// Schließt das Dokument (Kreuz am Tab) – mit Rückfrage bei ungespeicherten Änderungen.
@@ -105,10 +95,11 @@ impl PdfToolApp {
     }
 
     pub(crate) fn close_document(&mut self) {
-        self.document = None;
-        self.show_home = true;
-        self.tool = crate::tools::Tool::TextSelect;
-        self.tool_group = None;
+        self.close_active_tab();
+        if self.document.is_none() {
+            self.tool = crate::tools::Tool::TextSelect;
+            self.tool_group = None;
+        }
     }
 
     /// Fängt das Schließen des Fensters ab, solange es ungespeicherte Änderungen gibt.
@@ -116,8 +107,12 @@ impl PdfToolApp {
         if !ctx.input(|i| i.viewport().close_requested()) {
             return;
         }
-        if self.document.as_ref().is_some_and(|d| d.doc.is_dirty()) && !self.allow_close {
+        if let Some(i) = self.first_dirty_tab()
+            && !self.allow_close
+        {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            // Den ersten geänderten Tab zeigen und dafür nachfragen.
+            self.switch_tab(i);
             self.pending = Some(PendingAction::Close);
         }
     }
@@ -170,12 +165,23 @@ impl PdfToolApp {
         }
         match action {
             Some(PendingAction::Close) => {
-                self.allow_close = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                if choice == Choice::Discard {
+                    // Änderungen verwerfen = dieses Dokument schließen.
+                    self.close_active_tab();
+                }
+                match self.first_dirty_tab() {
+                    // Weitere geänderte Dokumente: nacheinander fragen.
+                    Some(i) => {
+                        self.switch_tab(i);
+                        self.pending = Some(PendingAction::Close);
+                    }
+                    None => {
+                        self.allow_close = true;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                }
             }
             Some(PendingAction::CloseDocument) => self.close_document(),
-            Some(PendingAction::Open(path)) => self.open_path(ctx, &path),
-            Some(PendingAction::Adopt(doc)) => self.adopt_document(*doc),
             None => {}
         }
     }

@@ -32,6 +32,7 @@ mod shortcuts;
 mod sign_ui;
 mod signatures;
 mod style;
+mod tabs;
 mod tags_ui;
 mod text_cache;
 mod toolbar;
@@ -51,15 +52,15 @@ fn main() -> eframe::Result<()> {
         )
         .init();
 
-    // Kommandozeile: `pdftool [datei.pdf] [--vergleichen andere.pdf]`.
-    let mut initial_file = None;
+    // Kommandozeile: `pdftool [datei.pdf …] [--vergleichen andere.pdf]` – jede Datei ein Tab.
+    let mut initial_files = Vec::new();
     let mut compare_with = None;
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
         if arg == "--vergleichen" {
             compare_with = args.next().map(PathBuf::from);
-        } else if initial_file.is_none() {
-            initial_file = Some(PathBuf::from(arg));
+        } else {
+            initial_files.push(PathBuf::from(arg));
         }
     }
 
@@ -78,7 +79,7 @@ fn main() -> eframe::Result<()> {
         Box::new(move |cc| {
             Ok(Box::new(app::PdfToolApp::new(
                 cc,
-                initial_file,
+                initial_files,
                 compare_with,
             )))
         }),

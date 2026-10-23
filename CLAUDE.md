@@ -22,7 +22,7 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 | pdftool-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
 | pdftool-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore |
 | pdftool-ocr | crates/ocr | Texterkennung (Tesseract), Wörter mit Pixelrechteck | tesseract-rs (baut Tesseract/Leptonica mit CMake) |
-| pdftool-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, ocr (Feature `ocr`, Standard), eframe, rfd, der, ureq |
+| pdftool-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, ocr (Feature `ocr`, Standard), eframe (Feature `links`: Weblinks im Browser öffnen), rfd, der, ureq |
 
 ## Architekturregeln
 - **core** kennt weder UI noch PDFium und ist vollständig unit-testbar.
@@ -48,6 +48,12 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - Kommentare und UI-Texte auf Deutsch, Bezeichner auf Englisch.
 - Tests für core: Roundtrip „erstellen → speichern → neu laden → vergleichen“ mit den Fixtures.
 - Fixtures in `tests/fixtures/` werden ausschließlich per `gen_fixtures` erzeugt.
+
+## Meilensteine Phase 10 (Neues Oberflächen-Layout)
+- [x] 10.1 Eigene Icons, Farbschema, Kopfleiste, rechte Symbolleiste, schwebende Seitennavigation
+- [x] 10.2 Werkzeugbereich links (Alle Werkzeuge + Werkzeug-Panels), schwebende Schnellwerkzeuge
+- [x] 10.3 Startseite, Lesezeichen, Menü-Knopf
+- [x] 10.4 Mehrere Dokumente als Tabs + Abschluss
 
 ## Meilensteine Phase 9 (Sicherheit & Barrierefreiheit)
 - [x] 9.1 Passwortgeschützte PDFs öffnen
@@ -130,6 +136,9 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   neu angelegte Annotationen bekommen keinen Tag. Geänderte Titel aktualisieren /Info, nicht das XMP (dc:title).
   Strukturelemente ändern/verschieben ist nicht möglich (nur Alternativtext, Titel, Sprache).
 - Annotationen auf gedrehten Seiten: Geometrie korrekt, Freitext-Overlay nicht mitgedreht.
+- Oberfläche: Tabs lassen sich nicht per Ziehen umsortieren; Werkzeug-/Bearbeitungsmodus gilt pro Fenster
+  (beim Tab-Wechsel zurück auf Textauswahl); Lesezeichen nur lesen (kein Anlegen/Umbenennen); Icons sind
+  selbst gezeichnete Vektorgrafiken (kein Icon-Font); Drucken fehlt.
 - Absätze bearbeiten: Formatierung innerhalb des Absatzes (z. B. ein fettes Wort) wird auf den Stil der ersten
   Zeile vereinheitlicht; nur links-/Blocksatz (zentriert/rechtsbündig wird linksbündig neu gesetzt); Kerning geht verloren;
   aus eingebetteten Teilmengen nur Zeichen, die auf der Seite schon vorkommen (Rest in Noto Sans, kein CJK);
@@ -166,7 +175,8 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - `app::viewer` – `Layout` (Präfixsummen, Binärsuche), `PageTextures` (GPU-Texturen, pending/wanted),
   `Viewer::show` (zeichnet nur sichtbare Seiten, Kacheln ab 3072 px), Zoom mit Anker (`set_zoom`),
   `ZoomMode` (Custom/FitWidth/FitPage), `FrameRequests` (Render-Aufträge pro Frame, `flush_requests`)
-- `app::viewer::thumbnails` – Seitenleiste, gleiche Texturen, Priorität `Thumbnail`
+- `app::viewer::thumbnails` – Seitenminiaturen (Panel rechts), gleiche Texturen, Priorität `Thumbnail`;
+  `FIT_MARGIN` hält bei Seitenbreite/Ganze Seite seitlich Platz für die schwebenden Leisten
 - `core::annotation` – `Annotation`/`AnnotKind` (9 Typen), `AnnotationStore`; `import` (PDF -> Modell,
   Unverstandenes bleibt fremd), `export` (Dictionary, Basis = Original-Dict), `appearance` (/AP-Streams)
 - `core::command` – `Command`-Trait, `Model` (Annotationen + Seitenliste), `History` (Undo/Redo, dirty)
@@ -264,7 +274,31 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - `app::comments` – Kommentar-Panel (nach Seite und Position sortiert, direkt bearbeitbar)
 - `app::file_ops` – Speichern/Speichern unter, Rückfrage bei ungespeicherten Änderungen
   (`PendingAction`), Fenstertitel mit `*`; nach dem Speichern lädt der Worker neu (`reload_renderer`)
-- `app::menu` – Menüleiste Datei/Bearbeiten/Ansicht
+- `app::menu` – Inhalt des Knopfs „Menü“ (`main_menu`: Datei-Befehle direkt, Untermenüs Bearbeiten, Seiten,
+  Formular, Schwärzen, Signieren, Barrierefreiheit, Ansicht; „Beenden“ zuletzt)
+- `app::icons` – eigene Vektor-Icons (`Icon`, 24er-Raster, `paint`), Widgets `button`/`sized_button`,
+  `text_button`, `row_button` (Listenzeile), `tab` (`TabResponse` mit Schließen-Kreuz)
+- `app::style` – Farbschema hell/dunkel (`install` über `style_mut_of`), `ACCENT`, `canvas`, `floating_fill`,
+  `border`, `icon_tint` (Kategorie-Farben der Werkzeug-Icons)
+- `app::shell` – Fensterrahmen: `global_bar` (Menü, Tabs Startseite/Dokumente, Design/Einstellungen/Hilfe),
+  `document_bar` (Alle Werkzeuge, Bearbeiten, Konvertieren, Signieren | Schloss, Rückgängig, Wiederholen,
+  Suchen, Speichern, ⋯), `document_layout` (Reihenfolge der Panels), `right_rail` + `RightPane`
+  (Kommentare, Seitenminiaturen, Lesezeichen, Signaturen, Tags; erneuter Klick schließt), `pane_header`,
+  `page_controls` (schwebend unten rechts: Seite, ↑↓, Zoom, Anpassen), `floating_frame`, `shortcuts_window`
+- `app::tools_panel` – Werkzeugbereich links: `ToolGroup` (14 Gruppen; mit Panel: Kommentieren, Bearbeiten,
+  Organisieren, Schwärzen, Formular, Zertifikat, Barrierefreiheit – sonst Dialog direkt), `open_tool_group`,
+  `leave_tool_group`, `sync_tool_group` (Gruppe folgt dem Werkzeug), `tool_icon`; `quick_tools` (schwebend
+  links), `selection_bar` (Farbe/Löschen der ausgewählten Annotation)
+- `app::home` – Startseite: Kacheln „Empfohlene Werkzeuge“ (ohne Dokument erst Datei wählen, `pending_group`),
+  „Zuletzt verwendet“ (Ort, `relative_age`, `human_size`)
+- `app::bookmarks` – Panel „Lesezeichen“ (Baum mit Aufklapp-Zustand, `go_to_destination` →
+  `Viewer::scroll_to_page_at`, Weblinks nach Rückfrage per `ctx.open_url`)
+- `app::tabs` – mehrere Dokumente: aktives in `document`, übrige in `others`, `active_pos`; `switch_tab`
+  (Worker bekommt das Dokument unter seiner alten `DocId` → Seitenbilder bleiben), `open_in_new_tab`,
+  `focus_open_file`, `close_active_tab`, `first_dirty_tab` (Beenden fragt nacheinander je geändertem Tab).
+  `pdftool a.pdf b.pdf` öffnet mehrere Tabs
+- `core::outline` – `Document::outline` → `OutlineItem` (Titel, `Destination { page, top, left }`, URI, offen,
+  Farbe, fett/kursiv, Kinder; /Dest, /GoTo, benannte Ziele über /Dests und den Namensbaum), `page_mode`
 - `app::settings` – dauerhafte Einstellungen (serde + eframe-Persistenz, Schlüssel `pdftool_settings`, alter Schlüssel `foliocraft_settings` und alter Ordner werden übernommen):
   zuletzt geöffnet, Design, Panels, Werkzeugstil, Autor
 - `app::pages` – `PageAction`, `sync_structure` (erkennt jede Strukturänderung inkl. Undo/Redo, biegt
@@ -350,7 +384,7 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - `app::tags_ui` – Panel „Tags“ (`TagState`: Baum gecacht nach Bytes/Seiten/Alt-Texten, markierte Inhalte je Seite
   nach Stempel), Overlay `paint_tags` (Auswahl, nummerierte Lesereihenfolge)
 - `app::a11y_ui` – Menü „Barrierefreiheit“: Prüfbericht-Fenster, Dialog „Automatisch taggen“ (Job, `pending_doc`)
-- `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl PdfToolApp`-Block)
+- `app::toolbar` (`pick_image`), `app::shortcuts` – Tastenkürzel (`impl PdfToolApp`-Block)
 
 ## Tastenkürzel
 Strg+O öffnen · Strg+S speichern · Strg+Umschalt+S speichern unter · Strg+Z/Strg+Y (oder Strg+Umschalt+Z) Rückgängig/Wiederholen · Entf löscht Auswahl · Strg+C kopiert markierten Text · Esc hebt Auswahl auf · Strg+F suchen (Enter/F3 weiter, Umschalt+Enter/Umschalt+F3 zurück, Esc schließen) · Strg+Plus/Minus zoomen · Strg+1 = 100 % · Strg+2 = Seitenbreite · Strg+0 = Ganze Seite ·
