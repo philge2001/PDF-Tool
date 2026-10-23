@@ -32,4 +32,12 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Tests
-        run: cargo test --workspace
+        shell: bash
+        # Fehlgeschlagene Tests zusätzlich als Annotation ausgeben (über die API lesbar,
+        # auch wenn die Log-Dateien nicht erreichbar sind).
+        run: |
+          set -o pipefail
+          cargo test --workspace 2>&1 | tee test.log || {
+            grep -E "panicked|FAILED|^---- " test.log | head -20 | sed 's/^/::error::/'
+            exit 1
+          }
