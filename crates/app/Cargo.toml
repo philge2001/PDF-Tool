@@ -1,6 +1,6 @@
 [package]
-name = "foliocraft-app"
-description = "FolioCraft Desktop-App (eframe/egui)"
+name = "pdftool-app"
+description = "PDF Tool Desktop-App (eframe/egui)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,14 +8,14 @@ license.workspace = true
 publish.workspace = true
 
 [[bin]]
-name = "foliocraft"
+name = "pdftool"
 path = "src/main.rs"
 
 [dependencies]
-foliocraft-core.workspace = true
-foliocraft-render.workspace = true
+pdftool-core.workspace = true
+pdftool-render.workspace = true
 ureq.workspace = true
-foliocraft-sign.workspace = true
+pdftool-sign.workspace = true
 der.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
@@ -23,6 +23,12 @@ tracing-subscriber.workspace = true
 serde.workspace = true
 eframe.workspace = true
 rfd.workspace = true
+# Texterkennung (Feature "ocr"): baut Tesseract mit – braucht CMake und einen C++-Compiler.
+pdftool-ocr = { workspace = true, optional = true }
+
+[features]
+default = ["ocr"]
+ocr = ["dep:pdftool-ocr"]
 
 [lints]
 workspace = true

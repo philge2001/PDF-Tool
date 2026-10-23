@@ -1,16 +1,16 @@
 //! Speichern, "Speichern unter", Rückfrage bei ungespeicherten Änderungen, Fenstertitel.
 
-use crate::app::{FolioApp, OpenDocument};
+use crate::app::{OpenDocument, PdfToolApp};
 use eframe::egui;
-use foliocraft_render::RenderService;
+use pdftool_render::RenderService;
 use std::path::PathBuf;
 
 /// Was nach der Rückfrage "Änderungen speichern?" passieren soll.
 pub enum PendingAction {
+    /// Fenster schließen (fragt nacheinander für jedes geänderte Dokument).
     Close,
-    Open(PathBuf),
-    /// Ein bereits geladenes Dokument übernehmen (z. B. Ergebnis von "Zusammenführen").
-    Adopt(Box<foliocraft_core::Document>),
+    /// Nur das aktive Dokument schließen (Tab), nicht das Fenster.
+    CloseDocument,
 }
 
 impl OpenDocument {
@@ -36,7 +36,7 @@ impl OpenDocument {
     }
 }
 
-impl FolioApp {
+impl PdfToolApp {
     /// Speichert das Dokument. `force_dialog` = "Speichern unter". Gibt `true` bei Erfolg zurück.
     pub(crate) fn save_document(&mut self, force_dialog: bool) -> bool {
         let Some(d) = &mut self.document else {
@@ -75,21 +75,30 @@ impl FolioApp {
         }
     }
 
-    /// Öffnet eine Datei – fragt vorher nach, wenn es ungespeicherte Änderungen gibt.
+    /// Öffnet eine Datei in einem neuen Tab (oder wechselt zu ihr, wenn sie schon offen ist).
     pub(crate) fn request_open(&mut self, ctx: &egui::Context, path: PathBuf) {
+        self.open_path(ctx, &path);
+    }
+
+    /// Übernimmt ein geladenes Dokument (z. B. Ergebnis von "Zusammenführen") als neuen Tab.
+    pub(crate) fn request_adopt(&mut self, doc: pdftool_core::Document) {
+        self.open_in_new_tab(doc);
+    }
+
+    /// Schließt das Dokument (Kreuz am Tab) – mit Rückfrage bei ungespeicherten Änderungen.
+    pub(crate) fn request_close_document(&mut self) {
         if self.document.as_ref().is_some_and(|d| d.doc.is_dirty()) {
-            self.pending = Some(PendingAction::Open(path));
+            self.pending = Some(PendingAction::CloseDocument);
         } else {
-            self.open_path(ctx, &path);
+            self.close_document();
         }
     }
 
-    /// Übernimmt ein geladenes Dokument – fragt vorher nach, wenn es ungespeicherte Änderungen gibt.
-    pub(crate) fn request_adopt(&mut self, doc: foliocraft_core::Document) {
-        if self.document.as_ref().is_some_and(|d| d.doc.is_dirty()) {
-            self.pending = Some(PendingAction::Adopt(Box::new(doc)));
-        } else {
-            self.adopt_document(doc);
+    pub(crate) fn close_document(&mut self) {
+        self.close_active_tab();
+        if self.document.is_none() {
+            self.tool = crate::tools::Tool::TextSelect;
+            self.tool_group = None;
         }
     }
 
@@ -98,8 +107,12 @@ impl FolioApp {
         if !ctx.input(|i| i.viewport().close_requested()) {
             return;
         }
-        if self.document.as_ref().is_some_and(|d| d.doc.is_dirty()) && !self.allow_close {
+        if let Some(i) = self.first_dirty_tab()
+            && !self.allow_close
+        {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            // Den ersten geänderten Tab zeigen und dafür nachfragen.
+            self.switch_tab(i);
             self.pending = Some(PendingAction::Close);
         }
     }
@@ -152,11 +165,23 @@ impl FolioApp {
         }
         match action {
             Some(PendingAction::Close) => {
-                self.allow_close = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                if choice == Choice::Discard {
+                    // Änderungen verwerfen = dieses Dokument schließen.
+                    self.close_active_tab();
+                }
+                match self.first_dirty_tab() {
+                    // Weitere geänderte Dokumente: nacheinander fragen.
+                    Some(i) => {
+                        self.switch_tab(i);
+                        self.pending = Some(PendingAction::Close);
+                    }
+                    None => {
+                        self.allow_close = true;
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                }
             }
-            Some(PendingAction::Open(path)) => self.open_path(ctx, &path),
-            Some(PendingAction::Adopt(doc)) => self.adopt_document(*doc),
+            Some(PendingAction::CloseDocument) => self.close_document(),
             None => {}
         }
     }
@@ -166,9 +191,9 @@ impl FolioApp {
         let title = match &self.document {
             Some(d) => {
                 let dirty = if d.doc.is_dirty() { "*" } else { "" };
-                format!("{}{dirty} – FolioCraft", d.file_name())
+                format!("{}{dirty} – PDF Tool", d.file_name())
             }
-            None => "FolioCraft".to_string(),
+            None => "PDF Tool".to_string(),
         };
         if title != self.window_title {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));

@@ -1,16 +1,18 @@
-//! Menüleiste: Datei, Bearbeiten, Ansicht.
+//! Inhalt des Knopfs „Menü“ (Datei-Befehle, Untermenüs Bearbeiten, Seiten, … Ansicht).
 
-use crate::app::FolioApp;
+use crate::app::PdfToolApp;
 use crate::pages::PageAction;
+use crate::shell::RightPane;
 use crate::tools::Tool;
 use crate::viewer::ZoomMode;
 use eframe::egui::{self, Button, ThemePreference};
 
-impl FolioApp {
-    pub(crate) fn menu_bar(&mut self, ui: &mut egui::Ui) {
-        let ctx = ui.ctx().clone();
-        egui::MenuBar::new().ui(ui, |ui| {
-            ui.menu_button("Datei", |ui| {
+impl PdfToolApp {
+    /// Inhalt des Knopfs "Menü": Datei-Befehle direkt, der Rest als Untermenüs.
+    pub(crate) fn main_menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let ctx = ctx.clone();
+        {
+            {
                 if ui
                     .add(Button::new("Öffnen…").shortcut_text("Strg+O"))
                     .clicked()
@@ -33,6 +35,43 @@ impl FolioApp {
                     .clicked()
                 {
                     self.save_document(true);
+                }
+                if ui
+                    .add_enabled(has_doc, Button::new("Exportieren…"))
+                    .on_hover_text("Seiten als PNG/JPEG, Text (TXT) oder Word (DOCX)")
+                    .clicked()
+                {
+                    self.open_export_dialog();
+                }
+                if ui
+                    .add_enabled(has_doc, Button::new("Sicherheit…"))
+                    .on_hover_text("Passwortschutz und Berechtigungen")
+                    .clicked()
+                {
+                    self.open_security_dialog();
+                }
+                if ui
+                    .add_enabled(has_doc, Button::new("Komprimieren…"))
+                    .on_hover_text("Datei verkleinern (Bilder, alte Fassungen, Objekt-Streams)")
+                    .clicked()
+                {
+                    self.open_compress_dialog();
+                }
+                if ui
+                    .add_enabled(has_doc, Button::new("Nach PDF/A umwandeln"))
+                    .on_hover_text(
+                        "Für die Langzeitarchivierung: Schriften einbetten, Farbprofil, Metadaten",
+                    )
+                    .clicked()
+                {
+                    self.start_pdfa(ui.ctx());
+                }
+                if ui
+                    .add_enabled(has_doc, Button::new("Vergleichen mit…"))
+                    .on_hover_text("Textunterschiede zu einer anderen PDF anzeigen")
+                    .clicked()
+                {
+                    self.start_compare(ui.ctx());
                 }
                 if ui.button("Dateien zusammenführen…").clicked() {
                     self.open_merge_dialog();
@@ -70,10 +109,7 @@ impl FolioApp {
                     self.show_settings_window = true;
                 }
                 ui.separator();
-                if ui.button("Beenden").clicked() {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-            });
+            }
 
             ui.menu_button("Bearbeiten", |ui| {
                 let Some(d) = &mut self.document else {
@@ -140,6 +176,18 @@ impl FolioApp {
                 if ui.button("Dokument teilen…").clicked() {
                     self.open_split_dialog();
                 }
+                ui.separator();
+                #[cfg(feature = "ocr")]
+                if ui
+                    .button("Texterkennung (OCR)…")
+                    .on_hover_text("Gescannte Seiten durchsuchbar machen")
+                    .clicked()
+                {
+                    self.open_ocr_dialog();
+                }
+                #[cfg(not(feature = "ocr"))]
+                ui.add_enabled(false, Button::new("Texterkennung (OCR)…"))
+                    .on_disabled_hover_text("Diese Version wurde ohne Texterkennung gebaut");
                 ui.separator();
                 let Some(d) = &mut self.document else { return };
                 let target = d.target_pages();
@@ -237,12 +285,34 @@ impl FolioApp {
                     ui.close();
                 }
                 ui.separator();
-                ui.checkbox(&mut self.show_signatures, "Signatur-Panel");
+                if ui.button("Signaturen anzeigen").clicked() {
+                    self.right_pane = Some(RightPane::Signatures);
+                }
+            });
+            ui.menu_button("Barrierefreiheit", |ui| {
+                let has_doc = self.document.is_some();
+                if ui.add_enabled(has_doc, Button::new("Prüfen…")).clicked() {
+                    self.open_a11y_report();
+                    ui.close();
+                }
+                if ui
+                    .add_enabled(has_doc, Button::new("Automatisch taggen…"))
+                    .clicked()
+                {
+                    self.open_autotag_dialog();
+                    ui.close();
+                }
+                ui.separator();
+                if ui.button("Panel „Tags“").clicked() {
+                    self.right_pane = Some(RightPane::Tags);
+                }
             });
             ui.menu_button("Ansicht", |ui| {
-                ui.checkbox(&mut self.show_thumbnails, "Seitenleiste");
-                ui.checkbox(&mut self.show_comments, "Kommentare");
-                ui.checkbox(&mut self.show_signatures, "Signaturen");
+                ui.label("Panel rechts");
+                ui.radio_value(&mut self.right_pane, None, "Keins");
+                for pane in RightPane::ALL {
+                    ui.radio_value(&mut self.right_pane, Some(pane), pane.label());
+                }
                 ui.separator();
                 ui.label("Design");
                 self.theme_radios(ui);
@@ -268,7 +338,11 @@ impl FolioApp {
                     }
                 }
             });
-        });
+        }
+        ui.separator();
+        if ui.button("Beenden").clicked() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
     }
 
     fn theme_radios(&mut self, ui: &mut egui::Ui) {

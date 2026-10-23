@@ -3,7 +3,7 @@
 use crate::app::OpenDocument;
 use crate::viewer::{ViewOutput, transform};
 use eframe::egui::{self, Color32, CursorIcon};
-use foliocraft_core::{PageText, TextRange};
+use pdftool_core::{PageText, TextRange};
 
 /// Eine Caret-Position im Dokument: Seite + Position zwischen Zeichen.
 /// `Ord` wird automatisch abgeleitet: Vergleich erst nach `page`, dann nach `caret` –
@@ -59,7 +59,7 @@ impl OpenDocument {
         &self,
         view: &ViewOutput,
         pos: egui::Pos2,
-    ) -> Option<(usize, foliocraft_core::Point, &PageText)> {
+    ) -> Option<(usize, pdftool_core::Point, &PageText)> {
         let (page, page_rect) = view.page_at(pos)?;
         let info = self.doc.page(page).ok()?;
         let text = self.texts.get(page)?;

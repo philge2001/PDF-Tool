@@ -18,7 +18,7 @@ use cms::signed_data::{
 };
 use der::asn1::{Any, ObjectIdentifier, OctetString, SetOfVec};
 use der::{Decode, Encode, Sequence};
-use foliocraft_core::signature_prep::{self, SignatureSpec};
+use pdftool_core::signature_prep::{self, SignatureSpec};
 use spki::AlgorithmIdentifierOwned;
 use x509_cert::attr::Attribute;
 use x509_cert::ext::pkix::name::GeneralName;

@@ -1,8 +1,8 @@
 //! Signaturen einer PDF prüfen und ausgeben.
 //!
-//! `cargo run -p foliocraft-sign --example sign_check -- datei.pdf [vertrauenswürdig.pem …]`
+//! `cargo run -p pdftool-sign --example sign_check -- datei.pdf [vertrauenswürdig.pem …]`
 
-use foliocraft_sign::{TrustStore, cert, verify_document};
+use pdftool_sign::{TrustStore, cert, verify_document};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -10,7 +10,7 @@ fn main() {
         eprintln!("Aufruf: sign_check datei.pdf [vertrauenswürdig.pem …]");
         std::process::exit(2);
     };
-    let doc = foliocraft_core::Document::open(path).expect("PDF öffnen");
+    let doc = pdftool_core::Document::open(path).expect("PDF öffnen");
     let anchors: Vec<Vec<u8>> = args[1..]
         .iter()
         .map(|p| std::fs::read(p).expect("Zertifikat lesen"))

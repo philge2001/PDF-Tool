@@ -3,7 +3,7 @@
 use crate::annot_draw;
 use crate::file_ops::PendingAction;
 use crate::search::SearchState;
-use crate::settings::{STORAGE_KEY, Settings};
+use crate::settings::{LEGACY_STORAGE_KEY, STORAGE_KEY, Settings};
 use crate::text_cache::TextCache;
 use crate::tools::create::Gesture;
 use crate::tools::editor::TextEditor;
@@ -15,8 +15,8 @@ use crate::viewer::Viewer;
 use crate::viewer::thumbnails::ThumbAction;
 use crate::viewer::thumbnails::Thumbnails;
 use eframe::egui;
-use foliocraft_core::{AnnotId, Document};
-use foliocraft_render::{Event, HiddenAnnots, RenderService};
+use pdftool_core::{AnnotId, Document};
+use pdftool_render::{Event, HiddenAnnots, RenderService};
 use std::path::{Path, PathBuf};
 
 /// Ein geöffnetes Dokument samt Ansicht.
@@ -26,7 +26,7 @@ pub struct OpenDocument {
     pub thumbs: Thumbnails,
     pub texts: TextCache,
     /// Letzter bekannter Stand der Seitenstruktur (siehe `sync_structure`).
-    pub structure: Vec<(foliocraft_core::PageId, u16, u64)>,
+    pub structure: Vec<(pdftool_core::PageId, u16, u64)>,
     pub search: SearchState,
     pub selection: Option<TextSelection>,
     /// Laufender Mauszug eines Zeichenwerkzeugs.
@@ -39,8 +39,6 @@ pub struct OpenDocument {
     pub annot_drag: Option<AnnotDrag>,
     /// Inhalt des Seitenfelds in der Toolbar, während der Nutzer tippt.
     pub page_input: Option<String>,
-    /// Inhalt des Zoomfelds in der Toolbar, während der Nutzer tippt.
-    pub zoom_input: Option<String>,
     /// Formular ausfüllen: Fokus, Aufklappliste.
     pub form: crate::forms::FormUi,
     /// Formular bearbeiten: Auswahl, laufender Zug.
@@ -51,16 +49,35 @@ pub struct OpenDocument {
     pub signatures: crate::signatures::SigState,
     /// Inhalt bearbeiten: Textblöcke, laufende Eingabe.
     pub content_edit: crate::content_edit::ContentEdit,
+    /// Panel "Tags": Strukturbaum, Auswahl, Eingaben.
+    pub tags: crate::tags_ui::TagState,
+    /// Panel "Lesezeichen".
+    pub bookmarks: crate::bookmarks::BookmarkState,
 }
 
-pub struct FolioApp {
+pub struct PdfToolApp {
     /// `Err` enthält die Fehlermeldung, wenn PDFium nicht geladen werden konnte.
     pub(crate) render: Result<RenderService, String>,
+    /// Aktives Dokument (Tab). Weitere offene Dokumente liegen in `others`, siehe `tabs`.
     pub(crate) document: Option<OpenDocument>,
+    pub(crate) others: Vec<OpenDocument>,
+    /// Position des aktiven Tabs in der Tab-Reihenfolge.
+    pub(crate) active_pos: usize,
     /// Fehlermeldung, die als Dialog angezeigt wird.
     pub(crate) error: Option<String>,
-    pub(crate) show_thumbnails: bool,
-    pub(crate) show_comments: bool,
+    /// Offenes Panel rechts (Kommentare, Miniaturen, …) – `None` = nur die Symbolleiste.
+    pub(crate) right_pane: Option<crate::shell::RightPane>,
+    /// Werkzeugbereich links offen? Und welche Werkzeuggruppe darin (None = "Alle Werkzeuge").
+    pub(crate) tools_panel: bool,
+    pub(crate) tool_group: Option<crate::tools_panel::ToolGroup>,
+    /// Startseite statt Dokument anzeigen (Tab "Startseite").
+    pub(crate) show_home: bool,
+    /// Fenster mit den Tastenkürzeln.
+    pub(crate) show_shortcuts: bool,
+    /// Stil für neuen Text ("Text hinzufügen").
+    pub(crate) new_text_style: pdftool_core::rich_text::TextStyle,
+    /// Werkzeug, das nach dem Öffnen einer Datei starten soll (Kachel auf der Startseite).
+    pub(crate) pending_group: Option<crate::tools_panel::ToolGroup>,
     pub(crate) tool: Tool,
     pub(crate) tool_settings: ToolSettings,
     /// Aktion, die auf die Antwort "Änderungen speichern?" wartet.
@@ -81,15 +98,33 @@ pub struct FolioApp {
     pub(crate) info: Option<String>,
     /// Vertrauenswürdige Zertifikate (aus den Einstellungen) und ein Zähler, der bei jeder
     /// Änderung hochzählt – daran erkennen Dokumente, dass sie neu prüfen müssen.
-    pub(crate) trust: foliocraft_sign::TrustStore,
+    pub(crate) trust: pdftool_sign::TrustStore,
     pub(crate) trust_version: u64,
-    pub(crate) show_signatures: bool,
     pub(crate) sign_dialog: Option<crate::sign_ui::SignDialog>,
     pub(crate) cert_dialog: Option<crate::sign_ui::CertDialog>,
     /// Nach erfolgreichem Job diese Datei öffnen (z. B. frisch signierte Fassung).
     pub(crate) open_after_job: Option<PathBuf>,
     /// Ergebnis-Dokument eines laufenden Jobs (z. B. Schwärzen) und sein Pfad.
     pub(crate) pending_doc: Option<(crate::redact::DocSlot, Option<PathBuf>)>,
+    pub(crate) export_dialog: Option<crate::export::ExportDialog>,
+    /// Passwortabfrage beim Öffnen und Dialog "Sicherheit".
+    pub(crate) password_prompt: Option<crate::security_ui::PasswordPrompt>,
+    pub(crate) security_dialog: Option<crate::security_ui::SecurityDialog>,
+    pub(crate) compress_dialog: Option<crate::compress_ui::CompressDialog>,
+    /// Fenster "Barrierefreiheit prüfen" und Dialog "Automatisch taggen".
+    pub(crate) a11y_report: Option<crate::a11y_ui::A11yReport>,
+    pub(crate) autotag_dialog: Option<crate::a11y_ui::AutoTagDialog>,
+    /// Dokumentvergleich: Ergebnis des laufenden Jobs, offenes Vergleichsfenster.
+    pub(crate) pending_compare: Option<(
+        crate::compare::CompareSlot,
+        pdftool_render::OffscreenRenderer,
+    )>,
+    pub(crate) compare: Option<crate::compare::CompareView>,
+    /// Dialog "Texterkennung" und Ergebnis des laufenden OCR-Jobs.
+    #[cfg(feature = "ocr")]
+    pub(crate) ocr_dialog: Option<crate::ocr_ui::OcrDialog>,
+    #[cfg(feature = "ocr")]
+    pub(crate) pending_ocr: Option<crate::ocr_ui::OcrSlot>,
     pub(crate) redact_confirm: bool,
     pub(crate) sanitize_dialog: Option<crate::redact::SanitizeDialog>,
 }
@@ -105,7 +140,7 @@ fn install_fonts(ctx: &egui::Context) {
         NOTO_FAMILY.to_owned(),
         // `from_static`: die Bytes leben das ganze Programm (`&'static [u8]`), kein Kopieren.
         std::sync::Arc::new(egui::FontData::from_static(
-            foliocraft_core::embedded_font::NOTO_SANS,
+            pdftool_core::embedded_font::NOTO_SANS,
         )),
     );
     fonts.families.insert(
@@ -122,11 +157,16 @@ fn install_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-impl FolioApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, initial_file: Option<PathBuf>) -> Self {
+impl PdfToolApp {
+    pub fn new(
+        cc: &eframe::CreationContext<'_>,
+        initial_files: Vec<PathBuf>,
+        compare_with: Option<PathBuf>,
+    ) -> Self {
         // egui würde Strg+Plus/Minus sonst für die UI-Vergrößerung nutzen – wir zoomen das Dokument.
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
         install_fonts(&cc.egui_ctx);
+        crate::style::install(&cc.egui_ctx);
 
         // Der Worker weckt die UI auf, wenn ein Bild fertig ist. `Context` ist intern ein
         // `Arc` – das Klonen ist billig und der Klon darf in den Worker-Thread wandern.
@@ -138,7 +178,10 @@ impl FolioApp {
         // Gespeicherte Einstellungen laden (beim ersten Start: Standardwerte).
         let mut settings: Settings = cc
             .storage
-            .and_then(|s| eframe::get_value(s, STORAGE_KEY))
+            .and_then(|s| {
+                eframe::get_value(s, STORAGE_KEY)
+                    .or_else(|| eframe::get_value(s, LEGACY_STORAGE_KEY))
+            })
             .unwrap_or_default();
         settings.prune_missing();
         cc.egui_ctx.set_theme(settings.theme);
@@ -146,9 +189,19 @@ impl FolioApp {
         let mut app = Self {
             render,
             document: None,
+            others: Vec::new(),
+            active_pos: 0,
             error: None,
-            show_thumbnails: settings.show_thumbnails,
-            show_comments: settings.show_comments,
+            right_pane: settings.right_pane,
+            tools_panel: settings.tools_panel,
+            tool_group: None,
+            show_home: false,
+            show_shortcuts: false,
+            pending_group: None,
+            new_text_style: pdftool_core::rich_text::TextStyle::noto(
+                settings.font_size,
+                settings.tool_settings().color(Tool::AddText),
+            ),
             tool: Tool::default(),
             tool_settings: settings.tool_settings(),
             pending: None,
@@ -164,17 +217,31 @@ impl FolioApp {
             info: None,
             trust: Default::default(),
             trust_version: 0,
-            show_signatures: false,
             sign_dialog: None,
             cert_dialog: None,
             open_after_job: None,
             pending_doc: None,
+            export_dialog: None,
+            password_prompt: None,
+            security_dialog: None,
+            compress_dialog: None,
+            a11y_report: None,
+            autotag_dialog: None,
+            pending_compare: None,
+            compare: None,
+            #[cfg(feature = "ocr")]
+            ocr_dialog: None,
+            #[cfg(feature = "ocr")]
+            pending_ocr: None,
             redact_confirm: false,
             sanitize_dialog: None,
         };
         app.rebuild_trust();
-        if let Some(path) = initial_file {
+        for path in initial_files {
             app.open_path(&cc.egui_ctx, &path);
+        }
+        if let Some(other) = compare_with {
+            app.start_compare_with(&cc.egui_ctx, other);
         }
         app
     }
@@ -185,12 +252,16 @@ impl FolioApp {
             return;
         }
         let _ = ctx; // Fenstertitel setzt `update_title` im nächsten Frame
+        if self.focus_open_file(path) {
+            return;
+        }
         match Document::open(path) {
             Ok(doc) => {
-                self.adopt_document(doc);
+                self.open_in_new_tab(doc);
                 self.settings.add_recent(path);
                 tracing::info!(path = %path.display(), "Dokument geöffnet");
             }
+            Err(e) if self.handle_open_error(path, &e) => {}
             Err(e) => {
                 self.error = Some(format!(
                     "„{}“ konnte nicht geöffnet werden:\n{e}",
@@ -220,6 +291,15 @@ impl FolioApp {
             render.open(id, doc.bytes().clone(), hidden_annots(&doc));
         }
         let sizes: Vec<_> = doc.pages().iter().map(|p| p.display_size()).collect();
+        self.show_home = false;
+        // Wunsch der Datei, welches Panel beim Öffnen zu sehen ist (/PageMode).
+        match doc.page_mode().as_str() {
+            "UseOutlines" if doc.has_outline() => {
+                self.right_pane = Some(crate::shell::RightPane::Bookmarks);
+            }
+            "UseThumbs" => self.right_pane = Some(crate::shell::RightPane::Thumbnails),
+            _ => {}
+        }
         self.document = Some(OpenDocument {
             thumbs: Thumbnails::new(&sizes),
             texts: TextCache::new(id, sizes.len()),
@@ -236,13 +316,14 @@ impl FolioApp {
             prop_inputs: Default::default(),
             signatures: Default::default(),
             content_edit: Default::default(),
+            tags: Default::default(),
+            bookmarks: Default::default(),
             editor: None,
             selected: None,
             annot_drag: None,
             viewer: Viewer::new(id, sizes),
             doc,
             page_input: None,
-            zoom_input: None,
         });
     }
 
@@ -263,7 +344,8 @@ impl FolioApp {
             match (&mut self.document, event) {
                 (Some(d), Event::OpenFailed { doc, error }) if doc == d.viewer.doc_id => {
                     self.error = Some(format!("PDFium kann das Dokument nicht öffnen: {error}"));
-                    self.document = None;
+                    self.close_active_tab();
+                    break;
                 }
                 (Some(d), Event::Text { doc, page, text }) => d.texts.insert(doc, page, text),
                 (Some(d), ev) => d.viewer.on_render_event(ctx, ev),
@@ -286,65 +368,6 @@ impl FolioApp {
         }
     }
 
-    fn status_bar(&self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| match &self.document {
-            Some(d) => {
-                let name = d
-                    .doc
-                    .path()
-                    .and_then(|p| p.file_name())
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                ui.label(name);
-                ui.separator();
-                ui.label(format!(
-                    "Seite {} / {}",
-                    d.viewer.current_page + 1,
-                    d.doc.page_count()
-                ));
-            }
-            None => {
-                ui.label("Kein Dokument");
-            }
-        });
-    }
-
-    fn empty_state(&mut self, ui: &mut egui::Ui) {
-        if let Err(e) = &self.render {
-            ui.centered_and_justified(|ui| {
-                ui.label(egui::RichText::new(e).color(ui.visuals().error_fg_color))
-            });
-            return;
-        }
-        let ctx = ui.ctx().clone();
-        ui.vertical_centered(|ui| {
-            ui.add_space(ui.available_height() * 0.25);
-            ui.heading("PDF hierher ziehen oder mit Strg+O öffnen");
-            if self.settings.recent_files.is_empty() {
-                return;
-            }
-            ui.add_space(24.0);
-            ui.label(egui::RichText::new("Zuletzt geöffnet").strong());
-            let mut open = None;
-            for path in &self.settings.recent_files {
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy())
-                    .unwrap_or_default();
-                if ui
-                    .link(name)
-                    .on_hover_text(path.display().to_string())
-                    .clicked()
-                {
-                    open = Some(path.clone());
-                }
-            }
-            if let Some(path) = open {
-                self.request_open(&ctx, path);
-            }
-        });
-    }
-
     /// Fortschritt des laufenden Jobs; nach dem Ende Erfolgs- bzw. Fehlermeldung.
     fn job_ui(&mut self, ctx: &egui::Context) {
         let Some(job) = &self.job else { return };
@@ -357,14 +380,22 @@ impl FolioApp {
                 match result {
                     Ok(msg) => {
                         self.take_pending_doc();
+                        self.take_pending_compare();
+                        #[cfg(feature = "ocr")]
+                        self.take_pending_ocr();
                         if let Some(path) = open {
                             self.open_path(ctx, &path);
-                            self.show_signatures = true;
+                            self.right_pane = Some(crate::shell::RightPane::Signatures);
                         }
                         self.info = Some(msg);
                     }
                     Err(msg) => {
                         self.pending_doc = None;
+                        self.pending_compare = None;
+                        #[cfg(feature = "ocr")]
+                        {
+                            self.pending_ocr = None;
+                        }
                         self.error = Some(msg);
                     }
                 }
@@ -422,7 +453,34 @@ impl OpenDocument {
         }
     }
 
-    /// Annotationen einer Seite in ein beliebiges Rechteck zeichnen (auch für Miniaturen).
+    /// Panel "Seitenminiaturen" (rechts): Navigation, Mehrfachauswahl, Kontextmenü, Ziehen.
+    pub fn thumbnails_pane(&mut self, ui: &mut egui::Ui) {
+        // Das Closure leiht nur `self.doc` aus, `show_thumbnails` nur `self.viewer`/`self.thumbs`
+        // – getrennte Felder, daher erlaubt der Borrow-Checker beides gleichzeitig.
+        let doc = &self.doc;
+        let overlay = |painter: &egui::Painter, page: usize, rect: egui::Rect| {
+            let Ok(info) = doc.page(page) else { return };
+            for (f, w) in doc.forms().widgets_on(info.object_id) {
+                if f.kind.is_fillable() && !w.hidden {
+                    let style = crate::form_draw::Style::default();
+                    crate::form_draw::paint(painter, info, rect, f, w, style);
+                }
+            }
+            for a in doc.annotations().on_page(page) {
+                annot_draw::paint(painter, info, rect, a);
+            }
+        };
+        let ids = doc.page_ids();
+        let action = self
+            .viewer
+            .show_thumbnails(ui, &mut self.thumbs, &ids, overlay);
+        match action {
+            Some(ThumbAction::Navigate(page)) => self.viewer.scroll_to_page(page),
+            Some(ThumbAction::Page(a)) => self.apply_page_action(a),
+            None => {}
+        }
+    }
+
     pub fn undo(&mut self) {
         self.annot_drag = None;
         self.content_edit.editing = None;
@@ -475,9 +533,9 @@ impl OpenDocument {
     }
 }
 
-impl FolioApp {
+impl PdfToolApp {
     /// Hauptansicht: Seiten zeichnen, Werkzeug-Interaktion, Overlays.
-    fn document_view(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn document_view(&mut self, ui: &mut egui::Ui) {
         // Vor dem Ausleihen von `self.document` abfragen (beides sind Teile von `self`).
         let placing = self.is_placing_signature();
         let Some(d) = &mut self.document else { return };
@@ -497,7 +555,22 @@ impl FolioApp {
         match tool {
             _ if over_field || placing => {}
             Tool::Select => {
-                d.handle_annotation_select(ui, &view, true);
+                // Über einem Bild (und keiner Annotation) oder während eines Bild-Zugs:
+                // Bild auswählen, verschieben, skalieren. Sonst Annotationen.
+                let pointer = ui
+                    .input(|i| i.pointer.press_origin())
+                    .or(view.response.hover_pos());
+                let on_annot = pointer.is_some_and(|p| d.annotation_at(&view, p).is_some());
+                let on_image = !on_annot && pointer.is_some_and(|p| d.image_under(&view, p));
+                if d.content_edit.image_drag.is_some() || on_image {
+                    d.selected = None;
+                    d.handle_image_edit(ui, &view);
+                } else {
+                    if view.response.clicked() {
+                        d.content_edit.selected_image = None;
+                    }
+                    d.handle_annotation_select(ui, &view, true);
+                }
             }
             // Im Textmodus kann man Annotationen anklicken (auswählen, Doppelklick = bearbeiten);
             // Ziehen markiert weiterhin Text.
@@ -526,10 +599,7 @@ impl FolioApp {
                 }
             }
             t if t.is_content_tool() => {
-                d.content_edit.style = (
-                    self.tool_settings.font_size,
-                    self.tool_settings.color(Tool::AddText),
-                );
+                d.content_edit.new_style = self.new_text_style.clone();
                 if t == Tool::EditImage {
                     d.handle_image_edit(ui, &view);
                 } else {
@@ -558,11 +628,35 @@ impl FolioApp {
         d.paint_annotations(ui, &view);
         d.paint_annotation_selection(ui, &view);
         d.paint_gesture_preview(ui, &view, tool, &self.tool_settings);
+        if self.right_pane == Some(crate::shell::RightPane::Tags) {
+            d.paint_tags(ui, &view);
+        }
         d.paint_search_hits(ui, &view);
         d.paint_selection(ui, &view);
         if tool == Tool::EditImage {
             d.paint_image_edit(ui, &view);
+        } else if tool == Tool::Select {
+            d.paint_selected_image(ui, &view);
         }
+        // Sichtbare Mitte merken: Strg+V legt Bilder dort ab, nicht in der (evtl. verdeckten) Seitenmitte.
+        let mid = view.clip.center();
+        d.content_edit.visible_center = view
+            .pages
+            .iter()
+            .min_by(|a, b| {
+                a.1.distance_to_pos(mid)
+                    .total_cmp(&b.1.distance_to_pos(mid))
+            })
+            .and_then(|&(page, rect)| {
+                let info = d.doc.page(page).ok()?;
+                let p = rect.intersect(view.clip).center();
+                Some((page, crate::viewer::transform::screen_to_pdf(info, rect, p)))
+            });
+        let image_action = if tool.is_form_tool() {
+            None
+        } else {
+            d.image_context_menu(&view, tool)
+        };
         if tool.is_content_tool() {
             d.paint_content_edit(ui, &view, tool);
         } else if d.content_edit.editing.is_some() {
@@ -573,14 +667,18 @@ impl FolioApp {
             self.error = Some(e);
         }
         self.paint_sign_area(ui, &view);
+        if let Some((action, page, img)) = image_action {
+            let ctx = ui.ctx().clone();
+            self.image_action(&ctx, action, page, img);
+        }
     }
 }
 
-impl eframe::App for FolioApp {
+impl eframe::App for PdfToolApp {
     /// Wird von eframe regelmäßig und beim Beenden aufgerufen.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        self.settings.show_thumbnails = self.show_thumbnails;
-        self.settings.show_comments = self.show_comments;
+        self.settings.right_pane = self.right_pane;
+        self.settings.tools_panel = self.tools_panel;
         self.settings.store_tool_settings(&self.tool_settings);
         eframe::set_value(storage, STORAGE_KEY, &self.settings);
     }
@@ -591,14 +689,22 @@ impl eframe::App for FolioApp {
         self.handle_close_request(&ctx);
         self.handle_dropped_files(&ctx);
         self.handle_shortcuts(&ctx);
+        self.handle_image_paste(&ctx);
         self.update_title(&ctx);
 
-        egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
-        egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
-        if self.document.is_some() {
-            egui::Panel::top("annotation_bar").show(ui, |ui| self.annotation_bar(ui));
-        }
-        egui::Panel::bottom("statusbar").show(ui, |ui| self.status_bar(ui));
+        self.sync_tool_group();
+        let dark = ui.visuals().dark_mode;
+        let bar = |fill| {
+            egui::Frame::NONE
+                .fill(fill)
+                .inner_margin(egui::Margin::symmetric(8, 2))
+                .stroke(egui::Stroke::new(1.0, crate::style::border(dark)))
+        };
+        let panel_fill = ui.visuals().panel_fill;
+        let window_fill = ui.visuals().window_fill;
+        egui::Panel::top("global_bar")
+            .frame(bar(panel_fill))
+            .show(ui, |ui| self.global_bar(ui));
 
         if let Some(d) = &mut self.document {
             if let Ok(render) = &self.render {
@@ -607,96 +713,40 @@ impl eframe::App for FolioApp {
             d.validate_selection();
             d.validate_field_selection();
             d.update_signatures(&self.trust, self.trust_version);
-        }
-        if self
-            .document
-            .as_ref()
-            .is_some_and(|d| !d.signatures.reports.is_empty())
-        {
-            egui::Panel::top("signature_banner").show(ui, |ui| self.signature_banner(ui));
-        }
-        if self.show_signatures && self.document.is_some() && !self.tool.is_form_tool() {
-            egui::Panel::right("signatures")
-                .default_size(300.0)
-                .size_range(220.0..=520.0)
-                .show(ui, |ui| self.signatures_panel(ui));
-        }
-        if let Some(d) = &mut self.document {
-            if self.tool.is_form_tool() {
-                egui::Panel::right("field_properties")
-                    .default_size(280.0)
-                    .size_range(220.0..=500.0)
-                    .show(ui, |ui| d.field_properties(ui));
-            } else if self.show_comments && !self.show_signatures {
-                egui::Panel::right("comments")
-                    .default_size(280.0)
-                    .size_range(200.0..=500.0)
-                    .show(ui, |ui| d.comments_panel(ui));
-            }
-            if d.search.open {
-                egui::Panel::top("searchbar").show(ui, |ui| d.search_bar(ui));
-                if std::mem::take(&mut d.search.redact_all) {
-                    d.redact_search_hits(&self.tool_settings);
-                }
-            }
             if let Ok(render) = &self.render {
                 d.update_search(render);
             }
-            if self.show_thumbnails {
-                egui::Panel::left("thumbnails")
-                    .default_size(160.0)
-                    .size_range(100.0..=400.0)
-                    .show(ui, |ui| {
-                        // Das Closure leiht nur `d.doc`/`d.editor` aus, `show_thumbnails` nur
-                        // `d.viewer` – getrennte Felder, daher erlaubt der Borrow-Checker beides.
-                        let overlay = |painter: &egui::Painter, page: usize, rect: egui::Rect| {
-                            let Ok(info) = d.doc.page(page) else { return };
-                            for (f, w) in d.doc.forms().widgets_on(info.object_id) {
-                                if f.kind.is_fillable() && !w.hidden {
-                                    let style = crate::form_draw::Style::default();
-                                    crate::form_draw::paint(painter, info, rect, f, w, style);
-                                }
-                            }
-                            for a in d.doc.annotations().on_page(page) {
-                                annot_draw::paint(painter, info, rect, a);
-                            }
-                        };
-                        let ids = d.doc.page_ids();
-                        let action = d.viewer.show_thumbnails(ui, &mut d.thumbs, &ids, overlay);
-                        match action {
-                            Some(ThumbAction::Navigate(page)) => d.viewer.scroll_to_page(page),
-                            Some(ThumbAction::Page(a)) => d.apply_page_action(a),
-                            None => {}
-                        }
-                    });
-            }
         }
-        if self.document.is_some() {
-            // Grauer Hintergrund hinter den (weißen) Seiten – im hellen Design sonst unsichtbar.
-            let backdrop = if ui.visuals().dark_mode {
-                ui.visuals().extreme_bg_color
-            } else {
-                egui::Color32::from_gray(190)
-            };
+        if self.document.is_some()
+            && !self.show_home
+            && let Some(g) = self.pending_group.take()
+        {
+            self.open_tool_group(&ctx, g);
+        }
+        if self.document.is_none() || self.show_home {
             egui::CentralPanel::default()
-                .frame(egui::Frame::NONE.fill(backdrop))
-                .show(ui, |ui| self.document_view(ui));
-            if let Some(d) = &mut self.document {
-                d.show_editor(&ctx);
-                if let Ok(render) = &self.render {
-                    d.viewer.flush_requests(render);
-                }
-            }
+                .frame(egui::Frame::NONE.fill(crate::style::canvas(dark)))
+                .show(ui, |ui| self.home_page(ui));
         } else {
-            egui::CentralPanel::default().show(ui, |ui| self.empty_state(ui));
+            self.document_layout(ui, &ctx, bar(window_fill));
         }
         self.settings_window(&ctx);
+        self.shortcuts_window(&ctx);
         self.insert_dialog_ui(&ctx);
         self.merge_dialog_ui(&ctx);
         self.extract_dialog_ui(&ctx);
         self.split_dialog_ui(&ctx);
         self.redact_confirm_ui(&ctx);
         self.sanitize_dialog_ui(&ctx);
+        self.export_dialog_ui(&ctx);
+        self.password_prompt_ui(&ctx);
+        self.security_dialog_ui(&ctx);
+        self.compress_dialog_ui(&ctx);
+        self.a11y_report_ui(&ctx);
+        self.autotag_dialog_ui(&ctx);
+        self.compare_ui(&ctx);
+        #[cfg(feature = "ocr")]
+        self.ocr_dialog_ui(&ctx);
         self.sign_dialog_ui(&ctx);
         self.cert_dialog_ui(&ctx);
         self.job_ui(&ctx);

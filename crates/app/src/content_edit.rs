@@ -12,18 +12,20 @@
 //! Renderer mit dem neuen Inhalt.
 
 use crate::app::OpenDocument;
+use crate::rich_edit::{FontChoices, RichEdit};
 use crate::tools::Tool;
 use crate::viewer::{ViewOutput, transform};
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, StrokeKind, pos2, vec2};
-use foliocraft_core::{PageId, ParaFrame, Paragraph, Point};
+use pdftool_core::rich_text::{FontRef, StyledRun, TextStyle};
+use pdftool_core::{PageId, ParaFrame, Paragraph, Point};
 use std::collections::HashMap;
 
 /// Breite/Höhe des Anfassers am rechten Rand (Bildschirmpunkte).
 const HANDLE: Pos2 = pos2(8.0, 18.0);
 
 pub struct ContentEdit {
-    /// Schriftgröße und Farbe für neuen Text (setzt die App aus den Werkzeugeinstellungen).
-    pub style: (f32, foliocraft_core::Color),
+    /// Stil für neuen Text (setzt die App aus ihren Einstellungen).
+    pub new_style: TextStyle,
     /// Absätze pro Seite samt Inhaltsstempel, aus dem sie stammen.
     paragraphs: HashMap<PageId, (u64, Vec<Paragraph>)>,
     /// Ausgewählter Absatz (Seite, Absatz) und sein (evtl. schon geänderter) Kasten.
@@ -35,19 +37,25 @@ pub struct ContentEdit {
     /// Fehlermeldung für den Dialog der App.
     pub error: Option<String>,
     /// Bilder pro Seite samt Inhaltsstempel.
-    pub(crate) images: HashMap<PageId, (u64, Vec<foliocraft_core::PageImage>)>,
+    pub(crate) images: HashMap<PageId, (u64, Vec<pdftool_core::PageImage>)>,
     /// Ausgewähltes Bild (Seite, Bild).
-    pub selected_image: Option<(usize, foliocraft_core::PageImage)>,
+    pub selected_image: Option<(usize, pdftool_core::PageImage)>,
     /// Laufendes Verschieben/Skalieren.
     pub(crate) image_drag: Option<crate::image_tool::ImageDrag>,
     /// Bild, das mit dem nächsten Klick platziert wird.
-    pub placing_image: Option<foliocraft_core::NewImage>,
+    pub placing_image: Option<pdftool_core::NewImage>,
+    /// Bild unter dem letzten Rechtsklick (für das Kontextmenü).
+    pub context_image: Option<(usize, pdftool_core::PageImage)>,
+    /// Mitte des sichtbaren Bereichs (Seite, PDF-Punkt) – Ziel für eingefügte Bilder.
+    pub visible_center: Option<(usize, pdftool_core::Point)>,
+    /// Stil des ausgewählten Absatzes für die Formatleiste (Seite, Stempel, erste Op).
+    style_cache: Option<((usize, u64, usize), TextStyle, FontChoices)>,
 }
 
 impl Default for ContentEdit {
     fn default() -> Self {
         Self {
-            style: (12.0, foliocraft_core::Color::BLACK),
+            new_style: TextStyle::noto(12.0, pdftool_core::Color::BLACK),
             paragraphs: HashMap::new(),
             selected: None,
             drag: None,
@@ -57,6 +65,9 @@ impl Default for ContentEdit {
             selected_image: None,
             image_drag: None,
             placing_image: None,
+            style_cache: None,
+            context_image: None,
+            visible_center: None,
         }
     }
 }
@@ -78,7 +89,11 @@ pub struct InlineEdit {
     para: Option<(Paragraph, ParaFrame)>,
     /// Anfang der Grundlinie (PDF-Raum), nur für neuen Text.
     origin: Point,
-    text: String,
+    /// Formatierter Text und die Läufe beim Öffnen (unverändert = nichts tun).
+    rich: RichEdit,
+    initial: Vec<StyledRun>,
+    /// Schriften für die Auswahlliste.
+    choices: FontChoices,
     /// Fokus beim ersten Bild setzen.
     focus: bool,
 }
@@ -126,7 +141,7 @@ impl OpenDocument {
                 frame_screen(self, view, page, p, &p.frame()).is_some_and(|r| r.contains(pos))
             })
             .min_by(|a, b| {
-                let area = |r: &foliocraft_core::Rect| r.width() * r.height();
+                let area = |r: &pdftool_core::Rect| r.width() * r.height();
                 area(&a.bounds).total_cmp(&area(&b.bounds))
             })
             .map(|p| (page, p))
@@ -196,13 +211,15 @@ impl OpenDocument {
                 // Klickpunkt = linke obere Ecke; die Grundlinie liegt eine Oberlänge tiefer
                 // (in Anzeigerichtung – so stimmt es auch auf gedrehten Seiten).
                 let zoom = self.viewer.zoom();
-                let size = self.content_edit.style.0;
-                let baseline = pos + vec2(0.0, size * 0.8 * zoom);
+                let style = self.content_edit.new_style.clone();
+                let baseline = pos + vec2(0.0, style.size * 0.8 * zoom);
                 self.content_edit.editing = Some(InlineEdit {
                     page,
                     para: None,
                     origin: transform::screen_to_pdf(info, page_rect, baseline),
-                    text: String::new(),
+                    rich: RichEdit::from_runs(&[], style),
+                    initial: Vec::new(),
+                    choices: self.font_choices(page, &[]),
                     focus: true,
                 });
             }
@@ -280,15 +297,71 @@ impl OpenDocument {
     }
 
     pub fn open_paragraph_editor(&mut self) {
-        if let Some((page, para, frame)) = self.content_edit.selected.clone() {
-            self.content_edit.editing = Some(InlineEdit {
-                page,
-                text: para.text.clone(),
-                origin: frame.origin,
-                para: Some((para, frame)),
-                focus: true,
-            });
+        let Some((page, para, frame)) = self.content_edit.selected.clone() else {
+            return;
+        };
+        let runs = match self.doc.paragraph_runs(page, &para) {
+            Ok(r) => r,
+            Err(e) => {
+                self.content_edit.error = Some(e.to_string());
+                return;
+            }
+        };
+        let default = runs
+            .first()
+            .map_or_else(|| self.content_edit.new_style.clone(), |r| r.style.clone());
+        self.content_edit.editing = Some(InlineEdit {
+            page,
+            rich: RichEdit::from_runs(&runs, default),
+            choices: self.font_choices(page, &runs),
+            initial: runs,
+            origin: frame.origin,
+            para: Some((para, frame)),
+            focus: true,
+        });
+    }
+
+    /// Schriften für die Auswahlliste: die Originalschriften der Läufe (mit Anzeigenamen).
+    fn font_choices(&self, page: usize, runs: &[StyledRun]) -> FontChoices {
+        let mut originals: Vec<(FontRef, String)> = Vec::new();
+        for r in runs {
+            if let FontRef::Original(res) = &r.style.font
+                && !originals.iter().any(|(f, _)| f == &r.style.font)
+            {
+                originals.push((r.style.font.clone(), self.doc.font_display_name(page, res)));
+            }
         }
+        FontChoices { originals }
+    }
+
+    /// Stil und Schriftliste des ausgewählten Absatzes (für die Formatleiste im Panel).
+    pub fn selected_paragraph_style(&mut self) -> Option<(TextStyle, FontChoices)> {
+        let (page, para, _) = self.content_edit.selected.as_ref()?;
+        let key = (*page, para.stamp, *para.shows.first()?);
+        if let Some((k, style, choices)) = &self.content_edit.style_cache
+            && *k == key
+        {
+            return Some((style.clone(), choices.clone()));
+        }
+        let runs = self.doc.paragraph_runs(*page, para).ok()?;
+        let style = runs.first()?.style.clone();
+        let choices = self.font_choices(*page, &runs);
+        self.content_edit.style_cache = Some((key, style.clone(), choices.clone()));
+        Some((style, choices))
+    }
+
+    /// Formatiert den ganzen ausgewählten Absatz um (ein Undo-Schritt).
+    pub fn format_selected_paragraph(&mut self, f: &dyn Fn(&mut TextStyle)) {
+        let Some((page, para, frame)) = self.content_edit.selected.clone() else {
+            return;
+        };
+        let result = self.doc.paragraph_runs(page, &para).and_then(|mut runs| {
+            for r in &mut runs {
+                f(&mut r.style);
+            }
+            self.doc.set_paragraph_rich(page, &para, &runs, frame)
+        });
+        self.after_paragraph_change(page, result, frame);
     }
 
     /// Nach dem Neusetzen: Fehler melden, den Absatz am neuen Ort wieder auswählen
@@ -296,7 +369,7 @@ impl OpenDocument {
     fn after_paragraph_change(
         &mut self,
         page: usize,
-        result: foliocraft_core::Result<()>,
+        result: pdftool_core::Result<()>,
         frame: ParaFrame,
     ) {
         let origin = frame.origin;
@@ -328,16 +401,16 @@ impl OpenDocument {
         let Some(ed) = self.content_edit.editing.take() else {
             return;
         };
+        let runs = ed.rich.runs();
         match ed.para {
-            Some((para, _)) if para.text == ed.text => {}
+            Some(_) if runs == ed.initial => {}
             Some((para, frame)) => {
-                let result = self.doc.set_paragraph(ed.page, &para, &ed.text, frame);
+                let result = self.doc.set_paragraph_rich(ed.page, &para, &runs, frame);
                 self.after_paragraph_change(ed.page, result, frame);
             }
-            None if ed.text.trim().is_empty() => {}
+            None if ed.rich.text.trim().is_empty() => {}
             None => {
-                let (size, color) = self.content_edit.style;
-                if let Err(e) = self.doc.add_text(ed.page, ed.origin, &ed.text, size, color) {
+                if let Err(e) = self.doc.add_rich_text(ed.page, ed.origin, &runs, None) {
                     self.content_edit.error = Some(e.to_string());
                 }
             }
@@ -399,47 +472,40 @@ impl OpenDocument {
             return;
         };
         // Position und Größe: über dem Kasten bzw. am Klickpunkt.
-        let (rect, size, rows) = match &ed.para {
+        let (rect, rows) = match &ed.para {
             Some((p, f)) => (
                 transform::pdf_rect_to_screen(info, page_rect, p.frame_rect(f, p.lines)),
-                p.size_on_page,
                 p.lines.max(2),
             ),
             None => {
-                let size = self.content_edit.style.0;
+                let size = ed.rich.current().size;
                 let base = transform::pdf_to_screen(info, page_rect, ed.origin);
                 let top = base - vec2(0.0, size * 0.8 * zoom);
-                (
-                    Rect::from_min_size(top, vec2(0.0, size * 1.2 * zoom)),
-                    size,
-                    1,
-                )
+                (Rect::from_min_size(top, vec2(0.0, size * 1.2 * zoom)), 1)
             }
         };
-        let font = egui::FontId::new(
-            (size * zoom).clamp(9.0, 40.0),
-            egui::FontFamily::Name(crate::app::NOTO_FAMILY.into()),
-        );
-        let width = rect.width().max(260.0);
+        let width = rect.width().max(560.0);
         let is_para = ed.para.is_some();
         let mut commit = false;
         let mut cancel = false;
+        crate::rich_edit::ensure_bold_font(ui.ctx());
         let Some(ed) = &mut self.content_edit.editing else {
             return;
         };
         egui::Area::new(egui::Id::unique("content_inline_edit"))
             .order(egui::Order::Foreground)
-            .fixed_pos(pos2(rect.min.x - 4.0, rect.min.y - 4.0))
+            .fixed_pos(pos2(rect.min.x - 4.0, rect.min.y - 44.0))
             .show(ui.ctx(), |ui| {
                 egui::Frame::popup(ui.style()).show(ui, |ui| {
-                    let edit = egui::TextEdit::multiline(&mut ed.text)
-                        .font(font)
-                        .desired_width(width)
-                        .desired_rows(rows);
-                    let resp = ui.add(edit);
-                    if std::mem::take(&mut ed.focus) {
-                        resp.request_focus();
+                    ui.set_min_width(width.max(560.0));
+                    let current = ed.rich.current();
+                    if let Some(f) =
+                        crate::rich_edit::format_bar(ui, "inline", &current, &ed.choices)
+                    {
+                        ed.rich.apply(&*f);
                     }
+                    let focus = std::mem::take(&mut ed.focus);
+                    ed.rich.text_edit(ui, zoom, width, rows, focus);
                     if ui.input(|i| i.key_pressed(egui::Key::Enter) && i.modifiers.command) {
                         commit = true;
                     }
@@ -457,9 +523,11 @@ impl OpenDocument {
                         if ui.button("Abbrechen").on_hover_text("Esc").clicked() {
                             cancel = true;
                         }
-                        if is_para {
-                            ui.weak("Bricht in der Breite des Kastens um · Enter = neue Zeile");
-                        }
+                        ui.weak(if is_para {
+                            "Text markieren und oben formatieren · Enter = neue Zeile"
+                        } else {
+                            "Text markieren und oben formatieren"
+                        });
                     });
                 });
             });

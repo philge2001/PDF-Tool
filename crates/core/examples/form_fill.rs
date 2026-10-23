@@ -1,10 +1,10 @@
 //! Formular auf der Kommandozeile ausfüllen – zur Gegenprobe mit anderen Readern.
 //!
-//! `cargo run -p foliocraft-core --example form_fill -- in.pdf` listet alle Felder.
-//! `cargo run -p foliocraft-core --example form_fill -- in.pdf out.pdf name=Wert …` setzt Werte:
+//! `cargo run -p pdftool-core --example form_fill -- in.pdf` listet alle Felder.
+//! `cargo run -p pdftool-core --example form_fill -- in.pdf out.pdf name=Wert …` setzt Werte:
 //! Text direkt, Kontrollkästchen `an`/`aus`, Optionsfeld Zustandsname, Auswahl mit `|` getrennt.
 
-use foliocraft_core::{Document, FieldKind, FieldValue, UpdateField};
+use pdftool_core::{Document, FieldKind, FieldValue, UpdateField};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

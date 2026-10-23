@@ -5,7 +5,7 @@ pub mod editor;
 pub mod select;
 pub mod text_select;
 
-use foliocraft_core::Color;
+use pdftool_core::Color;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -76,7 +76,6 @@ impl Tool {
         }
     }
 
-    pub const NAVIGATION: [Tool; 3] = [Tool::TextSelect, Tool::Select, Tool::Hand];
     pub const ANNOTATION: [Tool; 9] = [
         Tool::Highlight,
         Tool::Underline,

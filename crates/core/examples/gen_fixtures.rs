@@ -1,8 +1,8 @@
 //! Erzeugt die Test-PDFs unter `tests/fixtures/`.
 //!
 //! Aufruf (im Workspace-Root):
-//!   cargo run -p foliocraft-core --example gen_fixtures
-//!   cargo run -p foliocraft-core --example gen_fixtures -- big 500 /tmp/big.pdf
+//!   cargo run -p pdftool-core --example gen_fixtures
+//!   cargo run -p pdftool-core --example gen_fixtures -- big 500 /tmp/big.pdf
 //!
 //! Die Dateien sind komplett selbst erzeugt (keine fremden Inhalte).
 
@@ -158,7 +158,7 @@ fn text_two_pages(path: &Path) {
         A4,
         0,
         &[
-            (72.0, 760.0, 24.0, "FolioCraft Testdokument"),
+            (72.0, 760.0, 24.0, "PDF Tool Testdokument"),
             (
                 72.0,
                 720.0,
@@ -734,6 +734,463 @@ fn big(path: &Path, pages: usize) {
     b.finish(path);
 }
 
+/// Minimaler Text-Rasterizer für die "gescannte" Seite: Glyphen-Umrisse der eingebauten
+/// Noto Sans (ttf-parser), Kurven in Linien zerlegt, gefüllt nach der Nonzero-Regel mit
+/// 4 Unterzeilen pro Pixel und exakter Abdeckung in x-Richtung.
+struct TextRaster {
+    width: usize,
+    height: usize,
+    /// Deckung 0..1 je Pixel.
+    cover: Vec<f32>,
+}
+
+/// Liniensegment von–bis in Pixeln.
+type Edge = ((f32, f32), (f32, f32));
+
+/// Sammelt die Umrisse einer Glyphe als Liniensegmente (in Pixeln).
+struct Outline<'a> {
+    edges: &'a mut Vec<Edge>,
+    to_px: &'a dyn Fn(f32, f32) -> (f32, f32),
+    start: (f32, f32),
+    last: (f32, f32),
+}
+
+impl ttf_parser::OutlineBuilder for Outline<'_> {
+    fn move_to(&mut self, x: f32, y: f32) {
+        self.start = (self.to_px)(x, y);
+        self.last = self.start;
+    }
+    fn line_to(&mut self, x: f32, y: f32) {
+        let p = (self.to_px)(x, y);
+        self.edges.push((self.last, p));
+        self.last = p;
+    }
+    fn quad_to(&mut self, x1: f32, y1: f32, x: f32, y: f32) {
+        let (p0, c, p1) = (self.last, (self.to_px)(x1, y1), (self.to_px)(x, y));
+        for i in 1..=8 {
+            let t = i as f32 / 8.0;
+            let u = 1.0 - t;
+            let p = (
+                u * u * p0.0 + 2.0 * u * t * c.0 + t * t * p1.0,
+                u * u * p0.1 + 2.0 * u * t * c.1 + t * t * p1.1,
+            );
+            self.edges.push((self.last, p));
+            self.last = p;
+        }
+    }
+    fn curve_to(&mut self, x1: f32, y1: f32, x2: f32, y2: f32, x: f32, y: f32) {
+        let (p0, c1, c2, p1) = (
+            self.last,
+            (self.to_px)(x1, y1),
+            (self.to_px)(x2, y2),
+            (self.to_px)(x, y),
+        );
+        for i in 1..=10 {
+            let t = i as f32 / 10.0;
+            let u = 1.0 - t;
+            let b = |a: f32, b: f32, c: f32, d: f32| {
+                u * u * u * a + 3.0 * u * u * t * b + 3.0 * u * t * t * c + t * t * t * d
+            };
+            let p = (b(p0.0, c1.0, c2.0, p1.0), b(p0.1, c1.1, c2.1, p1.1));
+            self.edges.push((self.last, p));
+            self.last = p;
+        }
+    }
+    fn close(&mut self) {
+        if self.last != self.start {
+            self.edges.push((self.last, self.start));
+        }
+        self.last = self.start;
+    }
+}
+
+impl TextRaster {
+    fn new(width: usize, height: usize) -> Self {
+        Self {
+            width,
+            height,
+            cover: vec![0.0; width * height],
+        }
+    }
+
+    /// Schreibt `text` ab (x, Grundlinie y) in Pixeln, Schriftgröße `size` in Pixeln.
+    fn text(&mut self, x: f32, y: f32, size: f32, text: &str) {
+        let face =
+            ttf_parser::Face::parse(pdftool_core::embedded_font::NOTO_SANS, 0).expect("Schrift");
+        let scale = size / f32::from(face.units_per_em());
+        let mut pen = x;
+        for c in text.chars() {
+            let Some(gid) = face.glyph_index(c) else {
+                continue;
+            };
+            let mut edges = Vec::new();
+            let origin = pen;
+            let to_px = move |gx: f32, gy: f32| (origin + gx * scale, y - gy * scale);
+            let mut b = Outline {
+                edges: &mut edges,
+                to_px: &to_px,
+                start: (0.0, 0.0),
+                last: (0.0, 0.0),
+            };
+            face.outline_glyph(gid, &mut b);
+            self.fill(&edges);
+            pen += f32::from(face.glyph_hor_advance(gid).unwrap_or(0)) * scale;
+        }
+    }
+
+    fn fill(&mut self, edges: &[Edge]) {
+        const SUB: usize = 4;
+        let (y_min, y_max) = edges.iter().fold((f32::MAX, f32::MIN), |(a, b), (p, q)| {
+            (a.min(p.1).min(q.1), b.max(p.1).max(q.1))
+        });
+        if y_min > y_max {
+            return;
+        }
+        let first = ((y_min.floor().max(0.0)) as usize) * SUB;
+        let last = ((y_max.ceil().min(self.height as f32)) as usize) * SUB;
+        for sub in first..last {
+            let sy = (sub as f32 + 0.5) / SUB as f32;
+            // Schnittpunkte mit Richtung (Nonzero-Regel).
+            let mut xs: Vec<(f32, i32)> = edges
+                .iter()
+                .filter_map(|&((x0, y0), (x1, y1))| {
+                    if (y0 <= sy && y1 > sy) || (y1 <= sy && y0 > sy) {
+                        let t = (sy - y0) / (y1 - y0);
+                        Some((x0 + t * (x1 - x0), if y1 > y0 { 1 } else { -1 }))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            xs.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let row = sub / SUB;
+            let mut winding = 0;
+            for pair in xs.windows(2) {
+                winding += pair[0].1;
+                if winding == 0 {
+                    continue;
+                }
+                let (a, b) = (pair[0].0.max(0.0), pair[1].0.min(self.width as f32));
+                let mut px = a.floor() as usize;
+                while (px as f32) < b && px < self.width {
+                    let cov = (b.min(px as f32 + 1.0) - a.max(px as f32)).max(0.0);
+                    let cell = &mut self.cover[row * self.width + px];
+                    *cell = (*cell + cov / SUB as f32).min(1.0);
+                    px += 1;
+                }
+            }
+        }
+    }
+
+    /// Graustufen: weißes Papier, schwarze Schrift.
+    fn gray(&self) -> Vec<u8> {
+        self.cover
+            .iter()
+            .map(|c| (255.0 * (1.0 - c)).round() as u8)
+            .collect()
+    }
+}
+
+/// Getaggte Seite (Tagged PDF): Überschrift, zwei Absätze, Bild mit und ohne Alternativtext,
+/// Rahmen als Artefakt; Sprache, Titel, MarkInfo, Strukturbaum mit ParentTree.
+fn tagged(path: &Path) {
+    let mut b = Builder::new();
+    let font = b.font_id;
+    let pixels: Vec<u8> = (0..16).map(|i| (i * 16) as u8).collect();
+    let image = b.doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => 4, "Height" => 4,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+        },
+        pixels,
+    ));
+    let content = b"/Artifact BMC 0.7 G 20 20 555 802 re S EMC\n\
+        /H1 <</MCID 0>> BDC BT /F1 20 Tf 72 760 Td (Barrierefreies Dokument) Tj ET EMC\n\
+        /P <</MCID 1>> BDC BT /F1 12 Tf 72 720 Td (Erster Absatz mit Text.) Tj ET EMC\n\
+        /Figure <</MCID 2>> BDC q 100 0 0 60 72 640 cm /Im1 Do Q EMC\n\
+        /P <</MCID 3>> BDC BT /F1 12 Tf 72 600 Td (Zweiter Absatz unter dem Bild.) Tj ET EMC\n\
+        /Figure <</MCID 4>> BDC q 60 0 0 60 72 520 cm /Im1 Do Q EMC\n"
+        .to_vec();
+    let page = b.raw_page(
+        A4,
+        content,
+        dictionary! {
+            "Font" => dictionary! { "F1" => font },
+            "XObject" => dictionary! { "Im1" => image },
+        },
+    );
+    let doc = &mut b.doc;
+    let root_id = doc.new_object_id();
+    let document_id = doc.new_object_id();
+    let elem = |doc: &mut Document, role: &str, mcid: i64, alt: Option<&str>| {
+        let mut d = dictionary! {
+            "Type" => "StructElem", "S" => Object::Name(role.as_bytes().to_vec()),
+            "P" => document_id, "Pg" => page, "K" => mcid,
+        };
+        if let Some(alt) = alt {
+            d.set("Alt", Object::string_literal(alt));
+        }
+        doc.add_object(d)
+    };
+    let h1 = elem(doc, "H1", 0, None);
+    let p1 = elem(doc, "P", 1, None);
+    let fig1 = elem(doc, "Figure", 2, Some("Graustufen-Verlauf"));
+    let p2 = elem(doc, "P", 3, None);
+    let fig2 = elem(doc, "Figure", 4, None);
+    let kids: Vec<Object> = [h1, p1, fig1, p2, fig2]
+        .into_iter()
+        .map(Object::from)
+        .collect();
+    doc.objects.insert(
+        document_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "StructElem", "S" => "Document", "P" => root_id, "K" => kids.clone(),
+        }),
+    );
+    doc.objects.insert(
+        root_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "StructTreeRoot", "K" => document_id,
+            "ParentTree" => dictionary! { "Nums" => vec![0.into(), Object::Array(kids)] },
+            "ParentTreeNextKey" => 1,
+        }),
+    );
+    let p = doc
+        .get_object_mut(page)
+        .and_then(Object::as_dict_mut)
+        .expect("Seite");
+    p.set("StructParents", 0);
+    p.set("Tabs", "S");
+    let info = doc.add_object(
+        dictionary! { "Title" => Object::string_literal("Barrierefreies Testdokument") },
+    );
+    doc.trailer.set("Info", info);
+    b.catalog_extra.set("StructTreeRoot", root_id);
+    b.catalog_extra
+        .set("MarkInfo", dictionary! { "Marked" => true });
+    b.catalog_extra.set("Lang", Object::string_literal("de-DE"));
+    b.catalog_extra.set(
+        "ViewerPreferences",
+        dictionary! { "DisplayDocTitle" => true },
+    );
+    b.finish(path);
+}
+
+/// Seite mit einem hoch aufgelösten "Foto" (1200 × 800 Pixel auf 200 × 133 pt ≈ 430 dpi,
+/// mit weicher Transparenzmaske) und Text – zum Testen der Komprimierung.
+fn photo(path: &Path) {
+    let mut b = Builder::new();
+    let (w, h) = (1200usize, 800usize);
+    let mut rgb = Vec::with_capacity(w * h * 3);
+    let mut alpha = Vec::with_capacity(w * h);
+    for y in 0..h {
+        for x in 0..w {
+            // Weiche Verläufe + ein Kreis: verhält sich beim Komprimieren wie ein Foto.
+            let (fx, fy) = (x as f32 / w as f32, y as f32 / h as f32);
+            let d = ((fx - 0.5).powi(2) + (fy - 0.5).powi(2)).sqrt();
+            rgb.push((255.0 * fx) as u8);
+            rgb.push((255.0 * (1.0 - fy)) as u8);
+            rgb.push(if d < 0.3 { 220 } else { (128.0 * fy) as u8 });
+            alpha.push(if d < 0.45 { 255 } else { 0 });
+        }
+    }
+    let mut mask = Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => w as i64, "Height" => h as i64,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+        },
+        alpha,
+    );
+    mask.compress().expect("komprimieren");
+    let mask = b.doc.add_object(mask);
+    let mut image = Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => w as i64, "Height" => h as i64,
+            "ColorSpace" => "DeviceRGB", "BitsPerComponent" => 8, "SMask" => mask,
+        },
+        rgb,
+    );
+    image.compress().expect("komprimieren");
+    let image = b.doc.add_object(image);
+    let font = b.font_id;
+    b.raw_page(
+        A4,
+        b"BT /F1 14 Tf 72 760 Td (Foto mit hoher Aufloesung) Tj ET\n\
+          q 200 0 0 133.33 72 600 cm /Foto Do Q"
+            .to_vec(),
+        dictionary! {
+            "Font" => dictionary! { "F1" => font },
+            "XObject" => dictionary! { "Foto" => image },
+        },
+    );
+    b.finish(path);
+}
+
+/// "Gescannte" Seite: nur ein Bild mit Text (keine Textebene) – für die Texterkennung.
+fn scan(path: &Path) {
+    let mut b = Builder::new();
+    // 150 dpi: A4 = 1240 × 1754 Pixel; 1 pt = 150/72 Pixel.
+    let (w, h) = (1240usize, 1754usize);
+    let px = 150.0 / 72.0;
+    let mut r = TextRaster::new(w, h);
+    let lines: [(f32, f32, &str); 5] = [
+        (72.0, 760.0, "Rechnung Nummer 4711"),
+        (72.0, 720.0, "Sehr geehrte Damen und Herren,"),
+        (72.0, 700.0, "vielen Dank für Ihre Bestellung."),
+        (72.0, 680.0, "Der Betrag ist zahlbar bis Freitag."),
+        (72.0, 640.0, "Mit freundlichen Grüßen"),
+    ];
+    for (i, (x, y, text)) in lines.iter().enumerate() {
+        let size = if i == 0 { 20.0 } else { 13.0 };
+        r.text(x * px, (842.0 - y) * px, size * px, text);
+    }
+    let mut image = Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image",
+            "Width" => w as i64, "Height" => h as i64,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+        },
+        r.gray(),
+    );
+    image.compress().expect("komprimieren");
+    let image = b.doc.add_object(image);
+    b.raw_page(
+        A4,
+        b"q 595 0 0 842 0 0 cm /Scan Do Q".to_vec(),
+        dictionary! { "XObject" => dictionary! { "Scan" => image } },
+    );
+    b.finish(path);
+}
+
+/// Drei Seiten mit Lesezeichen: verschachtelt, direkte Ziele (/Dest), Aktion /GoTo, benanntes
+/// Ziel über den /Names-Baum, Farbe/Fettdruck und ein Weblink ohne Seite.
+fn bookmarks(path: &Path) {
+    let mut b = Builder::new();
+    let p1 = b.page(
+        A4,
+        0,
+        &[
+            (72.0, 760.0, 20.0, "Kapitel 1"),
+            (72.0, 500.0, 14.0, "Abschnitt 1.1"),
+        ],
+    );
+    let p2 = b.page(A4, 0, &[(72.0, 760.0, 20.0, "Kapitel 2")]);
+    let p3 = b.page(A4, 0, &[(72.0, 760.0, 20.0, "Anhang")]);
+    let doc = &mut b.doc;
+    let root = doc.new_object_id();
+    let k1 = doc.new_object_id();
+    let s11 = doc.new_object_id();
+    let k2 = doc.new_object_id();
+    let anh = doc.new_object_id();
+    let ext = doc.new_object_id();
+    let xyz = |page: ObjectId, left: Object, top: Object| -> Object {
+        vec![page.into(), "XYZ".into(), left, top, Object::Null].into()
+    };
+    doc.objects.insert(
+        k1,
+        Object::Dictionary(dictionary! {
+            "Title" => winansi("Kapitel 1"), "Parent" => root, "Next" => k2,
+            "First" => s11, "Last" => s11, "Count" => 1,
+            "Dest" => xyz(p1, 0.into(), 800.into()),
+        }),
+    );
+    doc.objects.insert(
+        s11,
+        Object::Dictionary(dictionary! {
+            "Title" => winansi("Abschnitt 1.1"), "Parent" => k1,
+            "A" => dictionary! { "S" => "GoTo", "D" => xyz(p1, 72.into(), 520.into()) },
+        }),
+    );
+    doc.objects.insert(
+        k2,
+        Object::Dictionary(dictionary! {
+            "Title" => winansi("Kapitel 2"), "Parent" => root, "Prev" => k1, "Next" => anh,
+            "Dest" => Object::string_literal("kap2"),
+        }),
+    );
+    doc.objects.insert(
+        anh,
+        Object::Dictionary(dictionary! {
+            "Title" => winansi("Anhang"), "Parent" => root, "Prev" => k2, "Next" => ext,
+            "Dest" => vec![p3.into(), "FitH".into(), 700.into()],
+            "C" => vec![0.8.into(), 0.into(), 0.into()], "F" => 2,
+        }),
+    );
+    doc.objects.insert(ext, Object::Dictionary(dictionary! {
+        "Title" => winansi("Projektseite"), "Parent" => root, "Prev" => anh,
+        "A" => dictionary! { "S" => "URI", "URI" => Object::string_literal("https://example.org") },
+    }));
+    doc.objects.insert(
+        root,
+        Object::Dictionary(dictionary! {
+            "Type" => "Outlines", "First" => k1, "Last" => ext, "Count" => 5,
+        }),
+    );
+    b.catalog_extra.set("Outlines", root);
+    b.catalog_extra.set("PageMode", "UseOutlines");
+    b.catalog_extra.set(
+        "Names",
+        dictionary! { "Dests" => dictionary! {
+            "Names" => vec![Object::string_literal("kap2"), vec![p2.into(), "Fit".into()].into()],
+        } },
+    );
+    b.finish(path);
+}
+
+/// Drei Bildarten auf einer Seite: direktes Bild-XObject (rot/grün, 40×20 px), Bild in einem
+/// Formular-XObject mit Beschneidung (wie viele Programme es schreiben, blau, 30×30 px) und
+/// ein Inline-Bild (2×2 Graustufen).
+fn images(path: &Path) {
+    let mut b = Builder::new();
+    let rgb = |w: usize, h: usize, f: &dyn Fn(usize, usize) -> [u8; 3]| {
+        let mut v = Vec::with_capacity(w * h * 3);
+        for y in 0..h {
+            for x in 0..w {
+                v.extend_from_slice(&f(x, y));
+            }
+        }
+        v
+    };
+    let img = |doc: &mut Document, w: usize, h: usize, data: Vec<u8>| {
+        doc.add_object(Stream::new(
+            dictionary! {
+                "Type" => "XObject", "Subtype" => "Image", "Width" => w as i64, "Height" => h as i64,
+                "ColorSpace" => "DeviceRGB", "BitsPerComponent" => 8,
+            },
+            data,
+        ))
+    };
+    let direct = rgb(40, 20, &|x, _| {
+        if x < 20 { [220, 30, 30] } else { [30, 160, 60] }
+    });
+    let direct = img(&mut b.doc, 40, 20, direct);
+    let blue = rgb(30, 30, &|_, _| [40, 80, 220]);
+    let blue = img(&mut b.doc, 30, 30, blue);
+    // Formular: Beschneidung auf einen Kreis-ähnlichen Bereich, dann das Bild.
+    let form = b.doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Form",
+            "BBox" => vec![0.into(), 0.into(), 1.into(), 1.into()],
+            "Resources" => dictionary! { "XObject" => dictionary! { "Blau" => blue } },
+        },
+        b"q 0.05 0.05 0.9 0.9 re W n 1 0 0 1 0 0 cm /Blau Do Q".to_vec(),
+    ));
+    let font = b.font_id;
+    b.raw_page(
+        A4,
+        b"BT /F1 14 Tf 72 760 Td (Bilder) Tj ET
+          q 160 0 0 80 72 600 cm /Direkt Do Q
+          q 120 0 0 120 300 560 cm /Fm1 Do Q
+          q 60 0 0 60 72 450 cm BI /W 2 /H 2 /CS /G /BPC 8 ID \x00\x80\x80\xff EI Q"
+            .to_vec(),
+        dictionary! {
+            "Font" => dictionary! { "F1" => font },
+            "XObject" => dictionary! { "Direkt" => direct, "Fm1" => form },
+        },
+    );
+    b.finish(path);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("big") {
@@ -757,4 +1214,9 @@ fn main() {
     form(&dir.join("form.pdf"));
     content_mix(&dir.join("content_mix.pdf"));
     sanitize(&dir.join("sanitize.pdf"));
+    scan(&dir.join("scan.pdf"));
+    photo(&dir.join("photo.pdf"));
+    tagged(&dir.join("tagged.pdf"));
+    bookmarks(&dir.join("bookmarks.pdf"));
+    images(&dir.join("images.pdf"));
 }

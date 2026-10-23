@@ -1,9 +1,9 @@
 //! Signatur-Revision mit Platzhalter: vorbereiten -> Fake-Signatur einsetzen -> neu laden.
 
-use foliocraft_core::signature_prep::{
+use pdftool_core::signature_prep::{
     SigPlacement, SignatureSpec, empty_signature_fields, prepare_signature,
 };
-use foliocraft_core::{Document, Rect};
+use pdftool_core::{Document, Rect};
 use std::path::{Path, PathBuf};
 
 fn fixture(name: &str) -> PathBuf {

@@ -6,11 +6,15 @@ pub mod thumbnails;
 pub mod transform;
 
 use eframe::egui::{self, Color32, Pos2, Rect, ScrollArea, Sense, Vec2, pos2, vec2};
-use foliocraft_render::{
+use layout::{GAP, Layout};
+
+/// Seitlicher Rand bei "Seitenbreite"/"Ganze Seite": Platz für die schwebenden Leisten
+/// (Schnellwerkzeuge links, Seitennavigation rechts), damit sie die Seite nicht verdecken.
+pub const FIT_MARGIN: f32 = 64.0;
+use pdftool_render::{
     DocId, Priority, RenderKey, RenderRequest, RenderService, needs_tiles, page_pixel_size,
     tile_grid, tile_rect,
 };
-use layout::{GAP, Layout};
 use std::collections::HashSet;
 use textures::PageTextures;
 
@@ -133,8 +137,8 @@ impl Viewer {
     }
 
     /// Verarbeitet ein Ergebnis des Render-Workers.
-    pub fn on_render_event(&mut self, ctx: &egui::Context, event: foliocraft_render::Event) {
-        use foliocraft_render::Event;
+    pub fn on_render_event(&mut self, ctx: &egui::Context, event: pdftool_render::Event) {
+        use pdftool_render::Event;
         match event {
             Event::Rendered { key, image } if key.doc == self.doc_id => {
                 self.textures.insert(ctx, key, image)
@@ -173,6 +177,17 @@ impl Viewer {
         let page = page.min(self.layout.page_count().saturating_sub(1));
         let x = self.scroll_to.map_or(self.last_viewport.min.x, |v| v.x);
         self.scroll_to = Some(vec2(x, self.layout.page_top(page, self.zoom) - GAP));
+        self.current_page = page;
+    }
+
+    /// Scrollt so, dass die Höhe `unit_y` (0 = oberer Seitenrand, 1 = unterer) der Seite oben im
+    /// Fenster steht – für Lesezeichen und Links.
+    pub fn scroll_to_page_at(&mut self, page: usize, unit_y: f32) {
+        let page = page.min(self.layout.page_count().saturating_sub(1));
+        let (_, h) = self.layout.page_size_pt(page);
+        let x = self.scroll_to.map_or(self.last_viewport.min.x, |v| v.x);
+        let y = self.layout.page_top(page, self.zoom) + unit_y.clamp(0.0, 1.0) * h * self.zoom;
+        self.scroll_to = Some(vec2(x, (y - GAP).max(0.0)));
         self.current_page = page;
     }
 
@@ -289,13 +304,13 @@ impl Viewer {
         if view.x <= 0.0 || self.layout.page_count() == 0 {
             return;
         }
-        let fit_w = (view.x - 2.0 * GAP) / self.layout.max_width_pt();
+        let fit_w = (view.x - 2.0 * FIT_MARGIN) / self.layout.max_width_pt();
         let target = match self.zoom_mode {
             ZoomMode::Custom => return,
             ZoomMode::FitWidth => fit_w,
             ZoomMode::FitPage => {
                 let (w, h) = self.layout.page_size_pt(self.current_page);
-                ((view.x - 2.0 * GAP) / w).min((view.y - 2.0 * GAP) / h)
+                ((view.x - 2.0 * FIT_MARGIN) / w).min((view.y - 2.0 * GAP) / h)
             }
         };
         // Kleine Schwankungen ignorieren (z. B. ein- und ausgeblendete Scrollbalken).
@@ -539,6 +554,6 @@ mod tests {
         let mut v = viewer_with_frame(1);
         v.zoom_mode = ZoomMode::FitWidth;
         v.apply_fit_zoom();
-        assert!((v.zoom() - (1000.0 - 2.0 * GAP) / 600.0).abs() < 1e-4);
+        assert!((v.zoom() - (1000.0 - 2.0 * FIT_MARGIN) / 600.0).abs() < 1e-4);
     }
 }

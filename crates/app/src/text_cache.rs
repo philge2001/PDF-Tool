@@ -1,7 +1,7 @@
 //! Cache für extrahierten Seitentext (wird für Suche und Textauswahl gebraucht).
 
-use foliocraft_core::PageText;
-use foliocraft_render::{DocId, RenderService};
+use pdftool_core::PageText;
+use pdftool_render::{DocId, RenderService};
 use std::sync::Arc;
 
 pub struct TextCache {

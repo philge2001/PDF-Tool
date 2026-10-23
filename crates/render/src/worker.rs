@@ -6,9 +6,9 @@
 
 use crate::error::{RenderError, Result};
 use crate::loader;
-use foliocraft_core::geometry::Rect;
-use foliocraft_core::text::{CharBox, PageText};
 use pdfium_render::prelude::*;
+use pdftool_core::geometry::Rect;
+use pdftool_core::text::{CharBox, PageText};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -105,6 +105,83 @@ enum Job {
     },
     /// Verwirft alle wartenden Aufträge, deren Schlüssel nicht in der Menge ist.
     Retain(HashSet<RenderKey>),
+    /// Seite eines beliebigen Dokuments rendern und direkt an `reply` antworten
+    /// (für Hintergrund-Jobs wie die Texterkennung).
+    Offscreen(OffscreenJob),
+}
+
+struct OffscreenJob {
+    bytes: Arc<Vec<u8>>,
+    page: u32,
+    kind: OffscreenKind,
+}
+
+enum OffscreenKind {
+    Render {
+        page_size_pt: (f32, f32),
+        scale: f32,
+        reply: Sender<Result<RgbaImage>>,
+    },
+    /// Text der Seite in Lesereihenfolge (wie PDFium ihn liefert, mit Zeilenumbrüchen).
+    Text { reply: Sender<Result<String>> },
+    /// Zeichen mit Rechtecken (wie `Event::Text`).
+    Chars { reply: Sender<Result<PageText>> },
+}
+
+/// Rendert Seiten für Hintergrund-Jobs. Klonbar und `Send`: Jeder Job-Thread bekommt eine
+/// Kopie. Die Anfrage läuft trotzdem im Render-Thread (PDFium nur dort), der Aufrufer wartet.
+#[derive(Clone)]
+pub struct OffscreenRenderer {
+    jobs: Sender<Job>,
+}
+
+impl OffscreenRenderer {
+    /// Rendert eine ganze Seite (ohne Annotationen und Formularinhalte) in `scale` Pixeln
+    /// pro Punkt. `page_size_pt` = Anzeigegröße (nach /Rotate). Blockiert bis zum Ergebnis.
+    /// Dasselbe `bytes`-Arc mehrfach zu übergeben spart das erneute Laden des Dokuments.
+    pub fn render_page(
+        &self,
+        bytes: &Arc<Vec<u8>>,
+        page: u32,
+        page_size_pt: (f32, f32),
+        scale: f32,
+    ) -> Result<RgbaImage> {
+        let (reply, answer) = mpsc::channel();
+        self.send(
+            bytes,
+            page,
+            OffscreenKind::Render {
+                page_size_pt,
+                scale,
+                reply,
+            },
+        )?;
+        answer.recv().map_err(|_| RenderError::WorkerGone)?
+    }
+
+    /// Text einer Seite (Lesereihenfolge, Zeilen mit `\n` getrennt). Blockiert.
+    pub fn page_text(&self, bytes: &Arc<Vec<u8>>, page: u32) -> Result<String> {
+        let (reply, answer) = mpsc::channel();
+        self.send(bytes, page, OffscreenKind::Text { reply })?;
+        answer.recv().map_err(|_| RenderError::WorkerGone)?
+    }
+
+    /// Zeichen einer Seite mit Rechtecken (PDF-Raum). Blockiert.
+    pub fn page_chars(&self, bytes: &Arc<Vec<u8>>, page: u32) -> Result<PageText> {
+        let (reply, answer) = mpsc::channel();
+        self.send(bytes, page, OffscreenKind::Chars { reply })?;
+        answer.recv().map_err(|_| RenderError::WorkerGone)?
+    }
+
+    fn send(&self, bytes: &Arc<Vec<u8>>, page: u32, kind: OffscreenKind) -> Result<()> {
+        self.jobs
+            .send(Job::Offscreen(OffscreenJob {
+                bytes: Arc::clone(bytes),
+                page,
+                kind,
+            }))
+            .map_err(|_| RenderError::WorkerGone)
+    }
 }
 
 /// Pro Seite: Indizes im /Annots-Array, die beim Rendern ausgeblendet werden
@@ -162,7 +239,7 @@ impl RenderService {
         let (init_tx, init_rx) = mpsc::channel::<Result<()>>();
 
         let thread = std::thread::Builder::new()
-            .name("foliocraft-render".into())
+            .name("pdftool-render".into())
             // `move` verschiebt die Channel-Enden und den Waker in den Thread (Ownership-Übergabe).
             .spawn(move || match loader::bind_pdfium() {
                 Ok(pdfium) => {
@@ -216,6 +293,13 @@ impl RenderService {
         self.send(Job::Retain(wanted));
     }
 
+    /// Handle für Hintergrund-Jobs (siehe [`OffscreenRenderer`]).
+    pub fn offscreen(&self) -> Option<OffscreenRenderer> {
+        self.jobs
+            .as_ref()
+            .map(|jobs| OffscreenRenderer { jobs: jobs.clone() })
+    }
+
     /// Holt alle angekommenen Ereignisse ab, ohne zu blockieren.
     pub fn poll(&self) -> Vec<Event> {
         self.events.try_iter().collect()
@@ -239,6 +323,8 @@ impl Drop for RenderService {
 fn run<'p>(pdfium: &'p Pdfium, jobs: Receiver<Job>, events: Sender<Event>, waker: impl Fn()) {
     let mut doc: Option<OpenDoc<'p>> = None;
     let mut queues = Queues::default();
+    // Zuletzt für Offscreen-Aufträge geladenes Dokument (erkannt am Arc-Zeiger).
+    let mut offscreen_doc: Option<(Arc<Vec<u8>>, PdfDocument<'p>)> = None;
 
     loop {
         // Nichts zu tun? Dann blockierend auf den nächsten Auftrag warten (kostet keine CPU).
@@ -252,8 +338,20 @@ fn run<'p>(pdfium: &'p Pdfium, jobs: Receiver<Job>, events: Sender<Event>, waker
         while let Ok(job) = jobs.try_recv() {
             handle_job(job, pdfium, &mut doc, &mut queues, &events, &waker);
         }
+        // Offscreen-Aufträge brauchen kein geöffnetes Dokument der Ansicht.
+        if queues.offscreen_is_next()
+            && let Some(job) = queues.offscreen.pop_front()
+        {
+            run_offscreen(pdfium, &mut offscreen_doc, job);
+            continue;
+        }
+        if queues.offscreen.is_empty() {
+            offscreen_doc = None; // Speicher freigeben, wenn kein Job mehr rendert
+        }
         let Some(d) = &mut doc else {
-            queues.clear(); // ohne Dokument gibt es nichts zu tun
+            // ohne Dokument gibt es nichts zu tun (Offscreen-Aufträge laufen oben weiter)
+            queues.renders.clear();
+            queues.texts.clear();
             continue;
         };
         let doc_id = d.id;
@@ -323,6 +421,7 @@ impl OpenDoc<'_> {
 struct Queues {
     renders: Vec<RenderRequest>,
     texts: VecDeque<(DocId, u32)>,
+    offscreen: VecDeque<OffscreenJob>,
 }
 
 enum Work {
@@ -332,12 +431,20 @@ enum Work {
 
 impl Queues {
     fn is_empty(&self) -> bool {
-        self.renders.is_empty() && self.texts.is_empty()
+        self.renders.is_empty() && self.texts.is_empty() && self.offscreen.is_empty()
     }
 
+    /// Ansichts-Aufträge verwerfen (Offscreen-Aufträge warten auf Antwort und bleiben).
     fn clear(&mut self) {
         self.renders.clear();
         self.texts.clear();
+    }
+
+    /// Offscreen kommt nach sichtbaren Seiten und Text, aber vor Vorab-Rendern und Miniaturen.
+    fn offscreen_is_next(&self) -> bool {
+        !self.offscreen.is_empty()
+            && self.texts.is_empty()
+            && !self.renders.iter().any(|r| r.priority == Priority::Visible)
     }
 
     /// Reihenfolge: sichtbare Seiten > Text (Suche) > Vorab-Rendern > Miniaturen.
@@ -411,6 +518,7 @@ fn handle_job<'p>(
             }
         }
         Job::Retain(wanted) => queues.renders.retain(|r| wanted.contains(&r.key)),
+        Job::Offscreen(job) => queues.offscreen.push_back(job),
     }
 }
 
@@ -442,6 +550,80 @@ fn extract_text(doc: &PdfDocument, page: u32) -> Result<PageText> {
         })
         .collect();
     Ok(PageText::new(chars))
+}
+
+/// Offscreen-Auftrag ausführen und direkt beantworten.
+fn run_offscreen<'p>(
+    pdfium: &'p Pdfium,
+    cache: &mut Option<(Arc<Vec<u8>>, PdfDocument<'p>)>,
+    job: OffscreenJob,
+) {
+    let pdf = offscreen_doc(pdfium, cache, &job.bytes);
+    match job.kind {
+        OffscreenKind::Render {
+            page_size_pt,
+            scale,
+            reply,
+        } => {
+            let result = pdf.and_then(|pdf| render_offscreen(pdf, job.page, page_size_pt, scale));
+            let _ = reply.send(result);
+        }
+        OffscreenKind::Chars { reply } => {
+            let _ = reply.send(pdf.and_then(|pdf| extract_text(pdf, job.page)));
+        }
+        OffscreenKind::Text { reply } => {
+            let result = pdf.and_then(|pdf| {
+                let page = pdf.pages().get(job.page as PdfPageIndex)?;
+                Ok(page.text()?.all())
+            });
+            let _ = reply.send(result);
+        }
+    }
+}
+
+/// Lädt das Dokument eines Offscreen-Auftrags (oder nimmt das zuletzt geladene).
+fn offscreen_doc<'a, 'p>(
+    pdfium: &'p Pdfium,
+    cache: &'a mut Option<(Arc<Vec<u8>>, PdfDocument<'p>)>,
+    bytes: &Arc<Vec<u8>>,
+) -> Result<&'a PdfDocument<'p>> {
+    let cached = cache.as_ref().is_some_and(|(b, _)| Arc::ptr_eq(b, bytes));
+    if !cached {
+        *cache = None;
+        let pdf = pdfium.load_pdf_from_byte_vec(bytes.as_ref().clone(), None)?;
+        *cache = Some((Arc::clone(bytes), pdf));
+    }
+    cache
+        .as_ref()
+        .map(|(_, pdf)| pdf)
+        .ok_or(RenderError::WorkerGone)
+}
+
+/// Ganze Seite rendern (ohne Annotationen).
+fn render_offscreen(
+    pdf: &PdfDocument,
+    page: u32,
+    page_size_pt: (f32, f32),
+    scale: f32,
+) -> Result<RgbaImage> {
+    let page = pdf.pages().get(page as PdfPageIndex)?;
+    let (w, h) = page_pixel_size(page_size_pt, scale);
+    let mut bitmap = PdfBitmap::empty(w as Pixels, h as Pixels, PdfBitmapFormat::BGRA)?;
+    let config = PdfRenderConfig::new()
+        .set_fixed_size(w as Pixels, h as Pixels)
+        // Achtung: Ohne Formulardaten nimmt pdfium-render den Weg über eine Matrix und
+        // ignoriert dann `set_fixed_size` (die Seite käme im Maßstab 1). Formularfelder
+        // stören die Texterkennung nicht – ihr Text soll ruhig mit erkannt werden.
+        .render_form_data(true)
+        .render_annotations(false)
+        .set_clear_color(PdfColor::WHITE)
+        .set_reverse_byte_order(true);
+    page.render_into_bitmap_with_config(&mut bitmap, &config)?;
+    Ok(RgbaImage {
+        width: w,
+        height: h,
+        pixels: bitmap.as_rgba_bytes(),
+    })
 }
 
 fn render(doc: &PdfDocument, req: &RenderRequest) -> Result<RgbaImage> {

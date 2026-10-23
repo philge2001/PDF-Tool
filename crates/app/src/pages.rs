@@ -2,8 +2,8 @@
 //! Strukturänderung Ansicht, Caches und Render-Worker nachziehen.
 
 use crate::app::OpenDocument;
-use foliocraft_core::{DeletePages, PageId, ReorderPages, RotatePages};
-use foliocraft_render::{DocId, RenderService};
+use pdftool_core::{DeletePages, PageId, ReorderPages, RotatePages};
+use pdftool_render::{DocId, RenderService};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -50,7 +50,7 @@ impl OpenDocument {
 
     pub fn apply_page_action(&mut self, action: PageAction) {
         let n = self.doc.page_count();
-        let cmd: Box<dyn foliocraft_core::Command> = match action {
+        let cmd: Box<dyn pdftool_core::Command> = match action {
             PageAction::Rotate(pages, turns) => Box::new(RotatePages::new(&pages, turns)),
             PageAction::Delete(pages) => {
                 if pages.len() >= n {

@@ -7,7 +7,7 @@
 //!   mehrere Widgets haben (z. B. jede Option einer Optionsfeld-Gruppe). Hat ein Feld genau
 //!   ein Widget, stehen Feld und Widget oft im selben Objekt.
 //!
-//! Wie bei Annotationen gilt: Was wir verstehen, landet im Modell und wird von FolioCraft
+//! Wie bei Annotationen gilt: Was wir verstehen, landet im Modell und wird von PDF Tool
 //! gezeichnet und gespeichert; der Rest bleibt in der Datei, wie er ist.
 
 pub mod appearance;
@@ -47,7 +47,7 @@ pub enum FieldKind {
 }
 
 impl FieldKind {
-    /// Kann der Nutzer einen Wert eintragen? Nur solche Felder zeichnet FolioCraft selbst.
+    /// Kann der Nutzer einen Wert eintragen? Nur solche Felder zeichnet PDF Tool selbst.
     pub fn is_fillable(&self) -> bool {
         !matches!(self, FieldKind::PushButton | FieldKind::Signature)
     }
@@ -307,7 +307,7 @@ impl FormStore {
             .filter(move |(_, w)| w.page == page)
     }
 
-    /// Objektnummern aller Widgets, die FolioCraft selbst zeichnet (ausfüllbare Felder).
+    /// Objektnummern aller Widgets, die PDF Tool selbst zeichnet (ausfüllbare Felder).
     pub fn managed_widget_ids(&self) -> impl Iterator<Item = ObjectId> + '_ {
         self.fields
             .iter()

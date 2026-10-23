@@ -4,10 +4,10 @@
 //! betreffen Signaturen nicht. Neu geprüft wird, wenn sich die Bytes (nach dem Speichern)
 //! oder der Vertrauensspeicher ändern.
 
-use crate::app::{FolioApp, OpenDocument};
+use crate::app::{OpenDocument, PdfToolApp};
 use crate::viewer::transform;
 use eframe::egui::{self, Color32, RichText};
-use foliocraft_sign::{Integrity, SignatureReport, Status, Trust, TrustStore, cert};
+use pdftool_sign::{Integrity, SignatureReport, Status, Trust, TrustStore, cert};
 use std::sync::Arc;
 
 pub const GREEN: Color32 = Color32::from_rgb(40, 160, 70);
@@ -37,7 +37,7 @@ pub fn status_color(s: Status) -> Color32 {
 }
 
 /// Was im Panel angeklickt wurde (wird nach dem Zeichnen ausgeführt, weil dafür
-/// andere Teile von `FolioApp` veränderlich ausgeliehen werden müssen).
+/// andere Teile von `PdfToolApp` veränderlich ausgeliehen werden müssen).
 enum PanelAction {
     Show(usize),
     Trust(Vec<u8>),
@@ -57,12 +57,12 @@ impl OpenDocument {
         if fresh {
             return;
         }
-        self.signatures.reports = foliocraft_sign::verify_document(&self.doc, trust);
+        self.signatures.reports = pdftool_sign::verify_document(&self.doc, trust);
         self.signatures.checked = Some((bytes.clone(), trust_version));
     }
 }
 
-impl FolioApp {
+impl PdfToolApp {
     /// Vertrauensspeicher aus den Einstellungen neu aufbauen.
     pub(crate) fn rebuild_trust(&mut self) {
         self.trust =
@@ -110,13 +110,14 @@ impl FolioApp {
         ui.horizontal(|ui| {
             status_dot(ui, status_color(worst));
             ui.label(text);
-            let label = if self.show_signatures {
+            let open = self.right_pane == Some(crate::shell::RightPane::Signatures);
+            let label = if open {
                 "Signaturen ausblenden"
             } else {
                 "Signaturen anzeigen"
             };
             if ui.button(label).clicked() {
-                self.show_signatures = !self.show_signatures;
+                self.toggle_pane(crate::shell::RightPane::Signatures);
             }
         });
     }
@@ -124,7 +125,6 @@ impl FolioApp {
     /// Rechtes Panel mit allen Signaturen.
     pub(crate) fn signatures_panel(&mut self, ui: &mut egui::Ui) {
         let Some(d) = &self.document else { return };
-        ui.heading("Signaturen");
         if d.signatures.reports.is_empty() {
             ui.label("Dieses Dokument enthält keine Signaturen.");
             return;

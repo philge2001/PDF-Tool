@@ -1,9 +1,9 @@
 //! Text bearbeiten/hinzufügen: bearbeiten → speichern → neu laden → vergleichen.
 
-use foliocraft_core::content::{self, Item};
-use foliocraft_core::embedded_font::SubsetFont;
-use foliocraft_core::{Color, Document, Point, TextBlock};
 use lopdf::{Object, Stream, dictionary};
+use pdftool_core::content::{self, Item};
+use pdftool_core::embedded_font::SubsetFont;
+use pdftool_core::{Color, Document, Point, TextBlock};
 
 fn fixture(name: &str) -> Document {
     let path = format!("{}/../../tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));

@@ -5,6 +5,10 @@
 //! Matrix: Vor die Zeichenoperation kommt `q X cm … Q` mit X = M_neu × M_alt⁻¹. Steht das Bild
 //! schon in genau so einer Klammer, wird nur deren `cm` angepasst (keine Verschachtelung).
 //!
+//! Bilder in Formular-XObjects (viele Programme verpacken Bilder so, oft mit Beschneidung)
+//! zählen ebenfalls, wenn das Formular nur Bilder und Pfade enthält: Verschoben, skaliert,
+//! gelöscht wird dann der Aufruf des Formulars (`Do`), ersetzt wird er durch das neue Bild.
+//!
 //! Neue Bilder (PNG/JPEG) liegen bis zum Speichern im Modell (`PageContent::images`).
 //! JPEG wird unverändert übernommen (`DCTDecode`), PNG dekodiert und mit Flate komprimiert;
 //! ein Alphakanal wird zur `/SMask`.
@@ -161,18 +165,28 @@ fn image_dict(width: u32, height: u32, space: &str) -> lopdf::Dictionary {
     }
 }
 
-/// Ein Bild auf einer Seite (direkt im Seiteninhalt, nicht in Formular-XObjects).
+/// Ein Bild auf einer Seite (direkt im Seiteninhalt oder als Formular-XObject, das nur
+/// Bilder enthält).
 #[derive(Debug, Clone, PartialEq)]
 pub struct PageImage {
     /// Stempel des Inhalts, aus dem es stammt.
     pub stamp: u64,
     /// Index der Zeichenoperation (`Do` oder `BI`).
     pub op: usize,
-    /// Abbildung des Einheitsquadrats auf die Seite.
+    /// Abbildung des Einheitsquadrats auf die Seite (bei Formularen: des größten Bilds darin).
     pub matrix: Matrix,
+    /// Grafikmatrix (CTM) an der Zeichenoperation – dort setzt das Verschieben an. Bei Bildern
+    /// gleich `matrix`, bei Formularen ohne deren /Matrix.
+    pub ctm: Matrix,
+    /// Bild steckt in einem Formular-XObject.
+    pub in_form: bool,
+    /// Größe in Pixeln (falls bekannt).
+    pub pixels: Option<(u32, u32)>,
     /// Umfassendes Rechteck (PDF-Benutzerraum).
     pub bounds: Rect,
     pub inline: bool,
+    /// Ressourcenname des Bild-XObjects (`None` bei Inline-Bildern).
+    pub name: Option<Vec<u8>>,
 }
 
 fn matrix_operands(m: &Matrix) -> Vec<Object> {
@@ -225,30 +239,199 @@ fn free_image_name(doc: &Document, pc: &PageContent, page: lopdf::ObjectId) -> V
 }
 
 impl Document {
-    /// Bilder einer Seite (in Zeichenreihenfolge).
+    /// Bilder einer Seite (in Zeichenreihenfolge), auch Formular-XObjects mit nur Bildern.
     pub fn page_images(&self, page_idx: usize) -> Result<Vec<PageImage>> {
         let pc = self.page_content(page_idx)?;
         let page = self.page(page_idx)?.object_id;
         let it = self.interpret_content(page, &pc)?;
-        Ok(it
-            .items
-            .iter()
-            .filter_map(|item| match item {
+        let pdf = self.pdf();
+        let resources = crate::content::page_resources(pdf, page);
+        // Pixelgröße eines Bild-XObjects aus Ressourcen.
+        let pixels_of = |res: Option<&lopdf::Dictionary>, name: &[u8]| -> Option<(u32, u32)> {
+            if let Some(new) = pc.images.get(name) {
+                return Some((new.width, new.height));
+            }
+            let xo = res?.get(b"XObject").ok()?;
+            let xo = pdf.dereference(xo).ok()?.1.as_dict().ok()?;
+            let s = pdf
+                .dereference(xo.get(name).ok()?)
+                .ok()?
+                .1
+                .as_stream()
+                .ok()?;
+            let w = s.dict.get(b"Width").and_then(Object::as_i64).ok()?;
+            let h = s.dict.get(b"Height").and_then(Object::as_i64).ok()?;
+            Some((w.max(1) as u32, h.max(1) as u32))
+        };
+        let mut out = Vec::new();
+        for item in &it.items {
+            match item {
                 Item::Image {
                     op,
                     name,
                     matrix,
                     bounds,
-                } => Some(PageImage {
+                } => out.push(PageImage {
                     stamp: pc.stamp,
                     op: *op,
                     matrix: *matrix,
+                    ctm: *matrix,
+                    in_form: false,
+                    pixels: name.as_ref().and_then(|n| pixels_of(resources, n)),
                     bounds: *bounds,
                     inline: name.is_none(),
+                    name: name.clone(),
                 }),
-                _ => None,
-            })
-            .collect())
+                Item::Form {
+                    op,
+                    name,
+                    id: Some(id),
+                    matrix,
+                    ..
+                } => {
+                    let Ok(stream) = pdf.get_object(*id).and_then(Object::as_stream) else {
+                        continue;
+                    };
+                    let Ok(inner) = crate::content::interpret_form(pdf, stream, resources, *matrix)
+                    else {
+                        continue;
+                    };
+                    let has_text = inner.items.iter().any(|i| {
+                        matches!(i, Item::Text(t) if t.glyphs.iter().any(|g| !g.text.trim().is_empty()))
+                    });
+                    let largest = inner
+                        .items
+                        .iter()
+                        .filter_map(|i| match i {
+                            Item::Image {
+                                matrix,
+                                bounds,
+                                name,
+                                ..
+                            } => Some((matrix, bounds, name)),
+                            _ => None,
+                        })
+                        .max_by(|a, b| {
+                            let area = |r: &Rect| r.width() * r.height();
+                            area(a.1).total_cmp(&area(b.1))
+                        });
+                    let (Some((m, b, img_name)), false) = (largest, has_text) else {
+                        continue;
+                    };
+                    // CTM am `Do` = /Matrix⁻¹ × (CTM inkl. /Matrix).
+                    let form_matrix = stream
+                        .dict
+                        .get(b"Matrix")
+                        .ok()
+                        .and_then(|o| o.as_array().ok())
+                        .and_then(|a| Matrix::from_operands(a))
+                        .unwrap_or(Matrix::IDENTITY);
+                    let Some(ctm) = form_matrix.invert().map(|inv| inv.then(matrix)) else {
+                        continue;
+                    };
+                    let form_res = stream
+                        .dict
+                        .get(b"Resources")
+                        .ok()
+                        .and_then(|o| pdf.dereference(o).ok())
+                        .and_then(|(_, o)| o.as_dict().ok());
+                    out.push(PageImage {
+                        stamp: pc.stamp,
+                        op: *op,
+                        matrix: *m,
+                        ctm,
+                        in_form: true,
+                        pixels: img_name.as_ref().and_then(|n| pixels_of(form_res, n)),
+                        bounds: *b,
+                        inline: false,
+                        name: Some(name.clone()),
+                    });
+                }
+                _ => {}
+            }
+        }
+        Ok(out)
+    }
+
+    /// Eine kleine PDF mit nur diesem Bild (eine Seite, Bildgröße in Originalauflösung bei
+    /// 1 pt = 1 Pixel, höchstens 25 Megapixel). Zum Rendern mit PDFium – so stimmen
+    /// Farbraum, Masken und Beschneidung wie in der Anzeige. Liefert Bytes und Seitengröße.
+    pub fn image_snapshot(
+        &self,
+        page_idx: usize,
+        img: &PageImage,
+    ) -> Result<(Vec<u8>, (f32, f32))> {
+        let info = self.page(page_idx)?.clone();
+        let pc = self.page_content(page_idx)?;
+        let ops = Content::decode(&pc.content)?.operations;
+        let draw = ops
+            .get(img.op)
+            .filter(|o| o.operator == "Do" || o.operator == "BI")
+            .cloned()
+            .ok_or_else(|| CoreError::Other("Bild passt nicht zum Seiteninhalt.".into()))?;
+        let mut pdf = self.snapshot_pdf()?;
+        let resources = crate::content::page_resources(&pdf, info.object_id)
+            .cloned()
+            .unwrap_or_default();
+
+        // Maßstab: Pixelbreite des Bilds pro Punkt der Darstellung (sonst 300 dpi).
+        let (bw, bh) = (img.bounds.width().max(1.0), img.bounds.height().max(1.0));
+        let mut k = match img.pixels {
+            Some((pw, ph)) => {
+                let m = img.matrix.0;
+                let (sw, sh) = (m[0].hypot(m[1]).max(1.0), m[2].hypot(m[3]).max(1.0));
+                (pw as f32 / sw).max(ph as f32 / sh)
+            }
+            None => 300.0 / 72.0,
+        }
+        .clamp(0.25, 8.0);
+        let max_px = 25_000_000.0;
+        if bw * bh * k * k > max_px {
+            k = (max_px / (bw * bh)).sqrt();
+        }
+        let (w, h) = (bw * k, bh * k);
+        let place = Matrix([k, 0.0, 0.0, k, -img.bounds.x0 * k, -img.bounds.y0 * k]);
+        let content = Content {
+            operations: vec![
+                Operation::new("q", vec![]),
+                Operation::new("cm", matrix_operands(&place)),
+                Operation::new("cm", matrix_operands(&img.ctm)),
+                draw,
+                Operation::new("Q", vec![]),
+            ],
+        }
+        .encode()?;
+        let mut res = resources;
+        // Neue, noch ungespeicherte Bilder stehen schon in der Momentaufnahme (gleicher Name).
+        let content_id = pdf.add_object(Stream::new(dictionary! {}, content));
+        let pages_id = pdf.new_object_id();
+        let new_page = pdf.add_object(dictionary! {
+            "Type" => "Page",
+            "Parent" => pages_id,
+            "MediaBox" => vec![0.into(), 0.into(), w.into(), h.into()],
+            "Resources" => std::mem::take(&mut res),
+            "Contents" => content_id,
+            "Rotate" => i64::from(info.rotation),
+        });
+        pdf.objects.insert(
+            pages_id,
+            Object::Dictionary(dictionary! {
+                "Type" => "Pages", "Kids" => vec![new_page.into()], "Count" => 1,
+            }),
+        );
+        let catalog = pdf.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages_id });
+        pdf.trailer.set("Root", catalog);
+        pdf.trailer.remove(b"Info");
+        pdf.prune_objects();
+        let mut out = Vec::new();
+        pdf.save_to(&mut out)
+            .map_err(|e| CoreError::Other(format!("PDF schreiben: {e}")))?;
+        let size = if info.rotation % 180 == 90 {
+            (h, w)
+        } else {
+            (w, h)
+        };
+        Ok((out, size))
     }
 
     /// Prüft, ob `img` zum aktuellen Inhalt passt, und liefert Inhalt + Operationen.
@@ -293,7 +476,7 @@ impl Document {
     /// Verschiebt/skaliert ein Bild: neue Matrix = alte Matrix, danach `by` (im PDF-Raum).
     pub fn transform_image(&mut self, page_idx: usize, img: &PageImage, by: Matrix) -> Result<()> {
         let (page, pc, mut ops) = self.image_context(page_idx, img)?;
-        set_matrix(&mut ops, img.op, &img.matrix, &img.matrix.then(&by))?;
+        set_matrix(&mut ops, img.op, &img.ctm, &img.ctm.then(&by))?;
         self.commit_ops(page, pc.clone(), pc, ops, "Bild verschieben")
     }
 
@@ -325,7 +508,8 @@ impl Document {
             (1.0, 1.0)
         };
         let fit = Matrix([fw, 0.0, 0.0, fh, (1.0 - fw) / 2.0, (1.0 - fh) / 2.0]);
-        set_matrix(&mut ops, img.op, &img.matrix, &fit.then(&img.matrix))?;
+        // Bei Formularen gilt an der Operation die CTM (das neue Bild ersetzt das Formular).
+        set_matrix(&mut ops, img.op, &img.ctm, &fit.then(&img.matrix))?;
         self.commit_ops(page, before, after, ops, "Bild ersetzen")
     }
 

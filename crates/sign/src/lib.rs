@@ -1,4 +1,4 @@
-//! FolioCraft-Sign: digitale PDF-Signaturen prüfen und erstellen (PAdES).
+//! PDF-Tool-Sign: digitale PDF-Signaturen prüfen und erstellen (PAdES).
 //!
 //! Eigene Crate, damit `core` frei von Kryptografie-Abhängigkeiten bleibt. Alles hier ist
 //! reines Rust (RustCrypto) und ohne PDFium testbar.

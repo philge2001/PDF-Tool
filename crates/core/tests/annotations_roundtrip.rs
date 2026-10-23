@@ -1,7 +1,7 @@
 //! Roundtrip-Tests: Annotation erstellen -> speichern -> neu laden -> vergleichen.
 
-use foliocraft_core::annotation::import::page_annots;
-use foliocraft_core::{
+use pdftool_core::annotation::import::page_annots;
+use pdftool_core::{
     AddAnnotation, AnnotKind, Annotation, Color, Document, Point, Quad, Rect, RemoveAnnotation,
     UpdateAnnotation,
 };
@@ -19,7 +19,7 @@ fn temp_pdf(tag: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    std::env::temp_dir().join(format!("foliocraft-test-{tag}-{nanos}.pdf"))
+    std::env::temp_dir().join(format!("pdftool-test-{tag}-{nanos}.pdf"))
 }
 
 fn approx(a: f32, b: f32) -> bool {
@@ -261,7 +261,7 @@ fn every_kind_survives_save_and_reload() {
     for (orig, back) in originals.iter().zip(&loaded) {
         assert_same(orig, back);
         assert!(
-            back.name.starts_with("foliocraft-"),
+            back.name.starts_with("pdftool-"),
             "eindeutiger /NM vergeben"
         );
         assert!(back.modified.starts_with("D:"), "Änderungsdatum gesetzt");

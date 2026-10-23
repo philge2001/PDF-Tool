@@ -2,10 +2,10 @@
 //! nachträglich geändert und doppelt signiert.
 
 use der::Encode;
-use foliocraft_core::signature_prep::{SigPlacement, SignatureSpec};
-use foliocraft_core::{Document, FieldValue, Rect, UpdateField};
-use foliocraft_sign::signer::PrivateKey;
-use foliocraft_sign::{
+use pdftool_core::signature_prep::{SigPlacement, SignatureSpec};
+use pdftool_core::{Document, FieldValue, Rect, UpdateField};
+use pdftool_sign::signer::PrivateKey;
+use pdftool_sign::{
     Integrity, KeyKind, Signer, Status, Trust, TrustStore, sign_pdf, verify_document,
 };
 use std::path::{Path, PathBuf};
@@ -34,7 +34,7 @@ fn spec(placement: SigPlacement) -> SignatureSpec {
         reason: "Freigabe".into(),
         location: "Köln".into(),
         contact: String::new(),
-        date: foliocraft_core::date::pdf_date_now(),
+        date: pdftool_core::date::pdf_date_now(),
         appearance_lines: vec!["Digital signiert".into()],
         contents_len: 0,
     }
@@ -53,7 +53,7 @@ fn trust_of(certs: &[&x509_cert::Certificate]) -> TrustStore {
     TrustStore::from_der_list(ders.iter().map(Vec::as_slice))
 }
 
-fn verify(bytes: Vec<u8>, trust: &TrustStore) -> Vec<foliocraft_sign::SignatureReport> {
+fn verify(bytes: Vec<u8>, trust: &TrustStore) -> Vec<pdftool_sign::SignatureReport> {
     verify_document(&Document::from_bytes(bytes).unwrap(), trust)
 }
 
@@ -102,7 +102,7 @@ fn rsa_signature_in_new_visible_field() {
 fn ca_and_leaf() -> (x509_cert::Certificate, Signer) {
     let validity = Validity::from_now(Duration::from_secs(86_400 * 30)).unwrap();
     let root_key = p256::ecdsa::SigningKey::random(&mut rand_core::OsRng);
-    let root_name = Name::from_str("CN=Test Root CA,O=FolioCraft Test").unwrap();
+    let root_name = Name::from_str("CN=Test Root CA,O=PDF Tool Test").unwrap();
     let spki = |k: &p256::ecdsa::SigningKey| {
         use p256::pkcs8::EncodePublicKey;
         spki::SubjectPublicKeyInfoOwned::try_from(

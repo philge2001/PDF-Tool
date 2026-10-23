@@ -1,9 +1,9 @@
-# FolioCraft
+# PDF Tool
 
 Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
-„FolioCraft“ ist ein Arbeitstitel. Lizenz: MIT OR Apache-2.0.
+Lizenz: MIT OR Apache-2.0. Sicherheitslücken bitte vertraulich melden, siehe [SECURITY.md](SECURITY.md).
 
-**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare), Phase 4 (Signaturen), Phase 5 (Schwärzen & Bereinigen) und Phase 6 (Text und Bilder bearbeiten) abgeschlossen.
+**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare), Phase 4 (Signaturen), Phase 5 (Schwärzen & Bereinigen), Phase 6 (Text und Bilder bearbeiten), Phase 7 (Texterkennung), Phase 8 (Export, Vergleich, Komprimierung, PDF/A), Phase 9 (Sicherheit & Barrierefreiheit), Phase 10 (neues Oberflächen-Layout) und Phase 11 (Textformat, Systemschriften, Bilder) abgeschlossen.
 
 ## Funktionen (Phase 1)
 
@@ -65,6 +65,64 @@ Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
   Formulardaten – mit Anzeige, was gefunden wurde
 - Warnung, wenn signierte Dokumente betroffen sind
 
+## Funktionen (Phase 11 – Textformat, Systemschriften, Bilder)
+
+- **Systemschriften:** Zeichen, die in der Originalschrift fehlen, kommen aus einer passenden installierten
+  Schrift (gleiche Familie und gleicher Schnitt, z. B. Arial → Arial bzw. Liberation Sans), erst danach aus Noto Sans.
+  Eingebettet wird nur als Teilmenge und nur, wenn die Lizenz der Schrift das erlaubt (OS/2 fsType)
+- **Textformat beim Bearbeiten und bei neuem Text:** markierten Text auf Schriftart, Größe, **Fett**, *Kursiv*,
+  Unterstrichen, Durchgestrichen und Farbe setzen (Formatleiste über dem Editor); „Ganzen Absatz formatieren“
+  im Panel „Bearbeiten“. Fehlt ein fetter/kursiver Schnitt, wird er nachgeahmt
+- **Bilder mit dem Auswahlwerkzeug (Pfeil):** anklicken, ziehen, am Anfasser skalieren; Rechtsklick =
+  Kopieren, Speichern unter (PNG/JPEG), Ersetzen, Löschen; Strg+C kopiert, Entf löscht, Strg+V fügt ein Bild
+  aus der Zwischenablage in die Mitte des sichtbaren Bereichs ein
+- Bilder in Formular-XObjects (z. B. aus Office-Exporten) werden jetzt als Bilder erkannt
+
+## Oberfläche (Phase 10)
+
+- **Kopfleiste:** „Menü“ mit allen Befehlen, Tabs für Startseite und jedes offene Dokument (mehrere PDFs
+  gleichzeitig, Kreuz schließt), rechts Design hell/dunkel, Einstellungen, Tastenkürzel
+- **Dokumentleiste:** „Alle Werkzeuge“, „Bearbeiten“, „Konvertieren“ (Export, Komprimieren, PDF/A),
+  „Signieren“; rechts Rückgängig/Wiederholen, Suchen, Speichern und weitere Optionen
+- **Werkzeugbereich links:** alle Werkzeuge in einer Liste; ein Klick öffnet das Panel des Werkzeugs mit
+  Unterwerkzeugen und Optionen (z. B. Kommentieren mit Farbe und Linienbreite, Seiten organisieren)
+- **Rechte Symbolleiste:** Kommentare, Seitenminiaturen, Lesezeichen, Signaturen, Tags
+- **Schwebend über dem Dokument:** Schnellwerkzeuge (Auswahl, Hand, Kommentar, Markieren, Zeichnen, Text)
+  links, Seitennavigation und Zoom unten rechts
+- **Startseite:** empfohlene Werkzeuge und „Zuletzt verwendet“ mit Ort, Datum und Größe
+- `pdftool a.pdf b.pdf` öffnet mehrere Dateien als Tabs
+
+## Funktionen (Phase 9 – Sicherheit & Barrierefreiheit)
+
+- Passwortgeschützte PDFs öffnen (RC4, AES-128, AES-256); beim Speichern bleibt der Schutz erhalten
+- „Datei → Sicherheit…“: Schutz festlegen (AES-256) mit Passwort zum Öffnen, Besitzerpasswort und
+  Berechtigungen (Drucken, Kopieren, Kommentieren, Ändern) – oder Schutz entfernen (mit Besitzerpasswort)
+- „Barrierefreiheit → Prüfen…“: Bericht mit Ampel (getaggt? Sprache? Titel? Alternativtexte? Schriften
+  eingebettet? Inhalte ohne Tag? Scans? Tab-Reihenfolge? Lesezeichen?) und passenden Knöpfen zum Beheben
+- „Barrierefreiheit → Automatisch taggen…“: Überschriften, Absätze, Bilder, Links und Felder werden aus dem
+  Layout erkannt, Linien und Kopf-/Fußzeilen als Artefakt markiert; Sprache, Titel und Schriften gleich mit
+- Panel „Tags“: Titel und Sprache ändern, Strukturbaum in Lesereihenfolge (Klick zeigt die Stelle auf der
+  Seite), Alternativtexte für Abbildungen, nummerierte Lesereihenfolge auf den Seiten
+
+## Funktionen (Phase 8 – Export, Vergleich, Komprimierung, PDF/A)
+
+- „Datei → Exportieren…“: Seiten als PNG oder JPEG (Auflösung, Qualität), Text als TXT, einfaches Word (DOCX)
+  mit Absätzen und Bildern
+- „Datei → Vergleichen mit…“: Textunterschiede zu einer anderen PDF – Liste und beide Seiten nebeneinander
+  (gelöscht rot, eingefügt grün); auch per `pdftool alt.pdf --vergleichen neu.pdf`
+- „Datei → Komprimieren…“: Bilder auf eine Ziel-Auflösung verkleinern (JPEG), alte Fassungen und unbenutzte
+  Objekte entfernen, Objekt-Streams – mit Größe vorher/nachher
+- „Datei → Nach PDF/A umwandeln“: PDF/A-2b für die Archivierung (Schriften einbetten, Farbprofil, Metadaten,
+  fehlende Erscheinungsbilder erzeugen) – mit Bericht, was angepasst wurde und was nicht ging
+
+## Funktionen (Phase 7 – Texterkennung)
+
+- „Seiten → Texterkennung (OCR)…“: gescannte Seiten werden durchsuchbar – der erkannte Text liegt
+  unsichtbar über dem Bild (Suchen, Markieren, Kopieren funktionieren, auch in anderen Readern)
+- Auswahl der Seiten, „Nur Seiten ohne Text“, Sprachen Deutsch/Englisch (fest eingebaut);
+  läuft im Hintergrund mit Fortschritt und Abbrechen, Ergebnis ist ein Undo-Schritt
+- Erneutes Erkennen ersetzt die alte Textebene
+
 ## Funktionen (Phase 6 – Text und Bilder bearbeiten)
 
 - Freitext mit vollem Unicode (Umlaute, Kyrillisch, Griechisch, Sonderzeichen): eingebettet wird nur die
@@ -83,9 +141,10 @@ Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 |---|---|
 | Öffnen / Speichern / Speichern unter | Strg+O / Strg+S / Strg+Umschalt+S |
 | Suchen (weiter / zurück / schließen) | Strg+F (Enter, F3 / Umschalt+Enter, Umschalt+F3 / Esc) |
-| Kopieren | Strg+C |
+| Kopieren (Text oder ausgewähltes Bild) | Strg+C |
 | Rückgängig / Wiederholen | Strg+Z / Strg+Y oder Strg+Umschalt+Z |
-| Annotation löschen | Entf |
+| Annotation / Bild löschen | Entf |
+| Bild einfügen (aus der Zwischenablage) | Strg+V |
 | Zoomen | Strg+Mausrad, Strg+Plus/Minus |
 | 100 % / Seitenbreite / Ganze Seite | Strg+1 / Strg+2 / Strg+0 |
 | Seite vor/zurück, Anfang/Ende | Bild↓/Bild↑, Pos1/Ende |
@@ -94,7 +153,7 @@ Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 | Formular: Kästchen/Option umschalten | Leertaste |
 | Formular bearbeiten: Feld löschen | Entf |
 
-Annotationswerkzeuge stehen in der Leiste „Kommentieren“. Markup-Werkzeuge (Hervorheben usw.)
+Annotationswerkzeuge stehen unter „Alle Werkzeuge → Kommentieren“ (die wichtigsten auch in der schwebenden Leiste links). Markup-Werkzeuge (Hervorheben usw.)
 wirken auf markierten Text: entweder erst Text markieren und dann das Werkzeug anklicken, oder
 Werkzeug wählen und über den Text ziehen. Doppelklick auf eine Notiz oder einen Freitext bearbeitet ihn.
 
@@ -102,11 +161,21 @@ Werkzeug wählen und über den Text ziehen. Doppelklick auf eine Notiz oder eine
 
 ## Bauen
 
-Voraussetzungen: Rust (stable, ≥ 1.85) und die PDFium-Bibliothek (siehe unten).
+Voraussetzungen: Rust (stable, ≥ 1.85), die PDFium-Bibliothek (siehe unten) und – für die
+Texterkennung – **CMake** und ein C++-Compiler.
+
+**Texterkennung (Tesseract):** Beim ersten Build lädt `tesseract-rs` die Quellen von Tesseract 5 und
+Leptonica (~50 MB) herunter und baut sie mit CMake (einmalig 5–15 Minuten). Danach liegen sie im Cache
+(`%APPDATA%\tesseract-rs` unter Windows, `~/.tesseract-rs` unter Linux,
+`~/Library/Application Support/tesseract-rs` unter macOS).
+- Windows: `winget install Kitware.CMake` (die C++-Build-Tools von Visual Studio braucht Rust ohnehin),
+  danach ein neues Terminal öffnen.
+- macOS: `brew install cmake` · Linux: `sudo apt install cmake g++`
+- Ohne Texterkennung bauen: `cargo build -p pdftool-app --no-default-features`
 
 ```bash
 cargo build --release
-cargo run -p foliocraft-app -- pfad/zur/datei.pdf   # startet die App, optional mit Datei
+cargo run -p pdftool-app -- pfad/zur/datei.pdf   # startet die App, optional mit Datei
 cargo test --workspace                              # Tests (brauchen KEIN PDFium)
 cargo clippy --workspace --all-targets -- -D warnings
 ```
@@ -116,7 +185,7 @@ Linux braucht zusätzlich die üblichen Fenster-Bibliotheken, z. B. unter Debian
 
 ## PDFium beschaffen
 
-FolioCraft rendert PDFs mit [PDFium](https://pdfium.googlesource.com/pdfium/) (Apache-2.0),
+PDF Tool rendert PDFs mit [PDFium](https://pdfium.googlesource.com/pdfium/) (Apache-2.0),
 das **zur Laufzeit dynamisch geladen** wird. Fertige Binaries gibt es bei
 [bblanchon/pdfium-binaries](https://github.com/bblanchon/pdfium-binaries/releases) (Apache-2.0/BSD).
 
@@ -135,8 +204,8 @@ Beispiel Linux/macOS:
 mkdir -p pdfium && cd pdfium
 curl -L -o pdfium.tgz https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-linux-x64.tgz
 tar xzf pdfium.tgz && cd ..
-export FOLIOCRAFT_PDFIUM_PATH="$PWD/pdfium/lib"   # Ordner ODER direkter Dateipfad
-cargo run -p foliocraft-app
+export PDFTOOL_PDFIUM_PATH="$PWD/pdfium/lib"   # Ordner ODER direkter Dateipfad
+cargo run -p pdftool-app
 ```
 
 Windows (PowerShell):
@@ -145,13 +214,13 @@ Windows (PowerShell):
 mkdir pdfium; cd pdfium
 curl.exe -L -o pdfium.tgz https://github.com/bblanchon/pdfium-binaries/releases/latest/download/pdfium-win-x64.tgz
 tar xzf pdfium.tgz; cd ..
-$env:FOLIOCRAFT_PDFIUM_PATH = "$PWD\pdfium\bin"
-cargo run -p foliocraft-app
+$env:PDFTOOL_PDFIUM_PATH = "$PWD\pdfium\bin"
+cargo run -p pdftool-app
 ```
 
 Die App sucht PDFium in dieser Reihenfolge:
-1. Umgebungsvariable `FOLIOCRAFT_PDFIUM_PATH` (Ordner oder Datei)
-2. Ordner der ausführbaren Datei (für Auslieferung: Bibliothek neben `foliocraft[.exe]` legen)
+1. Umgebungsvariable `PDFTOOL_PDFIUM_PATH` (Ordner oder Datei)
+2. Ordner der ausführbaren Datei (für Auslieferung: Bibliothek neben `pdftool[.exe]` legen)
 3. Unterordner `pdfium/lib` bzw. `pdfium/bin` im aktuellen Arbeitsverzeichnis
 4. Systembibliothek (z. B. `/usr/lib`)
 
@@ -162,24 +231,42 @@ Fehlt PDFium, zeigt die App einen Hinweis statt abzustürzen.
 Alle Dateien in `tests/fixtures/` sind selbst erzeugt:
 
 ```bash
-cargo run -p foliocraft-core --example gen_fixtures                    # Fixtures neu erzeugen
-cargo run -p foliocraft-core --example gen_fixtures -- big 500 big.pdf # 500-Seiten-PDF für Performance-Tests
-cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf     # jeden Annotationstyp schreiben (Gegenprobe in anderen Readern)
-cargo run -p foliocraft-core --example redact_demo -- in.pdf out.pdf 1:x0,y0,x1,y1                # Bereich schwärzen
-cargo run -p foliocraft-core --example sanitize_demo -- in.pdf [out.pdf]                           # versteckte Inhalte zeigen/entfernen
-cargo run -p foliocraft-sign --example sign_check -- datei.pdf [vertraut.pem]                     # Signaturen prüfen
-cargo run -p foliocraft-sign --example sign_demo -- in.pdf out.pdf [id.p12 passwort]              # signieren (ohne ID: Testzertifikat)
-cargo run -p foliocraft-core --example form_fill -- tests/fixtures/form.pdf                        # Formularfelder auflisten
-cargo run -p foliocraft-core --example form_fill -- in.pdf out.pdf "person.name=Erika" agb=an     # Formular füllen
-cargo run -p foliocraft-core --example text_edit_demo -- in.pdf                                   # Textblöcke von Seite 1
-cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "Lorem=Neuer Text" "+72,500=Hallo"  # bearbeiten/hinzufügen
-cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "!bild.png@300,400,120" "#0=foto.jpg" "-#1"  # Bilder
-cargo run -p foliocraft-core --example text_edit_demo -- in.pdf out.pdf "¶Lorem|72,720,260,j=Neuer Absatz …"      # Absatz neu setzen
+cargo run -p pdftool-core --example gen_fixtures                    # Fixtures neu erzeugen
+cargo run -p pdftool-core --example gen_fixtures -- big 500 big.pdf # 500-Seiten-PDF für Performance-Tests
+cargo run -p pdftool-core --example annot_demo -- in.pdf out.pdf     # jeden Annotationstyp schreiben (Gegenprobe in anderen Readern)
+cargo run -p pdftool-core --example redact_demo -- in.pdf out.pdf 1:x0,y0,x1,y1                # Bereich schwärzen
+cargo run -p pdftool-core --example sanitize_demo -- in.pdf [out.pdf]                           # versteckte Inhalte zeigen/entfernen
+cargo run -p pdftool-sign --example sign_check -- datei.pdf [vertraut.pem]                     # Signaturen prüfen
+cargo run -p pdftool-sign --example sign_demo -- in.pdf out.pdf [id.p12 passwort]              # signieren (ohne ID: Testzertifikat)
+cargo run -p pdftool-core --example form_fill -- tests/fixtures/form.pdf                        # Formularfelder auflisten
+cargo run -p pdftool-core --example form_fill -- in.pdf out.pdf "person.name=Erika" agb=an     # Formular füllen
+cargo run -p pdftool-core --example text_edit_demo -- in.pdf                                   # Textblöcke von Seite 1
+cargo run -p pdftool-core --example text_edit_demo -- in.pdf out.pdf "Lorem=Neuer Text" "+72,500=Hallo"  # bearbeiten/hinzufügen
+cargo run -p pdftool-core --example text_edit_demo -- in.pdf out.pdf "!bild.png@300,400,120" "#0=foto.jpg" "-#1"  # Bilder
+cargo run -p pdftool-core --example text_edit_demo -- in.pdf out.pdf "¶Lorem|72,720,260,j=Neuer Absatz …"      # Absatz neu setzen
+cargo run -p pdftool-core --example security_demo -- schützen in.pdf out.pdf benutzer besitzer [nur-lesen]  # verschlüsseln
+cargo run -p pdftool-core --example security_demo -- öffnen datei.pdf [passwort]                # Schutz anzeigen
+cargo run -p pdftool-core --example autotag_demo -- in.pdf [out.pdf] [de-DE] [Titel]          # prüfen / automatisch taggen
+cargo run -p pdftool-core --example font_list -- Arial,Bold Calibri                             # Systemschriften und Zuordnung
+cargo run -p pdftool-core --example rich_text_demo -- in.pdf out.pdf [Familie]                  # Absatz formatiert neu setzen
 ```
 
 ## Projektstruktur
 
 Siehe [CLAUDE.md](CLAUDE.md) für Architektur und Konventionen.
+
+## Mitgelieferte Schriften und Profile (Phase 8)
+
+- `assets/fonts/liberation/` – Liberation Sans/Serif/Mono (SIL Open Font License 1.1, `COPYRIGHT`):
+  Ersatz für nicht eingebettete Standardschriften bei der PDF/A-Umwandlung.
+- `assets/icc/sRGB-v2-magic.icc` – sRGB-Profil aus Compact-ICC-Profiles (CC0, `assets/icc/LICENSE`).
+- JPEG-Kodierung mit `jpeg-encoder`: „This software is based in part on the work of the Independent JPEG Group.“
+
+## Mitgelieferte Sprachdaten
+
+`assets/tessdata/deu.traineddata` und `eng.traineddata` aus
+[tessdata_fast](https://github.com/tesseract-ocr/tessdata_fast) (Apache-2.0, `assets/tessdata/LICENSE`),
+fest in das Programm eingebaut.
 
 ## Mitgelieferte Schrift
 

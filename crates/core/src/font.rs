@@ -67,6 +67,14 @@ pub fn winansi_code(c: char) -> Option<u8> {
     }
 }
 
+/// Zeichen zu einem WinAnsi-Code (Umkehrung von [`winansi_code`]).
+pub fn winansi_char(code: u8) -> Option<char> {
+    match code {
+        32..=126 | 0xA0..=0xFF => Some(char::from(code)),
+        _ => WINANSI_SPECIAL.iter().find(|s| s.1 == code).map(|s| s.0),
+    }
+}
+
 /// Text -> WinAnsi-Bytes; nicht darstellbare Zeichen werden zu '?'.
 pub fn winansi_encode(text: &str) -> Vec<u8> {
     text.chars()

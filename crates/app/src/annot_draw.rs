@@ -8,9 +8,9 @@ use crate::viewer::transform;
 use eframe::egui::{
     self, Align2, Color32, FontId, Pos2, Rect, Shape, Stroke, StrokeKind, pos2, vec2,
 };
-use foliocraft_core::annotation::appearance::arrow_head;
-use foliocraft_core::annotation::{NOTE_SIZE, arrow_size};
-use foliocraft_core::{AnnotKind, Annotation, Color, PageInfo, Point};
+use pdftool_core::annotation::appearance::arrow_head;
+use pdftool_core::annotation::{NOTE_SIZE, arrow_size};
+use pdftool_core::{AnnotKind, Annotation, Color, PageInfo, Point};
 
 pub fn color32(c: Color, alpha: f32) -> Color32 {
     let [r, g, b] = c.to_rgb8();
@@ -22,8 +22,7 @@ pub fn paint(painter: &egui::Painter, info: &PageInfo, page_rect: Rect, a: &Anno
     // Bildschirmpunkte pro PDF-Punkt (für Linienbreiten und Schriftgrößen).
     let scale = page_rect.width() / info.display_size().0;
     let to_screen = |p: Point| transform::pdf_to_screen(info, page_rect, p);
-    let rect_to_screen =
-        |r: foliocraft_core::Rect| transform::pdf_rect_to_screen(info, page_rect, r);
+    let rect_to_screen = |r: pdftool_core::Rect| transform::pdf_rect_to_screen(info, page_rect, r);
     let stroke = |w: f32, alpha: f32| Stroke::new((w * scale).max(1.0), color32(a.color, alpha));
 
     match &a.kind {
@@ -118,7 +117,7 @@ pub fn paint(painter: &egui::Painter, info: &PageInfo, page_rect: Rect, a: &Anno
             let sr = rect_to_screen(*rect);
             let pad = 2.0;
             // Gleicher Umbruch wie in der Datei (Breiten der eingebetteten Schrift).
-            let lines = foliocraft_core::embedded_font::wrap(
+            let lines = pdftool_core::embedded_font::wrap(
                 &a.contents,
                 *font_size,
                 rect.width() - 2.0 * pad,

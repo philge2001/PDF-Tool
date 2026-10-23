@@ -1,30 +1,43 @@
-//! FolioCraft-Core: Dokumentmodell ohne UI- und ohne PDFium-Abhängigkeit.
+//! PDF-Tool-Core: Dokumentmodell ohne UI- und ohne PDFium-Abhängigkeit.
 //!
 //! Alles hier ist reine Logik und kann ohne PDFium-Binary getestet werden.
 //! PDF-Strukturen werden über `lopdf` gelesen und geschrieben.
 
+pub mod accessibility;
 pub mod annotation;
+pub mod autotag;
 pub mod command;
+pub mod compare;
+pub mod compress;
 pub mod content;
 pub mod date;
 pub mod document;
+pub mod docx;
 pub mod embedded_font;
 pub mod error;
 pub mod font;
 pub mod form;
 mod form_save;
 pub mod geometry;
+pub mod image_codec;
 pub mod image_edit;
+pub mod ocr_layer;
+pub mod outline;
 pub mod page_export;
 pub mod page_import;
 pub mod page_ops;
 pub mod paragraph;
 pub mod pdf_string;
+pub mod pdfa;
 pub mod raster;
 pub mod redact;
+pub mod rich_text;
 pub mod sanitize;
 mod save;
+pub mod security;
 pub mod signature_prep;
+pub mod system_fonts;
+pub mod tags;
 pub mod text;
 pub mod text_edit;
 
@@ -38,6 +51,9 @@ pub use error::{CoreError, Result};
 pub use form::{FieldId, FieldKind, FieldValue, FormField, FormStore, Widget};
 pub use geometry::{Color, Point, Quad, Rect};
 pub use image_edit::{NewImage, PageImage};
+/// Objektnummer im PDF (z. B. eines Strukturelements), für die App ohne eigene lopdf-Abhängigkeit.
+pub use lopdf::ObjectId;
+pub use ocr_layer::OcrWord;
 pub use page_export::{extract_pages, split_by_ranges, split_every};
 pub use page_import::{InsertPages, parse_page_ranges};
 pub use page_ops::{DeletePages, ReorderPages, RotatePages};

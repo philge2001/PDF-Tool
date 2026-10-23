@@ -18,6 +18,10 @@ pub enum CoreError {
     PageOutOfRange(usize),
     #[error("Annotation {0} existiert nicht")]
     AnnotationNotFound(String),
+    #[error("Das Dokument ist durch ein Passwort geschützt.")]
+    PasswordRequired,
+    #[error("Das Passwort ist falsch.")]
+    WrongPassword,
     #[error("{0}")]
     Other(String),
 }

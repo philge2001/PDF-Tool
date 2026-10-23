@@ -1,9 +1,9 @@
 //! Dokument bereinigen – zur Gegenprobe mit anderen Programmen.
 //!
-//! `cargo run -p foliocraft-core --example sanitize_demo -- in.pdf [out.pdf]`
+//! `cargo run -p pdftool-core --example sanitize_demo -- in.pdf [out.pdf]`
 //! Ohne out.pdf wird nur angezeigt, was gefunden wurde.
 
-use foliocraft_core::sanitize::{SanitizeOptions, inspect, sanitize_pdf};
+use pdftool_core::sanitize::{SanitizeOptions, inspect, sanitize_pdf};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();

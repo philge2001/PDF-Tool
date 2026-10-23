@@ -3,12 +3,12 @@
 //! Das Passwort und der geöffnete Schlüssel leben nur im Dialog (im Arbeitsspeicher) und
 //! verschwinden, sobald er geschlossen wird. Gespeichert wird nur der Pfad zur Zertifikatsdatei.
 
-use crate::app::FolioApp;
+use crate::app::PdfToolApp;
 use crate::viewer::{ViewOutput, transform};
 use eframe::egui::{self, RichText, Stroke, StrokeKind};
-use foliocraft_core::signature_prep::{self, SigPlacement, SignatureSpec};
-use foliocraft_core::{Point, Rect as PdfRect, date};
-use foliocraft_sign::{KeyKind, Signer, sign_pdf};
+use pdftool_core::signature_prep::{self, SigPlacement, SignatureSpec};
+use pdftool_core::{Point, Rect as PdfRect, date};
+use pdftool_sign::{KeyKind, Signer, sign_pdf};
 use std::path::PathBuf;
 
 /// Öffentliche, kostenlose Zeitstempeldienste (RFC 3161) als Vorschlag.
@@ -56,7 +56,7 @@ pub struct CertDialog {
     error: Option<String>,
 }
 
-impl FolioApp {
+impl PdfToolApp {
     pub(crate) fn open_sign_dialog(&mut self) {
         let Some(d) = &self.document else { return };
         let existing = signature_prep::empty_signature_fields(&d.doc);
@@ -324,7 +324,7 @@ impl FolioApp {
                 ctx.progress(0.3, format!("Zeitstempel von {url} …"));
                 move |req: &[u8]| http_tsa(url, req)
             });
-            let tsa: Option<foliocraft_sign::timestamp::TsaTransport> =
+            let tsa: Option<pdftool_sign::timestamp::TsaTransport> =
                 transport.as_ref().map(|f| f as _);
             let signed = sign_pdf(&base, spec, &signer, tsa)
                 .map_err(|e| format!("Signieren fehlgeschlagen:\n{e}"))?;
@@ -392,10 +392,7 @@ impl FolioApp {
                         ui.add(egui::TextEdit::singleline(&mut dlg.repeat).password(true));
                         ui.end_row();
                     });
-                ui.checkbox(
-                    &mut dlg.trust_it,
-                    "Diesem Zertifikat in FolioCraft vertrauen",
-                );
+                ui.checkbox(&mut dlg.trust_it, "Diesem Zertifikat in PDF Tool vertrauen");
                 if let Some(e) = &dlg.error {
                     ui.colored_label(crate::signatures::RED, e);
                 }

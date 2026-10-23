@@ -9,26 +9,25 @@
 //!
 //! **Neu setzen:** Die alten Textausgaben werden durch reine Verschiebungen ersetzt (der Rest
 //! des Inhalts bleibt, wo er ist). Der Absatz wird dann hinter dem bisherigen Inhalt neu
-//! geschrieben: in der Schrift, Größe, Farbe, Richtung und mit dem Zeilenabstand seiner
-//! ersten Zeile, umbrochen auf die Breite des Kastens. Fehlende Zeichen kommen aus Noto Sans.
-//! Der neue Absatz steht in `/FcPara BMC … EMC` – beim nächsten Bearbeiten wird dieser
-//! Abschnitt komplett ersetzt, statt weitere leere Reste anzuhäufen.
-//!
-//! *Grenze:* Formatierung innerhalb des Absatzes (z. B. ein fettes Wort) wird vereinheitlicht.
+//! geschrieben – als formatierte Läufe (`rich_text`): Jede Textausgabe behält ihre Schrift,
+//! Größe und Farbe (ein fettes Wort bleibt fett), Richtung und Zeilenabstand kommen von der
+//! ersten Zeile, umbrochen wird auf die Breite des Kastens. Fehlende Zeichen kommen aus der
+//! passenden Systemschrift, sonst aus Noto Sans. Der neue Absatz steht in
+//! `/FcPara BMC … EMC` – beim nächsten Bearbeiten wird dieser Abschnitt komplett ersetzt,
+//! statt weitere leere Reste anzuhäufen.
 
 use crate::content::{Interpreted, Item, TextShow};
 use crate::document::Document;
-use crate::embedded_font;
 use crate::error::{CoreError, Result};
 use crate::geometry::{Point, Rect};
-use crate::text_edit::{
-    Encoder, PageContent, ReplacePageContent, Segment, append_ops, fallback_name, isolate, length,
-    project, segment, shift_op,
+use crate::rich_text::{
+    Base, FontRef, Layout, Resolver, StyledRun, TextStyle, color_from_fill, layout_ops, normalize,
 };
+use crate::text_edit::{ReplacePageContent, append_ops, isolate, length, project, shift_op};
+use lopdf::Object;
 use lopdf::content::{Content, Operation};
-use lopdf::{Object, StringFormat};
 
-/// Name des Abschnitts, in dem FolioCraft neu gesetzte Absätze ablegt.
+/// Name des Abschnitts, in dem PDF Tool neu gesetzte Absätze ablegt.
 const MARK: &[u8] = b"FcPara";
 
 /// Ein erkannter Absatz.
@@ -337,23 +336,6 @@ fn marked_range(ops: &[Operation], op: usize) -> Option<(usize, usize)> {
     None
 }
 
-/// Teilt einen String aus Zeichencodes hinter jedem Leerzeichen-Code (`space`).
-fn split_after_spaces(bytes: &[u8], space: &[u8]) -> Vec<Vec<u8>> {
-    let step = space.len().max(1);
-    let mut parts = vec![Vec::new()];
-    for code in bytes.chunks(step) {
-        parts
-            .last_mut()
-            .expect("nicht leer")
-            .extend_from_slice(code);
-        if code == space {
-            parts.push(Vec::new());
-        }
-    }
-    parts.retain(|p| !p.is_empty());
-    parts
-}
-
 impl Document {
     /// Absätze einer Seite.
     pub fn paragraphs(&self, page_idx: usize) -> Result<Vec<Paragraph>> {
@@ -363,13 +345,146 @@ impl Document {
         Ok(group_paragraphs(&it, pc.stamp))
     }
 
-    /// Setzt einen Absatz mit neuem Text in einen (neuen) Kasten. Ein Undo-Schritt.
-    /// `\n` im Text erzwingt einen Zeilenumbruch.
+    /// Setzt einen Absatz mit neuem (unformatiertem) Text in einen (neuen) Kasten. Ein
+    /// Undo-Schritt. Ist der Text unverändert, bleibt die Formatierung aller Läufe erhalten;
+    /// sonst gilt die Formatierung des ersten Laufs. `\n` erzwingt einen Zeilenumbruch.
     pub fn set_paragraph(
         &mut self,
         page_idx: usize,
         para: &Paragraph,
         text: &str,
+        frame: ParaFrame,
+    ) -> Result<()> {
+        let runs = self.paragraph_runs(page_idx, para)?;
+        let runs = if text == para.text || crate::rich_text::plain_text(&runs) == text {
+            runs
+        } else {
+            let style = runs
+                .first()
+                .map(|r| r.style.clone())
+                .ok_or_else(|| CoreError::Other("Absatz passt nicht zum Seiteninhalt.".into()))?;
+            vec![StyledRun {
+                text: text.to_string(),
+                style,
+            }]
+        };
+        self.set_paragraph_rich(page_idx, para, &runs, frame)
+    }
+
+    /// Formatierte Läufe eines Absatzes: je Textausgabe Schrift, Größe, Farbe, fett/kursiv
+    /// (aus dem Schriftnamen, nachgeahmtes Fett über `Tr 2`). Zeilen werden mit Leerzeichen
+    /// verbunden, Trennstriche am Zeilenende entfernt – wie `Paragraph::text`.
+    pub fn paragraph_runs(&self, page_idx: usize, para: &Paragraph) -> Result<Vec<StyledRun>> {
+        let page = self.page(page_idx)?.object_id;
+        let pc = self.page_content(page_idx)?;
+        if pc.stamp != para.stamp {
+            return Err(CoreError::Other(
+                "Der Seiteninhalt hat sich inzwischen geändert.".into(),
+            ));
+        }
+        let it = self.interpret_content(page, &pc)?;
+        let resources = crate::content::page_resources(self.pdf(), page);
+        let mut resolver = Resolver::new(self.pdf(), resources, &it, &pc);
+        let style_of = |t: &TextShow, resolver: &mut Resolver| -> TextStyle {
+            let m = t.matrix.0;
+            let (bold, italic) = match pc.fonts.get(&t.font) {
+                Some(sub) => (sub.font().bold, sub.font().italic),
+                None => {
+                    let f = crate::content::load_font(self.pdf(), resources, None, &t.font);
+                    let (_, b, i) = crate::system_fonts::parse_base_font(&f.base_font);
+                    (b, i)
+                }
+            };
+            let _ = resolver.family_of(&t.font);
+            // Geneigte Textmatrix (nachgeahmte Kursive): Spalten nicht senkrecht.
+            let skew =
+                (m[0] * m[2] + m[1] * m[3]).abs() > 0.1 * length(m[0], m[1]) * length(m[2], m[3]);
+            let font = match pc.fonts.get(&t.font) {
+                Some(sub) if sub.font().is_noto() => FontRef::Noto,
+                Some(sub) => FontRef::Family(sub.font().family.clone()),
+                None => FontRef::Original(t.font.clone()),
+            };
+            TextStyle {
+                font,
+                size: t.font_size.abs() * length(m[2], m[3]),
+                bold: bold || t.render_mode == 2,
+                italic: italic || skew,
+                underline: false,
+                strike: false,
+                color: color_from_fill(&t.fill),
+            }
+        };
+        let mut runs: Vec<StyledRun> = Vec::new();
+        for (li, l) in lines(&it)
+            .iter()
+            .filter(|l| l.shows.iter().all(|t| para.shows.contains(&t.op)))
+            .enumerate()
+        {
+            // Zeilen verbinden: Trennstrich vor Kleinbuchstaben weg, sonst Leerzeichen.
+            if li > 0 {
+                let next_lower = l
+                    .text
+                    .trim_start()
+                    .chars()
+                    .next()
+                    .is_some_and(char::is_lowercase);
+                let prev = runs.last_mut();
+                match prev {
+                    Some(r) if r.text.trim_end().ends_with('-') && next_lower => {
+                        let t = r.text.trim_end().trim_end_matches('-').to_string();
+                        r.text = t;
+                    }
+                    Some(r) => {
+                        let t = r.text.trim_end().to_string();
+                        r.text = t + " ";
+                    }
+                    None => {}
+                }
+            }
+            let mut last_end: Option<f32> = None;
+            for t in &l.shows {
+                let style = style_of(t, &mut resolver);
+                let em = style.size;
+                let mut text = String::new();
+                for g in &t.glyphs {
+                    let start = project(l.origin, l.dir, t.matrix.apply(Point::new(g.x, t.rise))).0;
+                    let at_start = text.is_empty()
+                        && runs
+                            .last()
+                            .is_none_or(|r| r.text.ends_with(char::is_whitespace));
+                    if let Some(e) = last_end
+                        && start - e > 0.25 * em
+                        && !text.ends_with(char::is_whitespace)
+                        && !at_start
+                        && !g.text.starts_with(char::is_whitespace)
+                    {
+                        text.push(' ');
+                    }
+                    text.push_str(&g.text);
+                    let end = t
+                        .matrix
+                        .apply(Point::new(g.x + g.advance * t.h_scale, t.rise));
+                    last_end = Some(project(l.origin, l.dir, end).0);
+                }
+                if li == 0 && runs.is_empty() {
+                    text = text.trim_start().to_string();
+                }
+                runs.push(StyledRun { text, style });
+            }
+        }
+        if let Some(r) = runs.last_mut() {
+            let t = r.text.trim_end().to_string();
+            r.text = t;
+        }
+        Ok(normalize(runs))
+    }
+
+    /// Setzt einen Absatz aus formatierten Läufen in einen (neuen) Kasten. Ein Undo-Schritt.
+    pub fn set_paragraph_rich(
+        &mut self,
+        page_idx: usize,
+        para: &Paragraph,
+        runs: &[StyledRun],
         frame: ParaFrame,
     ) -> Result<()> {
         let page = self.page(page_idx)?.object_id;
@@ -411,8 +526,29 @@ impl Document {
         after.content = Content { operations: ops }.encode()?;
         isolate(&mut after);
 
-        // 2) Neu setzen.
-        let new_ops = self.paragraph_ops(page, &mut after, &it, first, para, text, &frame)?;
+        // 2) Neu setzen (Geometrie der ersten Zeile; Hochstellung bleibt weg).
+        let resources = crate::content::page_resources(self.pdf(), page);
+        let line_factor = if para.size_on_page > 0.0 {
+            para.line_height / para.size_on_page
+        } else {
+            1.2
+        };
+        let base = Base::from_show(first, para.direction, para.up, line_factor, para.indent);
+        let mut resolver = Resolver::new(self.pdf(), resources, &it, &before);
+        let layout = Layout {
+            origin: frame.origin,
+            width: frame.width,
+            justify: frame.justify,
+        };
+        let body = layout_ops(&mut resolver, &mut after, &base, runs, &layout)?;
+        let name = |n: &[u8]| Object::Name(n.to_vec());
+        let mut new_ops = vec![
+            Operation::new("BMC", vec![name(MARK)]),
+            Operation::new("q", vec![]),
+        ];
+        new_ops.extend(body);
+        new_ops.push(Operation::new("Q", vec![]));
+        new_ops.push(Operation::new("EMC", vec![]));
         append_ops(&mut after, new_ops)?;
         self.execute(Box::new(ReplacePageContent::new(
             page,
@@ -422,185 +558,45 @@ impl Document {
         )))
     }
 
-    /// Operationen für den neu gesetzten Absatz (umbrechen, kodieren, Blocksatz).
-    #[allow(clippy::too_many_arguments)] // alles Teile desselben Vorgangs
-    fn paragraph_ops(
-        &self,
-        page: lopdf::ObjectId,
-        after: &mut PageContent,
-        it: &Interpreted,
-        first: &TextShow,
-        para: &Paragraph,
-        text: &str,
-        frame: &ParaFrame,
-    ) -> Result<Vec<Operation>> {
-        let pdf = self.pdf();
-        let resources = crate::content::page_resources(pdf, page);
-        // Steht der Absatz schon in unserer Ersatzschrift (nur im Modell), gibt es keine
-        // "Originalschrift": alles kommt aus der Teilmenge.
-        let own = after.fonts.contains_key(&first.font);
-        let enc = Encoder::new(pdf, resources, it, &first.font);
-        let fallback = if own {
-            first.font.clone()
-        } else {
-            fallback_name(after, resources, pdf)
+    /// Fügt neuen, formatierten Text hinzu. `origin` = Anfang der ersten Grundlinie
+    /// (PDF-Benutzerraum); der Text steht in der Anzeige aufrecht (auch auf gedrehten Seiten).
+    /// `width` = Umbruchbreite (pt), `None` = nur bei `\n` umbrechen.
+    pub fn add_rich_text(
+        &mut self,
+        page_idx: usize,
+        origin: Point,
+        runs: &[StyledRun],
+        width: Option<f32>,
+    ) -> Result<()> {
+        let info = self.page(page_idx)?;
+        let (page, rotation) = (info.object_id, info.rotation);
+        let before = self.page_content(page_idx)?;
+        let it = self.interpret_content(page, &before)?;
+        let mut after = before.clone();
+        isolate(&mut after);
+        let resources = crate::content::page_resources(self.pdf(), page);
+        let mut resolver = Resolver::new(self.pdf(), resources, &it, &before);
+        let layout = Layout {
+            origin,
+            width,
+            justify: false,
         };
-        let (size, th) = (first.font_size, first.h_scale);
-        let m = first.matrix.0;
-        let scale_x = length(m[0], m[1]).max(f32::EPSILON);
-        let unit = (size * th).abs().max(f32::EPSILON);
-
-        // Breite eines Zeichens im Textraum (wie `segment` sie rechnet). Das Platzhalterzeichen
-        // U+E000 steht für die Einrückung der ersten Zeile.
-        const INDENT: char = '\u{E000}';
-        let indent_text = para.indent / scale_x;
-        let char_w = |c: char, _: f32| -> f32 {
-            if c == INDENT {
-                return indent_text;
-            }
-            let key = c.to_string();
-            match (!own).then(|| enc.map.get(&key)).flatten() {
-                Some((bytes, code)) => {
-                    let tw = if bytes.len() == 1 && *code == 32 {
-                        first.word_spacing
-                    } else {
-                        0.0
-                    };
-                    (enc.font.width(*code) * size + first.char_spacing + tw) * th
-                }
-                None => (embedded_font::char_width(c, size) + first.char_spacing) * th,
-            }
-        };
-        let max_text = frame.width.map(|w| w / scale_x);
-
-        // Zeilen: (Text, letzte Zeile ihres Abschnitts?).
-        let mut lines: Vec<(String, bool)> = Vec::new();
-        for (k, piece) in text.split('\n').enumerate() {
-            let wrapped = match max_text {
-                Some(max) => {
-                    let input = if k == 0 && para.indent > 0.0 {
-                        format!("{INDENT}{piece}")
-                    } else {
-                        piece.to_string()
-                    };
-                    crate::font::wrap_with(&input, size, max, &char_w)
-                        .into_iter()
-                        .map(|l| l.replace(INDENT, ""))
-                        .collect()
-                }
-                None => vec![piece.to_string()],
-            };
-            let n = wrapped.len();
-            lines.extend(
-                wrapped
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, l)| (l, i + 1 == n)),
-            );
-        }
-
-        let name = |n: &[u8]| Object::Name(n.to_vec());
-        let mut ops = vec![
-            Operation::new("BMC", vec![name(MARK)]),
-            Operation::new("q", vec![]),
-            Operation::new("BT", vec![]),
-        ];
-        ops.extend(first.fill.iter().cloned());
-        ops.push(Operation::new("Tf", vec![name(&first.font), size.into()]));
-        ops.push(Operation::new("Tc", vec![first.char_spacing.into()]));
-        ops.push(Operation::new("Tw", vec![first.word_spacing.into()]));
-        ops.push(Operation::new("Tz", vec![(th * 100.0).into()]));
-        ops.push(Operation::new("Ts", vec![first.rise.into()]));
-        ops.push(Operation::new("Tr", vec![first.render_mode.into()]));
-
-        let format = if enc.font.is_two_byte() {
-            StringFormat::Hexadecimal
-        } else {
-            StringFormat::Literal
-        };
-        let space = (!own)
-            .then(|| enc.map.get(" ").map(|(b, _)| b.clone()))
-            .flatten();
-        let dir = para.direction;
-        for (i, (line, last)) in lines.iter().enumerate() {
-            let along = if i == 0 { para.indent } else { 0.0 };
-            let down = i as f32 * para.line_height;
-            // Grundlinie dieser Zeile; Tm ohne die Hochstellung (die setzt `Ts`).
-            let o = Point::new(
-                frame.origin.x + dir.x * along - para.up.x * down - m[2] * first.rise,
-                frame.origin.y + dir.y * along - para.up.y * down - m[3] * first.rise,
-            );
-            ops.push(Operation::new(
-                "Tm",
-                vec![
-                    m[0].into(),
-                    m[1].into(),
-                    m[2].into(),
-                    m[3].into(),
-                    o.x.into(),
-                    o.y.into(),
-                ],
-            ));
-            let (segs, width) = segment(&enc, line, first)?;
-            // Blocksatz: Restbreite gleichmäßig auf die Leerzeichen verteilen.
-            let spaces = line.chars().filter(|&c| c == ' ').count();
-            let extra = match max_text {
-                Some(max) if frame.justify && !last && spaces > 0 && width < max => {
-                    (max - width - if i == 0 { indent_text } else { 0.0 }).max(0.0) / spaces as f32
-                }
-                _ => 0.0,
-            };
-            let gap = Object::Real(-extra * 1000.0 / unit);
-            for seg in segs {
-                match seg {
-                    Segment::Original(parts) => {
-                        let mut arr = Vec::new();
-                        for part in parts {
-                            match part {
-                                Object::String(bytes, _) => match &space {
-                                    Some(sp) if extra > 0.0 => {
-                                        for chunk in split_after_spaces(&bytes, sp) {
-                                            let ends = chunk.ends_with(sp);
-                                            arr.push(Object::String(chunk, format));
-                                            if ends {
-                                                arr.push(gap.clone());
-                                            }
-                                        }
-                                    }
-                                    _ => arr.push(Object::String(bytes, format)),
-                                },
-                                // Leerzeichen als Abstand (Schrift ohne Leerzeichen-Glyphe).
-                                Object::Real(n) => {
-                                    arr.push(Object::Real(n - extra * 1000.0 / unit))
-                                }
-                                other => arr.push(other),
-                            }
-                        }
-                        ops.push(Operation::new("TJ", vec![Object::Array(arr)]));
-                    }
-                    Segment::Fallback(t) => {
-                        let sub = after.fonts.entry(fallback.clone()).or_default();
-                        if !own {
-                            ops.push(Operation::new("Tf", vec![name(&fallback), size.into()]));
-                        }
-                        let mut arr = Vec::new();
-                        for piece in t.split_inclusive(' ') {
-                            arr.push(sub.encode_object(piece));
-                            if extra > 0.0 && piece.ends_with(' ') {
-                                arr.push(gap.clone());
-                            }
-                        }
-                        ops.push(Operation::new("TJ", vec![Object::Array(arr)]));
-                        if !own {
-                            ops.push(Operation::new("Tf", vec![name(&first.font), size.into()]));
-                        }
-                    }
-                }
-            }
-        }
-        ops.push(Operation::new("ET", vec![]));
+        let body = layout_ops(
+            &mut resolver,
+            &mut after,
+            &Base::upright(rotation),
+            runs,
+            &layout,
+        )?;
+        let mut ops = vec![Operation::new("q", vec![])];
+        ops.extend(body);
         ops.push(Operation::new("Q", vec![]));
-        ops.push(Operation::new("EMC", vec![]));
-        Ok(ops)
+        append_ops(&mut after, ops)?;
+        self.execute(Box::new(ReplacePageContent::new(
+            page,
+            before,
+            after,
+            "Text hinzufügen",
+        )))
     }
 }

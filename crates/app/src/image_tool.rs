@@ -7,8 +7,8 @@
 use crate::app::OpenDocument;
 use crate::viewer::{ViewOutput, transform};
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, StrokeKind, vec2};
-use foliocraft_core::content::Matrix;
-use foliocraft_core::{NewImage, PageImage, Point};
+use pdftool_core::content::Matrix;
+use pdftool_core::{NewImage, PageImage, Point};
 
 /// Seitenlänge des Anfassers (Bildschirmpunkte).
 const HANDLE: f32 = 9.0;
@@ -29,7 +29,7 @@ fn screen_rect(
     d: &OpenDocument,
     view: &ViewOutput,
     page: usize,
-    r: foliocraft_core::Rect,
+    r: pdftool_core::Rect,
 ) -> Option<Rect> {
     let (_, page_rect) = view.pages.iter().find(|(p, _)| *p == page)?;
     let info = d.doc.page(page).ok()?;
@@ -37,8 +37,8 @@ fn screen_rect(
 }
 
 /// Umfassendes Rechteck des Einheitsquadrats unter einer Matrix.
-fn bounds_of(m: &Matrix) -> foliocraft_core::Rect {
-    m.apply_rect(foliocraft_core::Rect::new(0.0, 0.0, 1.0, 1.0))
+fn bounds_of(m: &Matrix) -> pdftool_core::Rect {
+    m.apply_rect(pdftool_core::Rect::new(0.0, 0.0, 1.0, 1.0))
 }
 
 impl OpenDocument {
@@ -57,7 +57,7 @@ impl OpenDocument {
     }
 
     /// Oberstes Bild unter dem Mauszeiger (zuletzt gezeichnetes zuerst).
-    fn image_at(&mut self, view: &ViewOutput, pos: Pos2) -> Option<(usize, PageImage)> {
+    pub(crate) fn image_at(&mut self, view: &ViewOutput, pos: Pos2) -> Option<(usize, PageImage)> {
         let (page, page_rect) = view.page_at(pos)?;
         let info = self.doc.page(page).ok()?.clone();
         let p = transform::screen_to_pdf(&info, page_rect, pos);
@@ -68,7 +68,7 @@ impl OpenDocument {
             .map(|i| (page, i))
     }
 
-    fn image_handle_rect(&self, view: &ViewOutput) -> Option<Rect> {
+    pub(crate) fn image_handle_rect(&self, view: &ViewOutput) -> Option<Rect> {
         let (page, img) = self.content_edit.selected_image.as_ref()?;
         let r = screen_rect(self, view, *page, img.bounds)?;
         Some(Rect::from_center_size(
@@ -190,7 +190,7 @@ impl OpenDocument {
     fn after_image_change(
         &mut self,
         page: usize,
-        result: foliocraft_core::Result<()>,
+        result: pdftool_core::Result<()>,
         near: Option<Point>,
     ) {
         self.content_edit.selected_image = None;
@@ -266,6 +266,12 @@ impl OpenDocument {
                 painter.rect_filled(h, 1.0, accent);
             }
         }
+        self.paint_image_drag(&painter, view);
+    }
+
+    /// Vorschau beim Ziehen eines Bilds.
+    pub(crate) fn paint_image_drag(&self, painter: &egui::Painter, view: &ViewOutput) {
+        let accent = Color32::from_rgb(40, 120, 230);
         if let Some(drag) = &self.content_edit.image_drag
             && let Some(r) = screen_rect(
                 self,

@@ -1,6 +1,6 @@
 //! Seiten extrahieren: neue, eigenständige PDF mit genau den gewünschten Seiten.
 
-use foliocraft_core::{
+use pdftool_core::{
     AddAnnotation, AnnotKind, Annotation, Color, Document, Point, RotatePages, extract_pages,
 };
 use std::path::{Path, PathBuf};

@@ -7,8 +7,8 @@
 use crate::annot_draw::color32;
 use crate::viewer::transform;
 use eframe::egui::{self, Color32, FontId, Pos2, Rect, Shape, Stroke, StrokeKind, pos2, vec2};
-use foliocraft_core::form::appearance::{self, SELECTION_COLOR};
-use foliocraft_core::{FieldKind, FormField, PageInfo, Point, Widget};
+use pdftool_core::form::appearance::{self, SELECTION_COLOR};
+use pdftool_core::{FieldKind, FormField, PageInfo, Point, Widget};
 
 /// Hintergrund hervorgehobener Felder (wie man es von Formular-Readern kennt).
 pub const HIGHLIGHT: Color32 = Color32::from_rgba_unmultiplied_const(150, 170, 230, 70);

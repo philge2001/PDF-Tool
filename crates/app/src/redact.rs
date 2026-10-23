@@ -5,7 +5,7 @@
 
 use crate::app::OpenDocument;
 use crate::tools::{Tool, ToolSettings};
-use foliocraft_core::{AddAnnotation, AnnotKind, Batch, Command, Quad};
+use pdftool_core::{AddAnnotation, AnnotKind, Batch, Command, Quad};
 
 impl OpenDocument {
     /// Jeden Suchtreffer zum Schwärzen markieren (ein Undo-Schritt).
@@ -54,16 +54,16 @@ impl OpenDocument {
 
 // ---------- Anwenden ----------
 
-use crate::app::FolioApp;
+use crate::app::PdfToolApp;
 use eframe::egui;
-use foliocraft_core::Document;
+use pdftool_core::Document;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 /// Ergebnis eines Hintergrund-Jobs, das ein neues Dokument liefert (Bytes + Pfad).
 pub type DocSlot = Arc<Mutex<Option<Vec<u8>>>>;
 
-impl FolioApp {
+impl PdfToolApp {
     /// Rückfrage vor dem endgültigen Schwärzen.
     pub(crate) fn redact_confirm_ui(&mut self, ctx: &egui::Context) {
         if !self.redact_confirm {
@@ -133,7 +133,7 @@ impl FolioApp {
         // Das Schwärzen selbst läuft im Hintergrund: Bytes und Bereiche wandern in den Job.
         let job = crate::jobs::Job::spawn("Schwärzen", ctx, move |c| {
             c.progress(0.2, "Inhalte werden entfernt …");
-            let (result, report) = foliocraft_core::redact::redact_pdf(&bytes, &areas)
+            let (result, report) = pdftool_core::redact::redact_pdf(&bytes, &areas)
                 .map_err(|e| format!("Schwärzen fehlgeschlagen:\n{e}"))?;
             if let Ok(mut s) = out.lock() {
                 *s = Some(result);
@@ -155,7 +155,13 @@ impl FolioApp {
         let bytes = slot.lock().ok().and_then(|mut s| s.take());
         let Some(bytes) = bytes else { return };
         match Document::replacement(bytes, path) {
-            Ok(doc) => self.adopt_document(doc),
+            Ok(mut doc) => {
+                // Eine neu geschriebene Fassung behält den Passwortschutz des Originals.
+                if let Some(old) = &self.document {
+                    doc.inherit_security(&old.doc);
+                }
+                self.adopt_document(doc)
+            }
             Err(e) => self.error = Some(format!("Ergebnis unlesbar:\n{e}")),
         }
     }
@@ -163,7 +169,7 @@ impl FolioApp {
 
 // ---------- Bereinigen ----------
 
-use foliocraft_core::sanitize::{Findings, SanitizeOptions};
+use pdftool_core::sanitize::{Findings, SanitizeOptions};
 
 pub struct SanitizeDialog {
     findings: Findings,
@@ -172,13 +178,13 @@ pub struct SanitizeDialog {
     bytes: Vec<u8>,
 }
 
-impl FolioApp {
+impl PdfToolApp {
     pub(crate) fn open_sanitize_dialog(&mut self) {
         let Some(d) = &self.document else { return };
         let result = d
             .doc
             .to_bytes()
-            .and_then(|b| Ok((foliocraft_core::sanitize::inspect(&b)?, b)));
+            .and_then(|b| Ok((pdftool_core::sanitize::inspect(&b)?, b)));
         match result {
             Ok((findings, bytes)) => {
                 self.sanitize_dialog = Some(SanitizeDialog {
@@ -306,7 +312,7 @@ impl FolioApp {
         let out = slot.clone();
         let job = crate::jobs::Job::spawn("Bereinigen", ctx, move |c| {
             c.progress(0.2, "Dokument wird bereinigt …");
-            let (result, done) = foliocraft_core::sanitize::sanitize_pdf(&dlg.bytes, dlg.opts)
+            let (result, done) = pdftool_core::sanitize::sanitize_pdf(&dlg.bytes, dlg.opts)
                 .map_err(|e| format!("Bereinigen fehlgeschlagen:\n{e}"))?;
             if let Ok(mut s) = out.lock() {
                 *s = Some(result);

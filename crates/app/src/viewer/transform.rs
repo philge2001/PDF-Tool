@@ -4,7 +4,7 @@
 //! steckt in `PageInfo`, Zoom und Scrollposition stecken in `page_rect`.
 
 use eframe::egui::{Pos2, Rect, pos2};
-use foliocraft_core::{PageInfo, Point};
+use pdftool_core::{PageInfo, Point};
 
 pub fn pdf_to_screen(info: &PageInfo, page_rect: Rect, p: Point) -> Pos2 {
     let u = info.pdf_to_display_unit(p);
@@ -23,25 +23,25 @@ pub fn screen_to_pdf(info: &PageInfo, page_rect: Rect, p: Pos2) -> Point {
 }
 
 /// Achsparalleles PDF-Rechteck -> Bildschirmrechteck (bei 90°-Rotationen bleibt es achsparallel).
-pub fn pdf_rect_to_screen(info: &PageInfo, page_rect: Rect, r: foliocraft_core::Rect) -> Rect {
+pub fn pdf_rect_to_screen(info: &PageInfo, page_rect: Rect, r: pdftool_core::Rect) -> Rect {
     let a = pdf_to_screen(info, page_rect, Point::new(r.x0, r.y0));
     let b = pdf_to_screen(info, page_rect, Point::new(r.x1, r.y1));
     Rect::from_two_pos(a, b)
 }
 
 /// PDF-Rechteck -> normierte Anzeige-Koordinaten (0..1, oben links) – zoomunabhängig.
-pub fn pdf_rect_to_unit(info: &PageInfo, r: foliocraft_core::Rect) -> Rect {
+pub fn pdf_rect_to_unit(info: &PageInfo, r: pdftool_core::Rect) -> Rect {
     pdf_rect_to_screen(info, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), r)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use foliocraft_core::Rect as PdfRect;
+    use pdftool_core::Rect as PdfRect;
 
     fn page(rotation: u16) -> PageInfo {
         PageInfo {
-            id: foliocraft_core::PageId(1),
+            id: pdftool_core::PageId(1),
             object_id: (1, 0),
             crop_box: PdfRect::new(0.0, 0.0, 600.0, 800.0),
             rotation,

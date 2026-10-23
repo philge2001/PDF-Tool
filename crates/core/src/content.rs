@@ -275,7 +275,7 @@ impl<'a> FontInfo<'a> {
 
     /// Eine Teilmenge der eingebauten Schrift, die (noch) nur im Modell existiert.
     pub fn from_subset(font: &crate::embedded_font::SubsetFont) -> Self {
-        let (ascent, descent) = crate::embedded_font::ascent_descent();
+        let (ascent, descent) = font.font().ascent_descent();
         Self {
             two_byte: true,
             widths: Widths::Cid {
@@ -287,7 +287,7 @@ impl<'a> FontInfo<'a> {
             descent: descent / 1000.0,
             scale: 0.001,
             encoding: None,
-            base_font: "NotoSans-Regular".into(),
+            base_font: font.font().postscript.clone(),
             embedded: true,
             unicode: Some(
                 font.texts()
@@ -532,6 +532,30 @@ pub enum Item {
 pub struct Interpreted {
     pub ops: Vec<Operation>,
     pub items: Vec<Item>,
+    /// Markierte Inhalte (`BDC … <</MCID n>> … EMC`): je MCID das umfassende Rechteck und
+    /// der Text darin – für Strukturbaum/Barrierefreiheit (Tagged PDF).
+    pub marked: std::collections::BTreeMap<i64, MarkedContent>,
+    /// Sichtbare Inhalte außerhalb jeder Markierung (weder MCID noch Artefakt).
+    pub unmarked: Unmarked,
+}
+
+/// Zähler für Inhalte ohne Tag (siehe [`Interpreted::unmarked`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Unmarked {
+    /// Textausgaben mit sichtbaren Zeichen.
+    pub text: usize,
+    pub images: usize,
+    /// Pfade, Formular-XObjects, Farbverläufe.
+    pub other: usize,
+}
+
+/// Inhalt eines markierten Abschnitts (siehe [`Interpreted::marked`]).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MarkedContent {
+    pub bounds: Option<Rect>,
+    pub text: String,
+    /// Enthält ein Bild (Figure).
+    pub has_image: bool,
 }
 
 impl Interpreted {
@@ -649,9 +673,17 @@ pub fn interpret_with<'a>(
         fonts: HashMap::new(),
         extra_fonts,
         extra_images,
+        marked: Default::default(),
+        unmarked: Unmarked::default(),
     };
     let items = it.run(&ops, ctm);
-    Interpreted { ops, items }
+    let marked = std::mem::take(&mut it.marked);
+    Interpreted {
+        ops,
+        items,
+        marked,
+        unmarked: it.unmarked,
+    }
 }
 
 struct Interp<'a> {
@@ -662,6 +694,9 @@ struct Interp<'a> {
     /// Schriften und Bilder, die nur im Modell existieren (Vorrang vor den Ressourcen).
     extra_fonts: Option<&'a ExtraFonts>,
     extra_images: Option<&'a ExtraImages>,
+    /// Gesammelte markierte Inhalte (siehe [`Interpreted::marked`]).
+    marked: std::collections::BTreeMap<i64, MarkedContent>,
+    unmarked: Unmarked,
 }
 
 /// Ressourcenname -> neues Bild-XObject, das noch nicht in der Datei steht.
@@ -717,9 +752,38 @@ impl<'a> Interp<'a> {
         let mut path_start: Option<usize> = None;
         let mut path_pts: Vec<Point> = Vec::new();
         let f = |o: &Object| o.as_float().unwrap_or(0.0);
+        // Verschachtelte markierte Abschnitte; je Ebene die MCID (falls vorhanden) und ob
+        // es ein Artefakt ist (Kopfzeile, Dekoration – gehört nicht zur Struktur).
+        let mut mc_stack: Vec<(Option<i64>, bool)> = Vec::new();
 
         for (i, op) in ops.iter().enumerate() {
             let a = &op.operands;
+            let items_before = items.len();
+            match op.operator.as_str() {
+                "BMC" => {
+                    let artifact = a.first().and_then(|o| o.as_name().ok()) == Some(b"Artifact");
+                    mc_stack.push((None, artifact));
+                }
+                "BDC" => {
+                    // Eigenschaften direkt oder als Name in /Properties der Ressourcen.
+                    let props = match a.get(1) {
+                        Some(Object::Dictionary(d)) => Some(d),
+                        Some(Object::Name(n)) => self
+                            .resource(b"Properties", n)
+                            .and_then(|(o, _)| o.as_dict().ok()),
+                        _ => None,
+                    };
+                    let artifact = a.first().and_then(|o| o.as_name().ok()) == Some(b"Artifact");
+                    mc_stack.push((
+                        props.and_then(|d| d.get(b"MCID").and_then(Object::as_i64).ok()),
+                        artifact,
+                    ));
+                }
+                "EMC" => {
+                    mc_stack.pop();
+                }
+                _ => {}
+            }
             match op.operator.as_str() {
                 "q" => stack.push(gs.clone()),
                 "Q" => {
@@ -904,6 +968,44 @@ impl<'a> Interp<'a> {
                 }
                 "sh" => items.push(Item::Shading { op: i }),
                 _ => {}
+            }
+            // Neue Elemente dem innersten markierten Abschnitt mit MCID zuordnen.
+            let mcid = mc_stack.iter().rev().find_map(|m| m.0);
+            if mcid.is_none() && !mc_stack.iter().any(|m| m.1) {
+                // Weder Struktur noch Artefakt: für die Barrierefreiheits-Prüfung zählen.
+                for item in &items[items_before..] {
+                    match item {
+                        Item::Text(t) if t.glyphs.iter().any(|g| !g.text.trim().is_empty()) => {
+                            self.unmarked.text += 1
+                        }
+                        Item::Image { .. } => self.unmarked.images += 1,
+                        Item::Path { painted: true, .. }
+                        | Item::Form { .. }
+                        | Item::Shading { .. } => self.unmarked.other += 1,
+                        _ => {}
+                    }
+                }
+            }
+            if let Some(mcid) = mcid {
+                for item in &items[items_before..] {
+                    let entry = self.marked.entry(mcid).or_default();
+                    let (bounds, text, image) = match item {
+                        Item::Text(t) => (Some(t.bounds), t.text(), false),
+                        Item::Image { bounds, .. } => (Some(*bounds), String::new(), true),
+                        Item::Path {
+                            bounds,
+                            painted: true,
+                            ..
+                        } => (Some(*bounds), String::new(), false),
+                        Item::Form { bounds, .. } => (Some(*bounds), String::new(), false),
+                        _ => (None, String::new(), false),
+                    };
+                    if let Some(b) = bounds.filter(|b| b.width() > 0.0 || b.height() > 0.0) {
+                        entry.bounds = Some(entry.bounds.map_or(b, |e| e.union(&b)));
+                    }
+                    entry.text.push_str(&text);
+                    entry.has_image |= image;
+                }
             }
         }
         items

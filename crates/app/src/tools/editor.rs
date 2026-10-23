@@ -2,7 +2,7 @@
 
 use crate::app::OpenDocument;
 use eframe::egui::{self, Key, Modifiers, Pos2};
-use foliocraft_core::{AddAnnotation, AnnotKind, Annotation, UpdateAnnotation};
+use pdftool_core::{AddAnnotation, AnnotKind, Annotation, UpdateAnnotation};
 
 pub struct TextEditor {
     /// Die Annotation, wie sie nach "OK" aussehen soll (Text wird beim Bestätigen eingesetzt).
@@ -102,7 +102,7 @@ impl OpenDocument {
                     None if is_freetext && a.contents.is_empty() => {}
                     None => self.execute(Box::new(AddAnnotation::new(a))),
                     Some(before) if before != a => {
-                        a.modified = foliocraft_core::date::pdf_date_now();
+                        a.modified = pdftool_core::date::pdf_date_now();
                         self.execute(Box::new(UpdateAnnotation::new(before, a)));
                     }
                     Some(_) => {}

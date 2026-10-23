@@ -405,7 +405,7 @@ pub(crate) fn fallback_name(
     resources: Option<&lopdf::Dictionary>,
     pdf: &lopdf::Document,
 ) -> Vec<u8> {
-    if let Some(name) = pc.fonts.keys().next() {
+    if let Some((name, _)) = pc.fonts.iter().find(|(_, f)| f.font().is_noto()) {
         return name.clone();
     }
     let taken = |n: &[u8]| {
@@ -649,9 +649,9 @@ impl Document {
         Ok(after)
     }
 
-    /// Fügt neuen Text in Noto Sans hinzu. `origin` = Anfang der ersten Grundlinie
-    /// (PDF-Benutzerraum); der Text steht in der Anzeige aufrecht (auch auf gedrehten Seiten).
-    /// Zeilenumbrüche (`\n`) ergeben neue Zeilen mit 1,2-fachem Abstand.
+    /// Fügt neuen Text in Noto Sans hinzu (Größe, Farbe). `origin` = Anfang der ersten
+    /// Grundlinie; Zeilenumbrüche (`\n`) ergeben neue Zeilen mit 1,2-fachem Abstand.
+    /// Formatierten Text setzt [`Document::add_rich_text`].
     pub fn add_text(
         &mut self,
         page_idx: usize,
@@ -660,62 +660,10 @@ impl Document {
         size: f32,
         color: Color,
     ) -> Result<()> {
-        let info = self.page(page_idx)?;
-        let (page, rotation) = (info.object_id, info.rotation);
-        let before = self.page_content(page_idx)?;
-        let missing: String = text
-            .chars()
-            .filter(|&c| c != '\n' && !embedded_font::has_glyph(c))
-            .collect();
-        if !missing.is_empty() {
-            return Err(CoreError::Other(format!(
-                "Diese Zeichen sind in keiner verfügbaren Schrift enthalten: {missing}"
-            )));
-        }
-        let mut after = before.clone();
-        isolate(&mut after);
-        let name = fallback_name(
-            &after,
-            content::page_resources(self.pdf(), page),
-            self.pdf(),
-        );
-        let sub = after.fonts.entry(name.clone()).or_default();
-        // Aufrecht in der Anzeige: um die Seitendrehung gegen den Uhrzeigersinn drehen.
-        let (sin, cos) = (f32::from(rotation)).to_radians().sin_cos();
-        let mut ops = vec![
-            Operation::new("q", vec![]),
-            Operation::new("BT", vec![]),
-            Operation::new("Tf", vec![Object::Name(name), size.into()]),
-            Operation::new("rg", vec![color.r.into(), color.g.into(), color.b.into()]),
-            Operation::new("TL", vec![(size * 1.2).into()]),
-            Operation::new(
-                "Tm",
-                vec![
-                    cos.into(),
-                    sin.into(),
-                    (-sin).into(),
-                    cos.into(),
-                    origin.x.into(),
-                    origin.y.into(),
-                ],
-            ),
-        ];
-        for (i, line) in text.split('\n').enumerate() {
-            if i > 0 {
-                ops.push(Operation::new("T*", vec![]));
-            }
-            if !line.is_empty() {
-                ops.push(Operation::new("Tj", vec![sub.encode_object(line)]));
-            }
-        }
-        ops.push(Operation::new("ET", vec![]));
-        ops.push(Operation::new("Q", vec![]));
-        append_ops(&mut after, ops)?;
-        self.execute(Box::new(ReplacePageContent::new(
-            page,
-            before,
-            after,
-            "Text hinzufügen",
-        )))
+        let run = crate::rich_text::StyledRun {
+            text: text.to_string(),
+            style: crate::rich_text::TextStyle::noto(size, color),
+        };
+        self.add_rich_text(page_idx, origin, &[run], None)
     }
 }

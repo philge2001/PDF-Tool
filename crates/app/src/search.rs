@@ -3,8 +3,8 @@
 use crate::app::OpenDocument;
 use crate::viewer::{ViewOutput, transform};
 use eframe::egui::{self, Color32, Key, Stroke, StrokeKind};
-use foliocraft_core::Rect;
-use foliocraft_render::RenderService;
+use pdftool_core::Rect;
+use pdftool_render::RenderService;
 
 pub struct SearchHit {
     pub page: usize,

@@ -1,5 +1,5 @@
 [package]
-name = "foliocraft-core"
+name = "pdftool-core"
 description = "Dokumentmodell, Annotationen, Undo/Redo und Speichern – ohne UI und ohne PDFium"
 version.workspace = true
 edition.workspace = true
@@ -15,6 +15,10 @@ zune-jpeg.workspace = true
 ttf-parser.workspace = true
 subsetter.workspace = true
 png.workspace = true
+jpeg-encoder.workspace = true
+zip.workspace = true
+similar.workspace = true
+getrandom.workspace = true
 
 [lints]
 workspace = true

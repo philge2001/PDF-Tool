@@ -1,5 +1,5 @@
 [package]
-name = "foliocraft-render"
+name = "pdftool-render"
 description = "PDFium-Kapselung: Rendering und Textextraktion in einem Hintergrund-Thread, Seiten-Cache"
 version.workspace = true
 edition.workspace = true
@@ -8,7 +8,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-foliocraft-core.workspace = true
+pdftool-core.workspace = true
 pdfium-render.workspace = true
 thiserror.workspace = true
 tracing.workspace = true

@@ -1,10 +1,10 @@
 //! Rendert eine Fixture-Seite mit echtem PDFium. Wird übersprungen (nicht fehlgeschlagen),
 //! wenn die PDFium-Bibliothek nicht gefunden wird – z. B. in CI.
 //!
-//! Lokal: FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo test -p foliocraft-render
+//! Lokal: PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo test -p pdftool-render
 
-use foliocraft_core::{AddAnnotation, AnnotKind, Annotation, Color, Document, Quad, Rect};
-use foliocraft_render::{Event, Priority, RenderKey, RenderRequest, RenderService};
+use pdftool_core::{AddAnnotation, AnnotKind, Annotation, Color, Document, Quad, Rect};
+use pdftool_render::{Event, Priority, RenderKey, RenderRequest, RenderService};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -107,8 +107,8 @@ fn renders_page_and_tile() {
         "Wortbreite: {r:?}"
     );
     assert!(
-        text.text_in(foliocraft_core::TextRange::new(0, 40))
-            .contains("FolioCraft Testdokument")
+        text.text_in(pdftool_core::TextRange::new(0, 40))
+            .contains("PDF Tool Testdokument")
     );
 
     // ---- Annotationen: von core gespeichert, von PDFium gezeichnet bzw. ausgeblendet ----
@@ -157,4 +157,44 @@ fn renders_page_and_tile() {
     assert_eq!(saved.managed_annot_indices(0), vec![0]);
     svc.open(3, Arc::new(saved.bytes().to_vec()), hidden);
     assert_eq!(pixel_in_highlight(&svc, 3), [255, 255, 255], "ausgeblendet");
+}
+
+#[test]
+fn offscreen_render_from_other_thread() {
+    let Ok(svc) = RenderService::start(|| {}) else {
+        eprintln!("PDFium nicht gefunden – Test übersprungen");
+        return;
+    };
+    let off = svc.offscreen().expect("Worker läuft");
+    let bytes = Arc::new(fixture("text_two_pages.pdf"));
+    // Ohne geöffnetes Dokument in der Ansicht, aus einem eigenen Thread (wie ein Job).
+    let handle = std::thread::spawn(move || {
+        let a = off.render_page(&bytes, 0, (595.0, 842.0), 2.0).unwrap();
+        let b = off.render_page(&bytes, 1, (595.0, 842.0), 1.0).unwrap();
+        let text = off.page_text(&bytes, 1).unwrap();
+        assert!(text.contains("Zebra"), "{text}");
+        let chars = off.page_chars(&bytes, 1).unwrap();
+        assert!(chars.chars.iter().any(|c| c.ch == 'Z' && c.has_area()));
+        (a, b)
+    });
+    let (a, b) = handle.join().unwrap();
+    assert_eq!((a.width, a.height), (1190, 1684));
+    assert_eq!((b.width, b.height), (595, 842));
+    // Auf Seite 1 gibt es dunkle Pixel (Text).
+    assert!(a.pixels.chunks_exact(4).any(|p| p[0] < 100));
+
+    // Der Inhalt muss mitskaliert sein, nicht nur die Bitmap: Die Überschrift
+    // (x 72..~330 pt) reicht bei Maßstab 2 über x = 400 px hinaus.
+    let rightmost_dark = a
+        .pixels
+        .chunks_exact(4)
+        .enumerate()
+        .filter(|(_, p)| p[0] < 100)
+        .map(|(i, _)| i as u32 % a.width)
+        .max()
+        .unwrap();
+    assert!(
+        rightmost_dark > 400,
+        "Seite nicht skaliert: {rightmost_dark}"
+    );
 }

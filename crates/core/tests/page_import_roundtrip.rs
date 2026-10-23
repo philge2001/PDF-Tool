@@ -1,7 +1,7 @@
 //! Seiten einfügen (aus anderen PDFs, leere Seiten): einfügen -> speichern -> neu laden -> prüfen.
 
-use foliocraft_core::annotation::import::page_annots;
-use foliocraft_core::{AnnotKind, Document};
+use pdftool_core::annotation::import::page_annots;
+use pdftool_core::{AnnotKind, Document};
 use std::path::{Path, PathBuf};
 
 fn fixture(name: &str) -> PathBuf {
@@ -38,7 +38,7 @@ fn insert_page_from_other_pdf_with_annotations() {
 
     let back = reload(&doc);
     assert_eq!(back.page_count(), 3);
-    assert!(page_text(&back, 0).contains("FolioCraft Testdokument"));
+    assert!(page_text(&back, 0).contains("PDF Tool Testdokument"));
     assert!(page_text(&back, 1).contains("vorhandenen Annotationen"));
     assert!(page_text(&back, 2).contains("Seite zwei"));
 
@@ -137,7 +137,7 @@ fn annotations_on_existing_pages_shift_and_save_after_insert() {
 #[test]
 fn save_to_file_then_undo_insert() {
     let path = std::env::temp_dir().join(format!(
-        "foliocraft-insert-{}.pdf",
+        "pdftool-insert-{}.pdf",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

@@ -9,8 +9,8 @@ use crate::app::OpenDocument;
 use crate::form_draw::{self, Style};
 use crate::viewer::{ViewOutput, transform};
 use eframe::egui::{self, Key, Modifiers, Pos2, Rect};
-use foliocraft_core::form::appearance::{self, PADDING};
-use foliocraft_core::{Batch, Command, FieldId, FieldKind, FieldValue, FormField, UpdateField};
+use pdftool_core::form::appearance::{self, PADDING};
+use pdftool_core::{Batch, Command, FieldId, FieldKind, FieldValue, FormField, UpdateField};
 
 /// Ein Widget eines Felds (Feld + Index in `FormField::widgets`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -406,7 +406,7 @@ impl OpenDocument {
             egui::TextEdit::singleline(&mut text).align(egui::Align2::LEFT_CENTER)
         }
         .id(egui::Id::unique((
-            "foliocraft_form_field",
+            "pdftool_form_field",
             f.id.0,
             focus.widget,
         )))
@@ -455,7 +455,7 @@ impl OpenDocument {
             _ => None,
         };
         let mut chosen = None;
-        let area = egui::Area::new(egui::Id::unique("foliocraft_form_dropdown"))
+        let area = egui::Area::new(egui::Id::unique("pdftool_form_dropdown"))
             .order(egui::Order::Foreground)
             .fixed_pos(rect.left_bottom())
             .show(ctx, |ui| {

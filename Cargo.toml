@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/render", "crates/sign", "crates/app"]
+members = ["crates/core", "crates/render", "crates/sign", "crates/ocr", "crates/app"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,9 +11,10 @@ publish = false
 
 # Zentrale Versionsverwaltung: Crates erben mit `foo.workspace = true`.
 [workspace.dependencies]
-foliocraft-core = { path = "crates/core" }
-foliocraft-render = { path = "crates/render" }
-foliocraft-sign = { path = "crates/sign" }
+pdftool-core = { path = "crates/core" }
+pdftool-render = { path = "crates/render" }
+pdftool-sign = { path = "crates/sign" }
+pdftool-ocr = { path = "crates/ocr" }
 
 anyhow = "1.0"
 thiserror = "2.0"
@@ -26,13 +27,25 @@ zune-jpeg = { version = "0.5.15", default-features = false, features = ["std"] }
 # Schriften lesen (Glyphen, Breiten) und als Teilmenge einbetten (Phase 6).
 ttf-parser = "0.25"
 subsetter = "0.2.6"
+# Texterkennung: baut Tesseract 5 + Leptonica aus den Quellen (CMake), MIT/Apache/BSD (Phase 7).
+tesseract-rs = { version = "0.4", default-features = false, features = ["build-tesseract"] }
 # PNG lesen (reines Rust) – Bilder einfügen/ersetzen (Phase 6).
 png = "0.18"
+# JPEG schreiben (reines Rust) – Export und Komprimieren (Phase 8).
+jpeg-encoder = "0.7"
+# Zufallszahlen für Verschlüsselungsschlüssel (ohnehin über lopdf im Baum) – MIT/Apache (Phase 9).
+getrandom = "0.4"
+# Text-Diff für den Dokumentvergleich – Apache-2.0 (Phase 8).
+similar = "3"
+# ZIP schreiben (DOCX-Container), nur Deflate über flate2 – MIT (Phase 8).
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 # Ohne `image`-Feature: wir brauchen nur rohe RGBA-Bytes, keine image-Crate.
 pdfium-render = { version = "0.9.4", default-features = false, features = ["pdfium_latest", "thread_safe"] }
 # glow (OpenGL) statt wgpu: schnellerer Build, weniger Abhängigkeiten, reicht für 2D.
 eframe = { version = "0.37", default-features = false, features = [
     "accesskit", "clipboard", "default_fonts", "glow", "persistence", "wayland", "x11",
+    # Weblinks (z. B. aus Lesezeichen) im Standardbrowser öffnen (Crate webbrowser, MIT/Apache).
+    "links",
 ] }
 rfd = "0.17"
 # HTTP für Zeitstempeldienste (RFC 3161); TLS über rustls, damit auch https-Dienste gehen.

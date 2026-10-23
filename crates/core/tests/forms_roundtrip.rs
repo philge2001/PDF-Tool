@@ -1,8 +1,8 @@
 //! Formulare: lesen -> ausfüllen -> speichern -> neu laden -> vergleichen.
 
-use foliocraft_core::form::appearance::{self, WidgetAppearance};
-use foliocraft_core::{Document, FieldKind, FieldValue, UpdateField};
 use lopdf::Object;
+use pdftool_core::form::appearance::{self, WidgetAppearance};
+use pdftool_core::{Document, FieldKind, FieldValue, UpdateField};
 use std::path::{Path, PathBuf};
 
 fn fixture(name: &str) -> PathBuf {
@@ -225,7 +225,7 @@ fn typing_merges_into_one_undo_step() {
 #[test]
 fn save_twice_to_file() {
     let path = std::env::temp_dir().join(format!(
-        "foliocraft-form-{}.pdf",
+        "pdftool-form-{}.pdf",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -282,10 +282,10 @@ fn generated_states_for_checkbox_without_appearance() {
 
 // ---------- Formular-Editor (3.3) ----------
 
-use foliocraft_core::form::ChoiceOption;
-use foliocraft_core::{AddField, FormField, Rect, RemoveField};
+use pdftool_core::form::ChoiceOption;
+use pdftool_core::{AddField, FormField, Rect, RemoveField};
 
-fn add(doc: &mut Document, mut f: FormField) -> foliocraft_core::FieldId {
+fn add(doc: &mut Document, mut f: FormField) -> pdftool_core::FieldId {
     f.id = doc.allocate_field_id();
     let id = f.id;
     doc.execute(Box::new(AddField::new(f))).unwrap();
@@ -444,7 +444,7 @@ fn add_option_to_existing_radio_group() {
 #[test]
 fn created_field_survives_save_undo_redo() {
     let path = std::env::temp_dir().join(format!(
-        "foliocraft-formedit-{}.pdf",
+        "pdftool-formedit-{}.pdf",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -520,7 +520,7 @@ fn inserting_form_page_brings_fillable_fields() {
 fn extracted_pages_keep_their_form() {
     let mut doc = open_form();
     set(&mut doc, "pflicht", text("extrahiert"));
-    let bytes = foliocraft_core::extract_pages(&doc.snapshot_pdf().unwrap(), &[0]).unwrap();
+    let bytes = pdftool_core::extract_pages(&doc.snapshot_pdf().unwrap(), &[0]).unwrap();
     let out = Document::from_bytes(bytes).unwrap();
     assert_eq!(out.forms().len(), 11);
     assert_eq!(value(&out, "pflicht"), text("extrahiert"));
@@ -536,9 +536,9 @@ fn extracting_page_without_fields_drops_form() {
     doc.execute(Box::new(cmd)).unwrap();
     let snap = doc.snapshot_pdf().unwrap();
     let only_text =
-        Document::from_bytes(foliocraft_core::extract_pages(&snap, &[0]).unwrap()).unwrap();
+        Document::from_bytes(pdftool_core::extract_pages(&snap, &[0]).unwrap()).unwrap();
     assert!(only_text.forms().is_empty());
     let with_form =
-        Document::from_bytes(foliocraft_core::extract_pages(&snap, &[1]).unwrap()).unwrap();
+        Document::from_bytes(pdftool_core::extract_pages(&snap, &[1]).unwrap()).unwrap();
     assert_eq!(with_form.forms().len(), 9);
 }

@@ -1,4 +1,4 @@
-# CLAUDE.md – FolioCraft
+# CLAUDE.md – PDF Tool
 
 Plattformübergreifender PDF-Editor in Rust (egui/eframe + PDFium + lopdf).
 Eigenständige Neuentwicklung: keine fremden Codes, Marken, Logos, Icons oder Assets.
@@ -11,17 +11,18 @@ cargo build
 cargo clippy --workspace --all-targets -- -D warnings   # muss warnungsfrei sein
 cargo test --workspace                                  # braucht kein PDFium
 cargo fmt --all
-cargo run -p foliocraft-core --example gen_fixtures      # tests/fixtures neu erzeugen
-FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.pdf
+cargo run -p pdftool-core --example gen_fixtures      # tests/fixtures neu erzeugen
+PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 ```
 
 ## Workspace
 | Crate | Pfad | Aufgabe | Darf abhängen von |
 |---|---|---|---|
-| foliocraft-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg, ttf-parser, subsetter, png |
-| foliocraft-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
-| foliocraft-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore |
-| foliocraft-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, eframe, rfd, der, ureq |
+| pdftool-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg, ttf-parser, subsetter, png, jpeg-encoder, zip, similar, getrandom (Zufallsschlüssel für AES-256) |
+| pdftool-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
+| pdftool-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore |
+| pdftool-ocr | crates/ocr | Texterkennung (Tesseract), Wörter mit Pixelrechteck | tesseract-rs (baut Tesseract/Leptonica mit CMake) |
+| pdftool-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, ocr (Feature `ocr`, Standard), eframe (Feature `links`: Weblinks im Browser öffnen), rfd, der, ureq |
 
 ## Architekturregeln
 - **core** kennt weder UI noch PDFium und ist vollständig unit-testbar.
@@ -47,6 +48,35 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Kommentare und UI-Texte auf Deutsch, Bezeichner auf Englisch.
 - Tests für core: Roundtrip „erstellen → speichern → neu laden → vergleichen“ mit den Fixtures.
 - Fixtures in `tests/fixtures/` werden ausschließlich per `gen_fixtures` erzeugt.
+
+## Meilensteine Phase 10 (Neues Oberflächen-Layout)
+- [x] 10.1 Eigene Icons, Farbschema, Kopfleiste, rechte Symbolleiste, schwebende Seitennavigation
+- [x] 10.2 Werkzeugbereich links (Alle Werkzeuge + Werkzeug-Panels), schwebende Schnellwerkzeuge
+- [x] 10.3 Startseite, Lesezeichen, Menü-Knopf
+- [x] 10.4 Mehrere Dokumente als Tabs + Abschluss
+
+## Meilensteine Phase 11 (Textformat, Systemschriften, Bilder)
+- [x] 11.1 Fehlende Zeichen aus Systemschriften (Suche, Lizenzprüfung, Teilmenge)
+- [x] 11.2 Textformat bei Auswahl (Schrift, Größe, Fett, Kursiv, Unter-/Durchgestrichen, Farbe)
+- [x] 11.3 Bilder mit dem Auswahlwerkzeug, Zwischenablage, Bilder in Formular-XObjects + Abschluss
+
+## Meilensteine Phase 9 (Sicherheit & Barrierefreiheit)
+- [x] 9.1 Passwortgeschützte PDFs öffnen
+- [x] 9.2 Schutz setzen/entfernen (AES-256)
+- [x] 9.3 Tagged PDF (Strukturbaum, Titel/Sprache, Alternativtexte, Panel „Tags“)
+- [x] 9.4 Barrierefreiheit prüfen, automatisch taggen + Abschluss
+
+## Meilensteine Phase 8 (Export, Vergleich, Komprimierung, PDF/A)
+- [x] 8.1 Export Bilder (PNG/JPEG) & Text
+- [x] 8.2 Einfacher DOCX-Export
+- [x] 8.3 Dokumentvergleich
+- [x] 8.4 Komprimieren
+- [x] 8.5 PDF/A-2b (bestmöglich) + Abschluss
+
+## Meilensteine Phase 7 (Texterkennung)
+- [x] 7.1 Tesseract einbinden (ocr-Crate, Sprachdaten, Offscreen-Rendern)
+- [x] 7.2 Unsichtbare Textebene (core)
+- [x] 7.3 OCR-Oberfläche + Abschluss
 
 ## Meilensteine Phase 6 (Text und Bilder bearbeiten)
 - [x] 6.1 Schriften einbetten (Noto Sans als Teilmenge, Unicode-Freitext)
@@ -101,16 +131,37 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - Gelöschte Seiten sind nach inkrementellem Speichern nicht mehr erreichbar, ihre Bytes stehen aber
   noch in der Datei – „Schwärzen → Dokument bereinigen“ schreibt die Datei komplett neu.
 - Dokumente werden im UI-Thread geladen (lopdf); sehr große Dateien (> 100 MB) blockieren kurz.
-- Verschlüsselte PDFs mit Benutzerpasswort werden noch nicht unterstützt (Passwortdialog fehlt).
+- Verschlüsselung: Gespeichert wird immer komplett neu (verschlüsselt), nicht inkrementell – Signaturen werden
+  dabei ungültig (Warnung im Dialog). Neuer Schutz nur als AES-256; Zertifikats-Verschlüsselung (/PubSec) fehlt.
+  Ohne Besitzerpasswort bleiben Berechtigungen beim Speichern unverändert.
+- Barrierefreiheit: Die Prüfung ist eine Auswahl wichtiger PDF/UA-Punkte (keine vollständige Validierung, z. B.
+  keine Kontrastprüfung, keine Prüfung der Überschriften-Hierarchie). Automatisches Taggen ist heuristisch:
+  Lesereihenfolge = Reihenfolge im Content-Stream, Überschriften nur über die Schriftgröße, keine Listen/Tabellen,
+  Text in Formular-XObjects wird als Ganzes ein Absatz; nur ungetaggte Dokumente. Nach dem Taggen in der App
+  neu angelegte Annotationen bekommen keinen Tag. Geänderte Titel aktualisieren /Info, nicht das XMP (dc:title).
+  Strukturelemente ändern/verschieben ist nicht möglich (nur Alternativtext, Titel, Sprache).
 - Annotationen auf gedrehten Seiten: Geometrie korrekt, Freitext-Overlay nicht mitgedreht.
+- Oberfläche: Tabs lassen sich nicht per Ziehen umsortieren; Werkzeug-/Bearbeitungsmodus gilt pro Fenster
+  (beim Tab-Wechsel zurück auf Textauswahl); Lesezeichen nur lesen (kein Anlegen/Umbenennen); Icons sind
+  selbst gezeichnete Vektorgrafiken (kein Icon-Font); Drucken fehlt.
 - Absätze bearbeiten: Formatierung innerhalb des Absatzes (z. B. ein fettes Wort) wird auf den Stil der ersten
   Zeile vereinheitlicht; nur links-/Blocksatz (zentriert/rechtsbündig wird linksbündig neu gesetzt); Kerning geht verloren;
   aus eingebetteten Teilmengen nur Zeichen, die auf der Seite schon vorkommen (Rest in Noto Sans, kein CJK);
   der Seiteninhalt wird neu kodiert (ein Stream); eingefügte, ungespeicherte Seiten erst nach dem Speichern.
+- Export DOCX: kein Layout (Spalten, Tabellen, Positionen), Text in Formular-XObjects fehlt, CMYK/Indexed-Bilder fehlen.
+- Vergleich: nur Text (kein Pixelvergleich), Formatierung wird nicht verglichen.
+- Komprimieren: nur Grau/RGB-Bilder mit 8 Bit ohne /Mask und /Decode; Inline-Bilder bleiben.
+- PDF/A: nur 2b; nicht eingebettete CID- und Symbol-Schriften, DeviceCMYK und unbekannte Annotationen ohne
+  /AP werden gemeldet statt behoben. Ersatzschriften werden voll eingebettet (≈ 0,4 MB je Schnitt).
+  Unbekannte nicht eingebettete Schriften werden durch Liberation Sans genähert (Breiten können abweichen).
+- Texterkennung: nur waagerechter Text in der Anzeige (keine automatische Drehung schiefer Scans), Wörter unter
+  30 % Sicherheit werden verworfen; CJK ist nicht eingebaut (Noto Sans ohne CJK). Der Tesseract-Build lädt beim ersten
+  Mal Quellen von github.com (im Container gesperrt: Quellen per `git clone` nach `~/.tesseract-rs/third_party/`,
+  `eng`/`tur` aus tessdata_best per raw.githubusercontent.com nach `~/.tesseract-rs/tessdata/`).
 - Bilder bearbeiten: nur Bilder direkt im Seiteninhalt (nicht in Formular-XObjects); Zeichenreihenfolge bleibt;
   PNG-Farbprofile/Gamma werden ignoriert.
 - Formularfelder im Overlay mit egui-Schrift; eigene Erscheinungsbilder von Kontrollkästchen/Optionsfeldern
-  (z. B. Kreuz statt Häkchen) zeigt FolioCraft vereinfacht – in der Datei bleiben sie erhalten.
+  (z. B. Kreuz statt Häkchen) zeigt PDF Tool vereinfacht – in der Datei bleiben sie erhalten.
   Felder auf gedrehten Seiten: Text nicht mitgedreht. Formular-JavaScript (Berechnungen, Formate) wird nicht ausgeführt.
 - Schwärzen: Pfade, die einen Bereich kreuzen, verschwinden ganz (kein Zuschneiden); Bilder in JPEG 2000, JBIG2,
   CCITT werden ganz entfernt; Ersatztexte nur in direkten BDC-Dictionaries (nicht über /Properties-Ressourcen).
@@ -118,6 +169,13 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   DocMDP-Berechtigungen werden angezeigt, aber Änderungen danach nicht darauf geprüft. Digitale IDs nur als
   PKCS#12-Datei (kein Windows-Zertifikatspeicher, keine Smartcards). Vertrauen nur über selbst
   hinterlegte Zertifikate (keine eingebaute Liste von Stammzertifikaten).
+- Systemschriften: nur TrueType mit glyf-Tabelle (keine CFF/OpenType-PS-Schriften), nur wenn fsType Einbetten und
+  Teilmengen erlaubt. Fehlender Fett-/Kursivschnitt wird nachgeahmt (Tr 2 mit Kontur, Schrägstellung 0,21).
+  Die Editor-Vorschau zeigt Schriftarten nicht originalgetreu (egui-Schrift, nur fett/kursiv/Linien angedeutet).
+  Formatierter Text wird stückweise mit absoluten Positionen (Tm) geschrieben; Unter-/Durchstreichung als Rechtecke.
+- Bilder: Formular-XObjects zählen nur als Bild, wenn sie Bilder und keinen Text enthalten (dann wird das ganze
+  XObject verschoben). Kopieren/Speichern rendert das Bild über PDFium (Pixelauflösung, max. 25 MP).
+  Eingefügte Bilder aus der Zwischenablage werden als PNG eingebettet (96 dpi). Die Hand bleibt reines Verschieben der Ansicht.
 - Freitext nutzt die eingebettete Noto Sans (Latein, Kyrillisch, Griechisch); CJK fehlt der Schrift.
   Formularfelder und sichtbare Signaturen nutzen weiterhin Helvetica (WinAnsi).
 
@@ -129,7 +187,8 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - `app::viewer` – `Layout` (Präfixsummen, Binärsuche), `PageTextures` (GPU-Texturen, pending/wanted),
   `Viewer::show` (zeichnet nur sichtbare Seiten, Kacheln ab 3072 px), Zoom mit Anker (`set_zoom`),
   `ZoomMode` (Custom/FitWidth/FitPage), `FrameRequests` (Render-Aufträge pro Frame, `flush_requests`)
-- `app::viewer::thumbnails` – Seitenleiste, gleiche Texturen, Priorität `Thumbnail`
+- `app::viewer::thumbnails` – Seitenminiaturen (Panel rechts), gleiche Texturen, Priorität `Thumbnail`;
+  `FIT_MARGIN` hält bei Seitenbreite/Ganze Seite seitlich Platz für die schwebenden Leisten
 - `core::annotation` – `Annotation`/`AnnotKind` (9 Typen), `AnnotationStore`; `import` (PDF -> Modell,
   Unverstandenes bleibt fremd), `export` (Dictionary, Basis = Original-Dict), `appearance` (/AP-Streams)
 - `core::command` – `Command`-Trait, `Model` (Annotationen + Seitenliste), `History` (Undo/Redo, dirty)
@@ -173,6 +232,38 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   erkannt), `Document::paragraphs`/`set_paragraph(…, ParaFrame { origin, width, justify })`: alte Ausgaben →
   Verschiebungen, Absatz neu hinter dem Inhalt in `/FcPara BMC … EMC` (wird beim nächsten Mal ersetzt), Stil der
   ersten Zeile (Schrift, Größe, Füllfarbe aus `TextShow::fill`, Tc/Tw/Tz/Ts/Tr, Matrix), Umbruch auf die Kastenbreite
+- `core::image_codec` – `encode_png`/`encode_jpeg` (Gray/Rgb/Rgba, JPEG: Alpha auf Weiß)
+- `core::docx` – `export_docx(doc, seiten, progress)`: Absätze (`core::paragraph`, Größe, Fett aus /BaseFont) und
+  Bilder (JPEG direkt, Grau/RGB-8-Bit als PNG; seitenfüllendes Bild nur ohne Text) nach Höhe sortiert,
+  Seitenumbrüche; ZIP mit minimalem WordprocessingML (`zip`, nur Deflate)
+- `core::compare` – `words(seite, PageText)`, `compare(alt, neu)` (similar, Patience, dokumentweit) → `Change`
+  (Deleted/Inserted/Replaced, Wörter mit Rechteck und Seite)
+- `core::compress` – `compress_pdf(bytes, CompressOptions { image_dpi, jpeg_quality }, progress)`: größte Darstellung je
+  Bild (Seiten + Formular-XObjects rekursiv), Grau/RGB-8-Bit-Bilder ohne /Mask//Decode verkleinern (Flächenmittel) →
+  JPEG, /SMask mit; prune, compress, `SaveOptions` mit Objekt-Streams. `CompressReport::summary`, `human`
+- `core::pdfa` – `convert_to_pdfa(bytes)` → (Bytes, `PdfaReport { fixed, problems }`): sanitize (JS, eingebettete
+  Dateien), über `Document` fehlende /AP erzeugen (Annotationen, Formularfelder), /Btn-/N als Zustands-Dictionary,
+  leere /AP als Notlösung, geerbte /Resources in die Seite, direkte Schriften zu Objekten, nicht eingebettete
+  Standardschriften → Liberation (TrueType, WinAnsi, Breiten aus der Schrift, voll eingebettet), sRGB-OutputIntent,
+  XMP (pdfaid 2/B, abgeglichen mit /Info, unkomprimiert), LZW/TR/Interpolate/AA/NeedAppearances weg, /F druckbar,
+  /ID, Version 1.7. Assets: `assets/fonts/liberation` (OFL), `assets/icc/sRGB-v2-magic.icc` (CC0)
+- `render::worker::OffscreenRenderer` – zusätzlich `page_text` (Lesereihenfolge) und `page_chars` (`PageText`)
+- `app::export` – Datei → Exportieren… (PNG/JPEG je Seite mit dpi/Qualität, TXT mit Seitenvorschub, DOCX);
+  testbar über `export_images`/`export_text` (mit PDFium), `page_file_name`
+- `app::compare` – Datei → Vergleichen mit… bzw. `pdftool alt.pdf --vergleichen neu.pdf`; Job (Wörter beider
+  Dokumente offscreen) → `CompareView` (Liste + Seiten nebeneinander, Vorschaubilder per Hilfsthread)
+- `app::compress_ui` – Datei → Komprimieren… (dpi, Qualität) und Datei → Nach PDF/A umwandeln; Ergebnis per
+  `pending_doc` als ungespeicherte Fassung, Bericht als Meldung
+- `ocr` (Crate) – `Engine::new("deu+eng")`/`recognize(&Image)` → `Word` (Pixel, oben links, Konfidenz) aus
+  Tesseracts TSV; `LANGUAGES` (eingebettete tessdata_fast, beim ersten Gebrauch in `tessdata_dir()` im Temp-Ordner)
+- `render::worker::OffscreenRenderer` – `RenderService::offscreen()`, klonbar/`Send`: Jobs rendern Seiten
+  beliebiger Bytes im Render-Thread (eigene Warteschlange nach sichtbaren Seiten und Text, blockierende Antwort).
+  pdfium-render ignoriert `set_fixed_size` ohne Formulardaten – deshalb `render_form_data(true)`
+- `core::ocr_layer` – `OcrWord` (Anzeige-Einheiten 0..1, oben links), `Document::add_ocr_layers` (3 Tr, Noto, Tz =
+  erkannte Breite, Größe = Worthöhe, gedreht wie die Seite, `/FcOcr BMC … EMC` wird ersetzt, `Batch` = 1 Undo),
+  `page_has_text`
+- `app::ocr_ui` (Feature `ocr`) – Dialog „Texterkennung (OCR)“ (Seiten, nur ohne Text, Sprachen), Job mit
+  Fortschritt/Abbrechen (Momentaufnahme + Offscreen 300 dpi + Tesseract), Ergebnis über `OcrSlot` → `take_pending_ocr`
 - `app::content_edit` – Modus „Inhalt bearbeiten“ (`Tool::EditText`/`AddText`): Absätze pro Seite gecacht (nach
   Stempel), Klick = Auswahl, Ziehen = verschieben, Anfasser rechts = Breite, Doppelklick/Enter = mehrzeiliger
   Editor (Strg+Enter übernimmt), Blocksatz-Schalter; `sync_structure` erkennt Inhaltsänderungen am Stempel
@@ -195,8 +286,32 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
 - `app::comments` – Kommentar-Panel (nach Seite und Position sortiert, direkt bearbeitbar)
 - `app::file_ops` – Speichern/Speichern unter, Rückfrage bei ungespeicherten Änderungen
   (`PendingAction`), Fenstertitel mit `*`; nach dem Speichern lädt der Worker neu (`reload_renderer`)
-- `app::menu` – Menüleiste Datei/Bearbeiten/Ansicht
-- `app::settings` – dauerhafte Einstellungen (serde + eframe-Persistenz, Schlüssel `foliocraft_settings`):
+- `app::menu` – Inhalt des Knopfs „Menü“ (`main_menu`: Datei-Befehle direkt, Untermenüs Bearbeiten, Seiten,
+  Formular, Schwärzen, Signieren, Barrierefreiheit, Ansicht; „Beenden“ zuletzt)
+- `app::icons` – eigene Vektor-Icons (`Icon`, 24er-Raster, `paint`), Widgets `button`/`sized_button`,
+  `text_button`, `row_button` (Listenzeile), `tab` (`TabResponse` mit Schließen-Kreuz)
+- `app::style` – Farbschema hell/dunkel (`install` über `style_mut_of`), `ACCENT`, `canvas`, `floating_fill`,
+  `border`, `icon_tint` (Kategorie-Farben der Werkzeug-Icons)
+- `app::shell` – Fensterrahmen: `global_bar` (Menü, Tabs Startseite/Dokumente, Design/Einstellungen/Hilfe),
+  `document_bar` (Alle Werkzeuge, Bearbeiten, Konvertieren, Signieren | Schloss, Rückgängig, Wiederholen,
+  Suchen, Speichern, ⋯), `document_layout` (Reihenfolge der Panels), `right_rail` + `RightPane`
+  (Kommentare, Seitenminiaturen, Lesezeichen, Signaturen, Tags; erneuter Klick schließt), `pane_header`,
+  `page_controls` (schwebend unten rechts: Seite, ↑↓, Zoom, Anpassen), `floating_frame`, `shortcuts_window`
+- `app::tools_panel` – Werkzeugbereich links: `ToolGroup` (14 Gruppen; mit Panel: Kommentieren, Bearbeiten,
+  Organisieren, Schwärzen, Formular, Zertifikat, Barrierefreiheit – sonst Dialog direkt), `open_tool_group`,
+  `leave_tool_group`, `sync_tool_group` (Gruppe folgt dem Werkzeug), `tool_icon`; `quick_tools` (schwebend
+  links), `selection_bar` (Farbe/Löschen der ausgewählten Annotation)
+- `app::home` – Startseite: Kacheln „Empfohlene Werkzeuge“ (ohne Dokument erst Datei wählen, `pending_group`),
+  „Zuletzt verwendet“ (Ort, `relative_age`, `human_size`)
+- `app::bookmarks` – Panel „Lesezeichen“ (Baum mit Aufklapp-Zustand, `go_to_destination` →
+  `Viewer::scroll_to_page_at`, Weblinks nach Rückfrage per `ctx.open_url`)
+- `app::tabs` – mehrere Dokumente: aktives in `document`, übrige in `others`, `active_pos`; `switch_tab`
+  (Worker bekommt das Dokument unter seiner alten `DocId` → Seitenbilder bleiben), `open_in_new_tab`,
+  `focus_open_file`, `close_active_tab`, `first_dirty_tab` (Beenden fragt nacheinander je geändertem Tab).
+  `pdftool a.pdf b.pdf` öffnet mehrere Tabs
+- `core::outline` – `Document::outline` → `OutlineItem` (Titel, `Destination { page, top, left }`, URI, offen,
+  Farbe, fett/kursiv, Kinder; /Dest, /GoTo, benannte Ziele über /Dests und den Namensbaum), `page_mode`
+- `app::settings` – dauerhafte Einstellungen (serde + eframe-Persistenz, Schlüssel `pdftool_settings`, alter Schlüssel `foliocraft_settings` und alter Ordner werden übernommen):
   zuletzt geöffnet, Design, Panels, Werkzeugstil, Autor
 - `app::pages` – `PageAction`, `sync_structure` (erkennt jede Strukturänderung inkl. Undo/Redo, biegt
   Texturen/Text per `PageId` auf neue Indizes um, lädt den Worker mit `render_snapshot` und NEUER DocId),
@@ -206,7 +321,7 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   „Dokument teilen“
   (Ergebnis = neues unbenanntes Dokument, `adopt_document` zeigt es über eine Momentaufnahme an)
 - `app::jobs` – Hintergrund-Jobs (`Job::spawn`, Fortschritt, Abbrechen, modales Fortschrittsfenster);
-  höchstens ein Job gleichzeitig (`FolioApp::job`), Ergebnis als Info- oder Fehlerdialog
+  höchstens ein Job gleichzeitig (`PdfToolApp::job`), Ergebnis als Info- oder Fehlerdialog
 - `core::form` – `FormField`/`FieldKind`/`FieldValue`/`Widget`, `FormStore` (Dateireihenfolge = Tab-Reihenfolge);
   `import` (Feldbaum mit vererbten /FT /Ff /V /DA …, voller Name), `appearance` (`layout` = gemeinsame
   Textanordnung für Overlay und Datei, `build` = /AP-Streams, Helvetica WinAnsi)
@@ -265,28 +380,67 @@ FOLIOCRAFT_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p foliocraft-app -- datei.
   Rückfrage (Signaturwarnung), Schwärzen als Job, Ergebnis per `pending_doc`/`DocSlot` als
   ungespeicherte Fassung (`Document::replacement`); `redact_search_hits` (alle Suchtreffer → Redact, 1 Undo-Schritt), `pending_redactions`;
   Werkzeuge `Tool::RedactText` (wie Hervorheben) und `Tool::RedactArea` (Rechteck), Menü „Schwärzen“
-- `app::toolbar`, `app::shortcuts` – Werkzeugleiste und Tastenkürzel (je ein `impl FolioApp`-Block)
+- `core::security` – `load` (entschlüsselt beim Öffnen, Fehler `PasswordRequired`/`WrongPassword`), `Security`
+  (Verfahren, Berechtigungen, Besitzerpasswort bekannt?), `Protection` → AES-256 (V5/R6, CF mit /Length und /AuthEvent
+  für Poppler); `Document::{open_with_password, security, unlock, set_protection}`, Speichern verschlüsselt komplett neu
+- `core::tags` – `Document::{is_tagged, structure_tree, marked_content, properties}`, `StructNode` (RoleMap aufgelöst,
+  Inhalte als (Seite, MCID)), Commands `SetProperties` (Titel/Sprache in `Model::properties`) und `SetAltText`
+  (`Model::alt_texts`); `tags::write` beim Speichern (/Lang, /Info /Title, DisplayDocTitle, /Alt).
+  Interpreter: `Interpreted::marked` (Text/Rechteck je MCID), `unmarked` (Inhalte weder MCID noch Artefakt)
+- `core::accessibility` – `Document::accessibility_check` → `Check { kind, status, title, detail }`
+- `core::autotag` – `auto_tag_pdf(bytes, AutoTagOptions { lang, title, embed_fonts }, progress)`: Absätze/Überschriften
+  (Schriftgröße ≥ 1,15 × Fließtext, H1–H3), Bilder → Figure, Pfade/Kopf-/Fußzeilen → Artefakt, jede Ausgabe einzeln in
+  BDC/EMC, Annotationen als Link/Form/Annot mit OBJR und /Alt, ParentTree, /Tabs /S, MarkInfo, XMP mit
+  `pdfuaid:part=1` (bei PDF/A-2 mit Erweiterungsschema), Schriften über `pdfa::embed_standard_fonts`
+- `app::security_ui` – Passwortabfrage beim Öffnen, Dialog „Sicherheit“
+- `app::tags_ui` – Panel „Tags“ (`TagState`: Baum gecacht nach Bytes/Seiten/Alt-Texten, markierte Inhalte je Seite
+  nach Stempel), Overlay `paint_tags` (Auswahl, nummerierte Lesereihenfolge)
+- `app::a11y_ui` – Menü „Barrierefreiheit“: Prüfbericht-Fenster, Dialog „Automatisch taggen“ (Job, `pending_doc`)
+- `core::embedded_font::FontData` – beliebige TrueType-Schrift (statisch oder geladen) für `SubsetFont::with_font`;
+  `embeddable` prüft glyf und fsType
+- `core::system_fonts` – Systemschriften suchen (nur name/OS2 lesen), `find_style`, `find_for_base_font` (Aliase wie
+  Arial → Liberation Sans, Calibri → Carlito), `load` (gecacht)
+- `core::rich_text` – `TextStyle`/`StyledRun`/`FontRef {Original, Family, Noto}`, `Resolver` (je Zeichen: Original →
+  Systemschrift gleicher Familie → Noto), `layout_ops` (Umbruch, Blocksatz, Linien); `core::paragraph::{paragraph_runs,
+  set_paragraph_rich, add_rich_text}`
+- `app::rich_edit` – `RichEdit` (Text + Stil je Zeichen), `format_bar` (Schrift, Größe, F/K/U/S, Farbe)
+- `core::image_edit` – zusätzlich `PageImage::{ctm, in_form, pixels}`, `image_snapshot` (Ein-Bild-PDF zum Kopieren)
+- `app::image_clip` – Rechtsklick-Menü für Bilder, Strg+C/Strg+V/Entf, `paint_selected_image` (Auswahlwerkzeug)
+- `app::toolbar` (`pick_image`), `app::shortcuts` – Tastenkürzel (`impl PdfToolApp`-Block)
 
 ## Tastenkürzel
-Strg+O öffnen · Strg+S speichern · Strg+Umschalt+S speichern unter · Strg+Z/Strg+Y (oder Strg+Umschalt+Z) Rückgängig/Wiederholen · Entf löscht Auswahl · Strg+C kopiert markierten Text · Esc hebt Auswahl auf · Strg+F suchen (Enter/F3 weiter, Umschalt+Enter/Umschalt+F3 zurück, Esc schließen) · Strg+Plus/Minus zoomen · Strg+1 = 100 % · Strg+2 = Seitenbreite · Strg+0 = Ganze Seite ·
+Strg+O öffnen · Strg+S speichern · Strg+Umschalt+S speichern unter · Strg+Z/Strg+Y (oder Strg+Umschalt+Z) Rückgängig/Wiederholen · Entf löscht Auswahl · Strg+C kopiert markierten Text bzw. das ausgewählte Bild · Strg+V fügt ein Bild ein · Esc hebt Auswahl auf · Strg+F suchen (Enter/F3 weiter, Umschalt+Enter/Umschalt+F3 zurück, Esc schließen) · Strg+Plus/Minus zoomen · Strg+1 = 100 % · Strg+2 = Seitenbreite · Strg+0 = Ganze Seite ·
 Formular: Tab/Umschalt+Tab nächstes/voriges Feld · Leertaste schaltet Kästchen/Optionsfeld · Esc verlässt das Feld ·
 Strg+Mausrad zoomt um den Mauszeiger · Bild↑/↓ Seite · Pos1/Ende · Pfeiltasten scrollen
 
 ## Testen im Container (ohne Bildschirm)
 Datei-/Ordnerdialoge (rfd über xdg-portal) funktionieren im Container nicht – Logik dahinter per Test absichern.
 PDFium liegt lokal in `pdfium/lib` (gitignored).
-`cargo run -p foliocraft-core --example annot_demo -- in.pdf out.pdf` schreibt jeden Annotationstyp –
+`cargo run -p pdftool-core --example annot_demo -- in.pdf out.pdf` schreibt jeden Annotationstyp –
 zur Gegenprobe mit anderen Readern (z. B. `pdftoppm -png out.pdf x`).
-`cargo run -p foliocraft-core --example redact_demo -- in.pdf out.pdf 1:x0,y0,x1,y1 …` schwärzt Bereiche
+`cargo run -p pdftool-core --example redact_demo -- in.pdf out.pdf 1:x0,y0,x1,y1 …` schwärzt Bereiche
 (Gegenprobe: `pdftotext`, `pdftoppm`).
-`cargo run -p foliocraft-core --example sanitize_demo -- in.pdf [out.pdf]` zeigt/entfernt versteckte Inhalte
+`cargo run -p pdftool-core --example sanitize_demo -- in.pdf [out.pdf]` zeigt/entfernt versteckte Inhalte
 (Gegenprobe: `pdfinfo`, `pdfdetach -list`, `pdftotext`).
-`cargo run -p foliocraft-core --example content_dump -- datei.pdf [Seite]` zeigt die Interpreter-Ergebnisse
+`cargo run -p pdftool-core --example content_dump -- datei.pdf [Seite]` zeigt die Interpreter-Ergebnisse
 (Gegenprobe: `pdftotext -bbox`, gleiche x-Positionen).
-`cargo run -p foliocraft-sign --example sign_demo -- in.pdf out.pdf [id.p12 pw] [rsa]` signiert (ohne ID mit Testzertifikat).
+`cargo run -p pdftool-sign --example sign_demo -- in.pdf out.pdf [id.p12 pw] [rsa]` signiert (ohne ID mit Testzertifikat).
 Zeitstempel: `--tsa-openssl tsa.cnf` (lokale OpenSSL-TSA, `openssl ts -reply`) oder `--tsa-http URL`.
 Öffentliche TSAs sind aus dem Container nicht erreichbar (Netzwerkregel).
 Gegenprobe: `pdfsig out.pdf`; CMS mit `openssl cms -verify -binary -inform DER -content daten.bin`.
-`cargo run -p foliocraft-sign --example sign_check -- datei.pdf [vertraut.pem]` prüft Signaturen (Gegenprobe: `pdfsig`).
+`cargo run -p pdftool-sign --example sign_check -- datei.pdf [vertraut.pem]` prüft Signaturen (Gegenprobe: `pdfsig`).
 Unabhängig signierte Test-PDFs: OpenSSL (`openssl cms -sign -binary -outform DER`) über die ByteRange.
-`cargo run -p foliocraft-core --example form_fill -- in.pdf [out.pdf name=Wert …]` listet/füllt Formularfelder. Screenshots über Xvfb + xdotool + ImageMagick `import`.
+`cargo run -p pdftool-core --example docx_demo -- in.pdf out.docx` (Gegenprobe: python-docx, `soffice --convert-to pdf`).
+`cargo run -p pdftool-core --example compress_demo -- in.pdf out.pdf [dpi] [qualität]` (Gegenprobe: `pdfimages -list`).
+`cargo run -p pdftool-core --example autotag_demo -- in.pdf [out.pdf] [de-DE] [Titel]` prüft/taggt
+(Gegenprobe veraPDF mit `--flavour ua1`), `… --example security_demo -- schützen|öffnen …` (Gegenprobe `qpdf --check`, `pdfinfo`).
+`cargo run -p pdftool-core --example pdfa_demo -- in.pdf out.pdf`, Prüfung mit veraPDF (nur Testwerkzeug, nicht im Repo):
+`curl -o ~/tools/verapdf.jar https://maven-central.storage-download.googleapis.com/maven2/org/verapdf/apps/greenfield-apps/1.28.2/greenfield-apps-1.28.2.jar`,
+`java -cp ~/tools/verapdf.jar org.verapdf.apps.GreenfieldCliWrapper --flavour 2b --format text -v datei.pdf`.
+Platz: `target/` wächst schnell (> 25 GB) – im Container mit `CARGO_INCREMENTAL=0` bauen und bei Bedarf `cargo clean`.
+`cargo run -p pdftool-ocr --example ocr_demo -- bild.pgm [deu+eng] [dpi]` erkennt Text in einem 8-Bit-PGM.
+`PDFTOOL_PDFIUM_PATH=… cargo run -p pdftool-render --example offscreen_pgm -- datei.pdf out.pgm 4.1667` rendert
+Seite 1 offscreen (300 dpi), `… --example text_boxes -- datei.pdf [Zeichen]` zeigt PDFiums Zeichen-Rechtecke.
+`cargo run -p pdftool-core --example font_list -- [Schriftname …]` zeigt Systemschriften und Zuordnung,
+`… --example rich_text_demo -- in.pdf out.pdf [Familie]` setzt einen Absatz formatiert neu (Gegenprobe: `pdffonts`).
+`cargo run -p pdftool-core --example form_fill -- in.pdf [out.pdf name=Wert …]` listet/füllt Formularfelder. Screenshots über Xvfb + xdotool + ImageMagick `import`.

@@ -90,24 +90,49 @@ pub struct Document {
     imported_fields: HashMap<ObjectId, FormField>,
     /// Stempel der bearbeiteten Seiteninhalte, wie sie in der Datei stehen.
     saved_content: HashMap<ObjectId, u64>,
+    /// Passwortschutz (verschlüsselte Datei bzw. neu gesetzter Schutz). `bytes` und `pdf` sind
+    /// immer Klartext; verschlüsselt wird erst beim Schreiben der Datei.
+    security: Option<crate::security::Security>,
+    /// Titel/Sprache und Alternativtexte, wie sie in der Datei stehen (Änderungen erkennen).
+    saved_properties: crate::tags::DocProperties,
+    saved_alts: std::collections::BTreeMap<ObjectId, Option<String>>,
 }
 
 impl Document {
     /// Lädt ein PDF von der Festplatte.
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
+        Self::open_with_password(path, None)
+    }
+
+    /// Lädt ein PDF, das evtl. ein Passwort braucht. Ohne Passwort und bei Bedarf:
+    /// `CoreError::PasswordRequired`, bei falschem Passwort `CoreError::WrongPassword`.
+    pub fn open_with_password(path: impl AsRef<Path>, password: Option<&str>) -> Result<Self> {
         let path = path.as_ref();
         let bytes = std::fs::read(path).map_err(|source| CoreError::Io {
             path: path.to_path_buf(),
             source,
         })?;
-        let mut doc = Self::from_bytes(bytes)?;
+        let mut doc = Self::from_bytes_with_password(bytes, password)?;
         doc.path = Some(path.to_path_buf());
         Ok(doc)
     }
 
     /// Lädt ein PDF aus dem Speicher (z. B. in Tests).
     pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
-        let pdf = lopdf::Document::load_mem(&bytes)?;
+        Self::from_bytes_with_password(bytes, None)
+    }
+
+    /// Wie [`Document::from_bytes`], mit Passwort für verschlüsselte Dateien.
+    pub fn from_bytes_with_password(bytes: Vec<u8>, password: Option<&str>) -> Result<Self> {
+        let (pdf, security) = crate::security::load(&bytes, password)?;
+        // Verschlüsselt: ab jetzt auf einer Klartext-Fassung arbeiten (siehe `security`).
+        let (bytes, pdf) = if security.is_some() {
+            let plain = crate::security::plain_bytes(&pdf)?;
+            let pdf = lopdf::Document::load_mem(&plain)?;
+            (plain, pdf)
+        } else {
+            (bytes, pdf)
+        };
         let mut model = Model::default();
         model.pages = read_pages(&pdf)?
             .into_iter()
@@ -127,7 +152,12 @@ impl Document {
             imported: HashMap::new(),
             imported_fields: HashMap::new(),
             saved_content: HashMap::new(),
+            security,
+            saved_properties: Default::default(),
+            saved_alts: Default::default(),
         };
+        doc.model.properties = crate::tags::read_properties(&doc.pdf);
+        doc.saved_properties = doc.model.properties.clone();
         doc.saved_pages = doc.page_structure();
         doc.next_object_id = doc.pdf.max_id + 1;
         doc.import_annotations();
@@ -177,6 +207,39 @@ impl Document {
         doc.path = path;
         doc.history.mark_unsaved();
         Ok(doc)
+    }
+
+    /// Passwortschutz des Dokuments (`None` = ungeschützt).
+    pub fn security(&self) -> Option<&crate::security::Security> {
+        self.security.as_ref()
+    }
+
+    /// Prüft das Besitzerpasswort eines geschützten Dokuments (volle Rechte).
+    pub fn unlock(&mut self, owner_password: &str) -> bool {
+        self.security
+            .as_mut()
+            .is_some_and(|s| s.unlock(owner_password))
+    }
+
+    /// Setzt einen neuen Schutz (`Some`) oder entfernt ihn (`None`). Wirkt beim nächsten
+    /// Speichern. Ändern darf nur, wer volle Rechte hat (ungeschützt oder Besitzerpasswort).
+    pub fn set_protection(
+        &mut self,
+        protection: Option<&crate::security::Protection>,
+    ) -> Result<()> {
+        if self.security.as_ref().is_some_and(|s| !s.owner_known) {
+            return Err(CoreError::Other(
+                "Zum Ändern des Schutzes wird das Besitzerpasswort benötigt.".into(),
+            ));
+        }
+        self.security = protection.map(crate::security::Security::new).transpose()?;
+        self.history.mark_unsaved();
+        Ok(())
+    }
+
+    /// Übernimmt den Schutz eines anderen Dokuments (z. B. für eine neu geschriebene Fassung).
+    pub fn inherit_security(&mut self, other: &Document) {
+        self.security = other.security.clone();
     }
 
     pub fn bytes(&self) -> &Arc<Vec<u8>> {
@@ -295,7 +358,7 @@ impl Document {
         self.history.is_dirty()
     }
 
-    /// Positionen im /Annots-Array einer Seite, die FolioCraft selbst verwaltet (und
+    /// Positionen im /Annots-Array einer Seite, die PDF Tool selbst verwaltet (und
     /// daher als Overlay zeichnet): Annotationen und Widgets ausfüllbarer Formularfelder.
     /// Der Renderer blendet genau diese aus.
     pub fn managed_annot_indices(&self, page: usize) -> Vec<usize> {
@@ -327,6 +390,15 @@ impl Document {
     /// Stand eines Formularfelds in der Datei (für `save`).
     pub(crate) fn imported_field(&self, id: ObjectId) -> Option<&FormField> {
         self.imported_fields.get(&id)
+    }
+
+    pub(crate) fn saved_properties(&self) -> crate::tags::DocProperties {
+        self.saved_properties.clone()
+    }
+
+    /// Alternativtext eines Elements, wie er zuletzt gespeichert wurde (`None` = nie geändert).
+    pub(crate) fn saved_alt(&self, elem: ObjectId) -> Option<&Option<String>> {
+        self.saved_alts.get(&elem)
     }
 
     /// Wurde der Inhalt dieser Seite seit dem Laden/Speichern geändert?
@@ -380,7 +452,18 @@ impl Document {
     pub fn save_as(&mut self, path: impl AsRef<Path>) -> Result<()> {
         let path = path.as_ref();
         let out = save::incremental(self)?;
-        write_atomically(path, &out.bytes)?;
+        match &self.security {
+            Some(sec) if !sec.can_save() => {
+                return Err(CoreError::Other(
+                    "Das Dokument erlaubt keine Änderungen. Zum Speichern bitte das \
+                     Besitzerpasswort eingeben (Datei → Sicherheit…)."
+                        .into(),
+                ));
+            }
+            // Datei verschlüsselt schreiben; im Speicher bleibt der Klartext.
+            Some(sec) => write_atomically(path, &sec.encrypt(&out.bytes)?)?,
+            None => write_atomically(path, &out.bytes)?,
+        }
         self.after_save(out)?;
         self.path = Some(path.to_path_buf());
         tracing::info!(path = %path.display(), "gespeichert");
@@ -425,6 +508,8 @@ impl Document {
         for pc in self.model.page_content.values_mut() {
             pc.images.clear();
         }
+        self.saved_properties = self.model.properties.clone();
+        self.saved_alts = self.model.alt_texts.clone();
         self.saved_content = self
             .model
             .page_content
@@ -461,7 +546,7 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
         source,
     };
     let mut tmp = path.as_os_str().to_owned();
-    tmp.push(".foliocraft-tmp");
+    tmp.push(".pdftool-tmp");
     let tmp = PathBuf::from(tmp);
     std::fs::write(&tmp, bytes).map_err(io_err)?;
     std::fs::rename(&tmp, path).map_err(|e| {

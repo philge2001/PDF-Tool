@@ -7,14 +7,14 @@
 use crate::app::OpenDocument;
 use crate::forms::FieldFocus;
 use eframe::egui;
-use foliocraft_core::form::{Align, ChoiceOption};
-use foliocraft_core::{Color, FieldKind, FieldValue, FormField, UpdateField};
+use pdftool_core::form::{Align, ChoiceOption};
+use pdftool_core::{Color, FieldKind, FieldValue, FormField, UpdateField};
 
 /// Eingaben, die erst übernommen werden, wenn sie gültig sind (Name, Optionsliste).
 #[derive(Default)]
 pub struct PropInputs {
-    name: Option<(foliocraft_core::FieldId, String)>,
-    options: Option<(foliocraft_core::FieldId, String)>,
+    name: Option<(pdftool_core::FieldId, String)>,
+    options: Option<(pdftool_core::FieldId, String)>,
 }
 
 impl OpenDocument {
