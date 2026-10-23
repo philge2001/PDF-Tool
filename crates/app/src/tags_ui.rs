@@ -194,7 +194,6 @@ impl OpenDocument {
     /// Rechtes Panel "Tags".
     pub fn tags_panel(&mut self, ui: &mut egui::Ui) {
         self.refresh_tags();
-        ui.heading("Tags");
 
         // ----- Dokument: Titel und Sprache -----
         let props = self.doc.properties().clone();

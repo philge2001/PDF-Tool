@@ -25,8 +25,9 @@ const MAX_RECENT: usize = 10;
 pub struct Settings {
     pub recent_files: Vec<PathBuf>,
     pub theme: ThemePreference,
-    pub show_thumbnails: bool,
-    pub show_comments: bool,
+    /// Offenes Panel rechts und ob der Werkzeugbereich links offen ist.
+    pub right_pane: Option<crate::shell::RightPane>,
+    pub tools_panel: bool,
     pub author: String,
     pub stroke_width: f32,
     pub font_size: f32,
@@ -52,8 +53,8 @@ impl Default for Settings {
         Self {
             recent_files: Vec::new(),
             theme: ThemePreference::System,
-            show_thumbnails: true,
-            show_comments: true,
+            right_pane: None,
+            tools_panel: false,
             author: tools.author,
             stroke_width: tools.stroke_width,
             font_size: tools.font_size,

@@ -39,8 +39,6 @@ pub struct OpenDocument {
     pub annot_drag: Option<AnnotDrag>,
     /// Inhalt des Seitenfelds in der Toolbar, während der Nutzer tippt.
     pub page_input: Option<String>,
-    /// Inhalt des Zoomfelds in der Toolbar, während der Nutzer tippt.
-    pub zoom_input: Option<String>,
     /// Formular ausfüllen: Fokus, Aufklappliste.
     pub form: crate::forms::FormUi,
     /// Formular bearbeiten: Auswahl, laufender Zug.
@@ -61,8 +59,15 @@ pub struct PdfToolApp {
     pub(crate) document: Option<OpenDocument>,
     /// Fehlermeldung, die als Dialog angezeigt wird.
     pub(crate) error: Option<String>,
-    pub(crate) show_thumbnails: bool,
-    pub(crate) show_comments: bool,
+    /// Offenes Panel rechts (Kommentare, Miniaturen, …) – `None` = nur die Symbolleiste.
+    pub(crate) right_pane: Option<crate::shell::RightPane>,
+    /// Werkzeugbereich links offen? Und welche Werkzeuggruppe darin (None = "Alle Werkzeuge").
+    pub(crate) tools_panel: bool,
+    pub(crate) tool_group: Option<crate::tools_panel::ToolGroup>,
+    /// Startseite statt Dokument anzeigen (Tab "Startseite").
+    pub(crate) show_home: bool,
+    /// Fenster mit den Tastenkürzeln.
+    pub(crate) show_shortcuts: bool,
     pub(crate) tool: Tool,
     pub(crate) tool_settings: ToolSettings,
     /// Aktion, die auf die Antwort "Änderungen speichern?" wartet.
@@ -85,9 +90,6 @@ pub struct PdfToolApp {
     /// Änderung hochzählt – daran erkennen Dokumente, dass sie neu prüfen müssen.
     pub(crate) trust: pdftool_sign::TrustStore,
     pub(crate) trust_version: u64,
-    pub(crate) show_signatures: bool,
-    /// Panel "Tags" (Barrierefreiheit) statt der Kommentare.
-    pub(crate) show_tags: bool,
     pub(crate) sign_dialog: Option<crate::sign_ui::SignDialog>,
     pub(crate) cert_dialog: Option<crate::sign_ui::CertDialog>,
     /// Nach erfolgreichem Job diese Datei öffnen (z. B. frisch signierte Fassung).
@@ -154,6 +156,7 @@ impl PdfToolApp {
         // egui würde Strg+Plus/Minus sonst für die UI-Vergrößerung nutzen – wir zoomen das Dokument.
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
         install_fonts(&cc.egui_ctx);
+        crate::style::install(&cc.egui_ctx);
 
         // Der Worker weckt die UI auf, wenn ein Bild fertig ist. `Context` ist intern ein
         // `Arc` – das Klonen ist billig und der Klon darf in den Worker-Thread wandern.
@@ -177,8 +180,11 @@ impl PdfToolApp {
             render,
             document: None,
             error: None,
-            show_thumbnails: settings.show_thumbnails,
-            show_comments: settings.show_comments,
+            right_pane: settings.right_pane,
+            tools_panel: settings.tools_panel,
+            tool_group: None,
+            show_home: false,
+            show_shortcuts: false,
             tool: Tool::default(),
             tool_settings: settings.tool_settings(),
             pending: None,
@@ -194,8 +200,6 @@ impl PdfToolApp {
             info: None,
             trust: Default::default(),
             trust_version: 0,
-            show_signatures: false,
-            show_tags: false,
             sign_dialog: None,
             cert_dialog: None,
             open_after_job: None,
@@ -267,6 +271,7 @@ impl PdfToolApp {
             render.open(id, doc.bytes().clone(), hidden_annots(&doc));
         }
         let sizes: Vec<_> = doc.pages().iter().map(|p| p.display_size()).collect();
+        self.show_home = false;
         self.document = Some(OpenDocument {
             thumbs: Thumbnails::new(&sizes),
             texts: TextCache::new(id, sizes.len()),
@@ -290,7 +295,6 @@ impl PdfToolApp {
             viewer: Viewer::new(id, sizes),
             doc,
             page_input: None,
-            zoom_input: None,
         });
     }
 
@@ -334,34 +338,6 @@ impl PdfToolApp {
         }
     }
 
-    fn status_bar(&self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| match &self.document {
-            Some(d) => {
-                let name = d
-                    .doc
-                    .path()
-                    .and_then(|p| p.file_name())
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_default();
-                ui.label(name);
-                ui.separator();
-                ui.label(format!(
-                    "Seite {} / {}",
-                    d.viewer.current_page + 1,
-                    d.doc.page_count()
-                ));
-                if let Some(s) = d.doc.security() {
-                    ui.separator();
-                    ui.label(format!("Geschützt ({})", s.method))
-                        .on_hover_text(format!("Erlaubt: {}", s.permissions.describe()));
-                }
-            }
-            None => {
-                ui.label("Kein Dokument");
-            }
-        });
-    }
-
     fn empty_state(&mut self, ui: &mut egui::Ui) {
         if let Err(e) = &self.render {
             ui.centered_and_justified(|ui| {
@@ -373,6 +349,12 @@ impl PdfToolApp {
         ui.vertical_centered(|ui| {
             ui.add_space(ui.available_height() * 0.25);
             ui.heading("PDF hierher ziehen oder mit Strg+O öffnen");
+            ui.add_space(8.0);
+            if crate::icons::text_button(ui, crate::icons::Icon::Open, "Datei öffnen", true)
+                .clicked()
+            {
+                self.open_dialog(&ctx);
+            }
             if self.settings.recent_files.is_empty() {
                 return;
             }
@@ -415,7 +397,7 @@ impl PdfToolApp {
                         self.take_pending_ocr();
                         if let Some(path) = open {
                             self.open_path(ctx, &path);
-                            self.show_signatures = true;
+                            self.right_pane = Some(crate::shell::RightPane::Signatures);
                         }
                         self.info = Some(msg);
                     }
@@ -483,7 +465,34 @@ impl OpenDocument {
         }
     }
 
-    /// Annotationen einer Seite in ein beliebiges Rechteck zeichnen (auch für Miniaturen).
+    /// Panel "Seitenminiaturen" (rechts): Navigation, Mehrfachauswahl, Kontextmenü, Ziehen.
+    pub fn thumbnails_pane(&mut self, ui: &mut egui::Ui) {
+        // Das Closure leiht nur `self.doc` aus, `show_thumbnails` nur `self.viewer`/`self.thumbs`
+        // – getrennte Felder, daher erlaubt der Borrow-Checker beides gleichzeitig.
+        let doc = &self.doc;
+        let overlay = |painter: &egui::Painter, page: usize, rect: egui::Rect| {
+            let Ok(info) = doc.page(page) else { return };
+            for (f, w) in doc.forms().widgets_on(info.object_id) {
+                if f.kind.is_fillable() && !w.hidden {
+                    let style = crate::form_draw::Style::default();
+                    crate::form_draw::paint(painter, info, rect, f, w, style);
+                }
+            }
+            for a in doc.annotations().on_page(page) {
+                annot_draw::paint(painter, info, rect, a);
+            }
+        };
+        let ids = doc.page_ids();
+        let action = self
+            .viewer
+            .show_thumbnails(ui, &mut self.thumbs, &ids, overlay);
+        match action {
+            Some(ThumbAction::Navigate(page)) => self.viewer.scroll_to_page(page),
+            Some(ThumbAction::Page(a)) => self.apply_page_action(a),
+            None => {}
+        }
+    }
+
     pub fn undo(&mut self) {
         self.annot_drag = None;
         self.content_edit.editing = None;
@@ -538,7 +547,7 @@ impl OpenDocument {
 
 impl PdfToolApp {
     /// Hauptansicht: Seiten zeichnen, Werkzeug-Interaktion, Overlays.
-    fn document_view(&mut self, ui: &mut egui::Ui) {
+    pub(crate) fn document_view(&mut self, ui: &mut egui::Ui) {
         // Vor dem Ausleihen von `self.document` abfragen (beides sind Teile von `self`).
         let placing = self.is_placing_signature();
         let Some(d) = &mut self.document else { return };
@@ -619,7 +628,7 @@ impl PdfToolApp {
         d.paint_annotations(ui, &view);
         d.paint_annotation_selection(ui, &view);
         d.paint_gesture_preview(ui, &view, tool, &self.tool_settings);
-        if self.show_tags {
+        if self.right_pane == Some(crate::shell::RightPane::Tags) {
             d.paint_tags(ui, &view);
         }
         d.paint_search_hits(ui, &view);
@@ -643,8 +652,8 @@ impl PdfToolApp {
 impl eframe::App for PdfToolApp {
     /// Wird von eframe regelmäßig und beim Beenden aufgerufen.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        self.settings.show_thumbnails = self.show_thumbnails;
-        self.settings.show_comments = self.show_comments;
+        self.settings.right_pane = self.right_pane;
+        self.settings.tools_panel = self.tools_panel;
         self.settings.store_tool_settings(&self.tool_settings);
         eframe::set_value(storage, STORAGE_KEY, &self.settings);
     }
@@ -657,12 +666,19 @@ impl eframe::App for PdfToolApp {
         self.handle_shortcuts(&ctx);
         self.update_title(&ctx);
 
-        egui::Panel::top("menu").show(ui, |ui| self.menu_bar(ui));
-        egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
-        if self.document.is_some() {
-            egui::Panel::top("annotation_bar").show(ui, |ui| self.annotation_bar(ui));
-        }
-        egui::Panel::bottom("statusbar").show(ui, |ui| self.status_bar(ui));
+        self.sync_tool_group();
+        let dark = ui.visuals().dark_mode;
+        let bar = |fill| {
+            egui::Frame::NONE
+                .fill(fill)
+                .inner_margin(egui::Margin::symmetric(8, 2))
+                .stroke(egui::Stroke::new(1.0, crate::style::border(dark)))
+        };
+        let panel_fill = ui.visuals().panel_fill;
+        let window_fill = ui.visuals().window_fill;
+        egui::Panel::top("global_bar")
+            .frame(bar(panel_fill))
+            .show(ui, |ui| self.global_bar(ui));
 
         if let Some(d) = &mut self.document {
             if let Ok(render) = &self.render {
@@ -671,102 +687,19 @@ impl eframe::App for PdfToolApp {
             d.validate_selection();
             d.validate_field_selection();
             d.update_signatures(&self.trust, self.trust_version);
-        }
-        if self
-            .document
-            .as_ref()
-            .is_some_and(|d| !d.signatures.reports.is_empty())
-        {
-            egui::Panel::top("signature_banner").show(ui, |ui| self.signature_banner(ui));
-        }
-        if self.show_signatures && self.document.is_some() && !self.tool.is_form_tool() {
-            egui::Panel::right("signatures")
-                .default_size(300.0)
-                .size_range(220.0..=520.0)
-                .show(ui, |ui| self.signatures_panel(ui));
-        }
-        let mut open_autotag = false;
-        if let Some(d) = &mut self.document {
-            if self.tool.is_form_tool() {
-                egui::Panel::right("field_properties")
-                    .default_size(280.0)
-                    .size_range(220.0..=500.0)
-                    .show(ui, |ui| d.field_properties(ui));
-            } else if self.show_tags && !self.show_signatures {
-                egui::Panel::right("tags")
-                    .default_size(320.0)
-                    .size_range(220.0..=560.0)
-                    .show(ui, |ui| d.tags_panel(ui));
-                if std::mem::take(&mut d.tags.request_autotag) {
-                    open_autotag = true;
-                }
-            } else if self.show_comments && !self.show_signatures {
-                egui::Panel::right("comments")
-                    .default_size(280.0)
-                    .size_range(200.0..=500.0)
-                    .show(ui, |ui| d.comments_panel(ui));
-            }
-            if d.search.open {
-                egui::Panel::top("searchbar").show(ui, |ui| d.search_bar(ui));
-                if std::mem::take(&mut d.search.redact_all) {
-                    d.redact_search_hits(&self.tool_settings);
-                }
-            }
             if let Ok(render) = &self.render {
                 d.update_search(render);
             }
-            if self.show_thumbnails {
-                egui::Panel::left("thumbnails")
-                    .default_size(160.0)
-                    .size_range(100.0..=400.0)
-                    .show(ui, |ui| {
-                        // Das Closure leiht nur `d.doc`/`d.editor` aus, `show_thumbnails` nur
-                        // `d.viewer` – getrennte Felder, daher erlaubt der Borrow-Checker beides.
-                        let overlay = |painter: &egui::Painter, page: usize, rect: egui::Rect| {
-                            let Ok(info) = d.doc.page(page) else { return };
-                            for (f, w) in d.doc.forms().widgets_on(info.object_id) {
-                                if f.kind.is_fillable() && !w.hidden {
-                                    let style = crate::form_draw::Style::default();
-                                    crate::form_draw::paint(painter, info, rect, f, w, style);
-                                }
-                            }
-                            for a in d.doc.annotations().on_page(page) {
-                                annot_draw::paint(painter, info, rect, a);
-                            }
-                        };
-                        let ids = d.doc.page_ids();
-                        let action = d.viewer.show_thumbnails(ui, &mut d.thumbs, &ids, overlay);
-                        match action {
-                            Some(ThumbAction::Navigate(page)) => d.viewer.scroll_to_page(page),
-                            Some(ThumbAction::Page(a)) => d.apply_page_action(a),
-                            None => {}
-                        }
-                    });
-            }
         }
-        if open_autotag {
-            self.open_autotag_dialog();
-        }
-        if self.document.is_some() {
-            // Grauer Hintergrund hinter den (weißen) Seiten – im hellen Design sonst unsichtbar.
-            let backdrop = if ui.visuals().dark_mode {
-                ui.visuals().extreme_bg_color
-            } else {
-                egui::Color32::from_gray(190)
-            };
+        if self.document.is_none() || self.show_home {
             egui::CentralPanel::default()
-                .frame(egui::Frame::NONE.fill(backdrop))
-                .show(ui, |ui| self.document_view(ui));
-            if let Some(d) = &mut self.document {
-                d.show_editor(&ctx);
-                if let Ok(render) = &self.render {
-                    d.viewer.flush_requests(render);
-                }
-            }
+                .frame(egui::Frame::NONE.fill(crate::style::canvas(dark)))
+                .show(ui, |ui| self.empty_state(ui));
         } else {
-            egui::CentralPanel::default().show(ui, |ui| self.empty_state(ui));
+            self.document_layout(ui, &ctx, bar(window_fill));
         }
         self.settings_window(&ctx);
+        self.shortcuts_window(&ctx);
         self.insert_dialog_ui(&ctx);
         self.merge_dialog_ui(&ctx);
         self.extract_dialog_ui(&ctx);

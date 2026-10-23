@@ -76,7 +76,6 @@ impl Tool {
         }
     }
 
-    pub const NAVIGATION: [Tool; 3] = [Tool::TextSelect, Tool::Select, Tool::Hand];
     pub const ANNOTATION: [Tool; 9] = [
         Tool::Highlight,
         Tool::Underline,

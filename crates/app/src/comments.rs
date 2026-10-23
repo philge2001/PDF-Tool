@@ -45,13 +45,9 @@ impl OpenDocument {
                 .then(ra.x0.total_cmp(&rb.x0))
         });
 
-        ui.horizontal(|ui| {
-            ui.heading("Kommentare");
-            ui.label(format!("({})", items.len()));
-        });
-        ui.separator();
+        ui.label(egui::RichText::new(format!("{} Kommentar(e)", items.len())).weak());
         if items.is_empty() {
-            ui.label("Noch keine Kommentare. Werkzeuge findest du in der Leiste \"Kommentieren\".");
+            ui.label("Noch keine Kommentare. Werkzeuge findest du links unter „Kommentieren“.");
             return;
         }
 

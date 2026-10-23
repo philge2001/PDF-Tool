@@ -7,6 +7,10 @@ pub mod transform;
 
 use eframe::egui::{self, Color32, Pos2, Rect, ScrollArea, Sense, Vec2, pos2, vec2};
 use layout::{GAP, Layout};
+
+/// Seitlicher Rand bei "Seitenbreite"/"Ganze Seite": Platz für die schwebenden Leisten
+/// (Schnellwerkzeuge links, Seitennavigation rechts), damit sie die Seite nicht verdecken.
+pub const FIT_MARGIN: f32 = 64.0;
 use pdftool_render::{
     DocId, Priority, RenderKey, RenderRequest, RenderService, needs_tiles, page_pixel_size,
     tile_grid, tile_rect,
@@ -289,13 +293,13 @@ impl Viewer {
         if view.x <= 0.0 || self.layout.page_count() == 0 {
             return;
         }
-        let fit_w = (view.x - 2.0 * GAP) / self.layout.max_width_pt();
+        let fit_w = (view.x - 2.0 * FIT_MARGIN) / self.layout.max_width_pt();
         let target = match self.zoom_mode {
             ZoomMode::Custom => return,
             ZoomMode::FitWidth => fit_w,
             ZoomMode::FitPage => {
                 let (w, h) = self.layout.page_size_pt(self.current_page);
-                ((view.x - 2.0 * GAP) / w).min((view.y - 2.0 * GAP) / h)
+                ((view.x - 2.0 * FIT_MARGIN) / w).min((view.y - 2.0 * GAP) / h)
             }
         };
         // Kleine Schwankungen ignorieren (z. B. ein- und ausgeblendete Scrollbalken).
@@ -539,6 +543,6 @@ mod tests {
         let mut v = viewer_with_frame(1);
         v.zoom_mode = ZoomMode::FitWidth;
         v.apply_fit_zoom();
-        assert!((v.zoom() - (1000.0 - 2.0 * GAP) / 600.0).abs() < 1e-4);
+        assert!((v.zoom() - (1000.0 - 2.0 * FIT_MARGIN) / 600.0).abs() < 1e-4);
     }
 }

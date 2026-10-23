@@ -173,8 +173,7 @@ impl PdfToolApp {
         match fix {
             Some(Fix::AutoTag) => self.open_autotag_dialog(),
             Some(Fix::TagsPanel) => {
-                self.show_tags = true;
-                self.show_signatures = false;
+                self.right_pane = Some(crate::shell::RightPane::Tags);
             }
             #[cfg(feature = "ocr")]
             Some(Fix::Ocr) => self.open_ocr_dialog(),
@@ -284,7 +283,6 @@ impl PdfToolApp {
         self.pending_doc = Some((slot, d.doc.path().map(PathBuf::from)));
         self.job = Some(job);
         // Ergebnis gleich im Panel zeigen.
-        self.show_tags = true;
-        self.show_signatures = false;
+        self.right_pane = Some(crate::shell::RightPane::Tags);
     }
 }

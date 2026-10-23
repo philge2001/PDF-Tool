@@ -1,16 +1,18 @@
-//! Menüleiste: Datei, Bearbeiten, Ansicht.
+//! Inhalt des Knopfs „Menü“ (Datei-Befehle, Untermenüs Bearbeiten, Seiten, … Ansicht).
 
 use crate::app::PdfToolApp;
 use crate::pages::PageAction;
+use crate::shell::RightPane;
 use crate::tools::Tool;
 use crate::viewer::ZoomMode;
 use eframe::egui::{self, Button, ThemePreference};
 
 impl PdfToolApp {
-    pub(crate) fn menu_bar(&mut self, ui: &mut egui::Ui) {
-        let ctx = ui.ctx().clone();
-        egui::MenuBar::new().ui(ui, |ui| {
-            ui.menu_button("Datei", |ui| {
+    /// Inhalt des Knopfs "Menü": Datei-Befehle direkt, der Rest als Untermenüs.
+    pub(crate) fn main_menu(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        let ctx = ctx.clone();
+        {
+            {
                 if ui
                     .add(Button::new("Öffnen…").shortcut_text("Strg+O"))
                     .clicked()
@@ -110,7 +112,7 @@ impl PdfToolApp {
                 if ui.button("Beenden").clicked() {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
-            });
+            }
 
             ui.menu_button("Bearbeiten", |ui| {
                 let Some(d) = &mut self.document else {
@@ -286,7 +288,9 @@ impl PdfToolApp {
                     ui.close();
                 }
                 ui.separator();
-                ui.checkbox(&mut self.show_signatures, "Signatur-Panel");
+                if ui.button("Signaturen anzeigen").clicked() {
+                    self.right_pane = Some(RightPane::Signatures);
+                }
             });
             ui.menu_button("Barrierefreiheit", |ui| {
                 let has_doc = self.document.is_some();
@@ -302,13 +306,16 @@ impl PdfToolApp {
                     ui.close();
                 }
                 ui.separator();
-                ui.checkbox(&mut self.show_tags, "Panel „Tags“");
+                if ui.button("Panel „Tags“").clicked() {
+                    self.right_pane = Some(RightPane::Tags);
+                }
             });
             ui.menu_button("Ansicht", |ui| {
-                ui.checkbox(&mut self.show_thumbnails, "Seitenleiste");
-                ui.checkbox(&mut self.show_comments, "Kommentare");
-                ui.checkbox(&mut self.show_signatures, "Signaturen");
-                ui.checkbox(&mut self.show_tags, "Tags (Barrierefreiheit)");
+                ui.label("Panel rechts");
+                ui.radio_value(&mut self.right_pane, None, "Keins");
+                for pane in RightPane::ALL {
+                    ui.radio_value(&mut self.right_pane, Some(pane), pane.label());
+                }
                 ui.separator();
                 ui.label("Design");
                 self.theme_radios(ui);
@@ -334,7 +341,7 @@ impl PdfToolApp {
                     }
                 }
             });
-        });
+        }
     }
 
     fn theme_radios(&mut self, ui: &mut egui::Ui) {

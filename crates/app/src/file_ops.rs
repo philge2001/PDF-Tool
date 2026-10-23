@@ -8,6 +8,8 @@ use std::path::PathBuf;
 /// Was nach der Rückfrage "Änderungen speichern?" passieren soll.
 pub enum PendingAction {
     Close,
+    /// Nur das Dokument schließen (Tab), nicht das Fenster.
+    CloseDocument,
     Open(PathBuf),
     /// Ein bereits geladenes Dokument übernehmen (z. B. Ergebnis von "Zusammenführen").
     Adopt(Box<pdftool_core::Document>),
@@ -93,6 +95,22 @@ impl PdfToolApp {
         }
     }
 
+    /// Schließt das Dokument (Kreuz am Tab) – mit Rückfrage bei ungespeicherten Änderungen.
+    pub(crate) fn request_close_document(&mut self) {
+        if self.document.as_ref().is_some_and(|d| d.doc.is_dirty()) {
+            self.pending = Some(PendingAction::CloseDocument);
+        } else {
+            self.close_document();
+        }
+    }
+
+    pub(crate) fn close_document(&mut self) {
+        self.document = None;
+        self.show_home = true;
+        self.tool = crate::tools::Tool::TextSelect;
+        self.tool_group = None;
+    }
+
     /// Fängt das Schließen des Fensters ab, solange es ungespeicherte Änderungen gibt.
     pub(crate) fn handle_close_request(&mut self, ctx: &egui::Context) {
         if !ctx.input(|i| i.viewport().close_requested()) {
@@ -155,6 +173,7 @@ impl PdfToolApp {
                 self.allow_close = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
+            Some(PendingAction::CloseDocument) => self.close_document(),
             Some(PendingAction::Open(path)) => self.open_path(ctx, &path),
             Some(PendingAction::Adopt(doc)) => self.adopt_document(*doc),
             None => {}

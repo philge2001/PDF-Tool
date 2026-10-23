@@ -110,13 +110,14 @@ impl PdfToolApp {
         ui.horizontal(|ui| {
             status_dot(ui, status_color(worst));
             ui.label(text);
-            let label = if self.show_signatures {
+            let open = self.right_pane == Some(crate::shell::RightPane::Signatures);
+            let label = if open {
                 "Signaturen ausblenden"
             } else {
                 "Signaturen anzeigen"
             };
             if ui.button(label).clicked() {
-                self.show_signatures = !self.show_signatures;
+                self.toggle_pane(crate::shell::RightPane::Signatures);
             }
         });
     }
@@ -124,7 +125,6 @@ impl PdfToolApp {
     /// Rechtes Panel mit allen Signaturen.
     pub(crate) fn signatures_panel(&mut self, ui: &mut egui::Ui) {
         let Some(d) = &self.document else { return };
-        ui.heading("Signaturen");
         if d.signatures.reports.is_empty() {
             ui.label("Dieses Dokument enthält keine Signaturen.");
             return;
