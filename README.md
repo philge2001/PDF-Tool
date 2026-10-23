@@ -3,7 +3,7 @@
 Plattformübergreifender PDF-Editor (Windows, macOS, Linux) in Rust.
 Lizenz: MIT OR Apache-2.0. Sicherheitslücken bitte vertraulich melden, siehe [SECURITY.md](SECURITY.md).
 
-**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare), Phase 4 (Signaturen), Phase 5 (Schwärzen & Bereinigen), Phase 6 (Text und Bilder bearbeiten), Phase 7 (Texterkennung), Phase 8 (Export, Vergleich, Komprimierung, PDF/A), Phase 9 (Sicherheit & Barrierefreiheit) und Phase 10 (neues Oberflächen-Layout) abgeschlossen.
+**Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare), Phase 4 (Signaturen), Phase 5 (Schwärzen & Bereinigen), Phase 6 (Text und Bilder bearbeiten), Phase 7 (Texterkennung), Phase 8 (Export, Vergleich, Komprimierung, PDF/A), Phase 9 (Sicherheit & Barrierefreiheit), Phase 10 (neues Oberflächen-Layout) und Phase 11 (Textformat, Systemschriften, Bilder) abgeschlossen.
 
 ## Funktionen (Phase 1)
 
@@ -64,6 +64,19 @@ Lizenz: MIT OR Apache-2.0. Sicherheitslücken bitte vertraulich melden, siehe [S
 - „Dokument bereinigen“: Metadaten, JavaScript, eingebettete Dateien, ausgeblendete Ebenen, Kommentare,
   Formulardaten – mit Anzeige, was gefunden wurde
 - Warnung, wenn signierte Dokumente betroffen sind
+
+## Funktionen (Phase 11 – Textformat, Systemschriften, Bilder)
+
+- **Systemschriften:** Zeichen, die in der Originalschrift fehlen, kommen aus einer passenden installierten
+  Schrift (gleiche Familie und gleicher Schnitt, z. B. Arial → Arial bzw. Liberation Sans), erst danach aus Noto Sans.
+  Eingebettet wird nur als Teilmenge und nur, wenn die Lizenz der Schrift das erlaubt (OS/2 fsType)
+- **Textformat beim Bearbeiten und bei neuem Text:** markierten Text auf Schriftart, Größe, **Fett**, *Kursiv*,
+  Unterstrichen, Durchgestrichen und Farbe setzen (Formatleiste über dem Editor); „Ganzen Absatz formatieren“
+  im Panel „Bearbeiten“. Fehlt ein fetter/kursiver Schnitt, wird er nachgeahmt
+- **Bilder mit dem Auswahlwerkzeug (Pfeil):** anklicken, ziehen, am Anfasser skalieren; Rechtsklick =
+  Kopieren, Speichern unter (PNG/JPEG), Ersetzen, Löschen; Strg+C kopiert, Entf löscht, Strg+V fügt ein Bild
+  aus der Zwischenablage in die Mitte des sichtbaren Bereichs ein
+- Bilder in Formular-XObjects (z. B. aus Office-Exporten) werden jetzt als Bilder erkannt
 
 ## Oberfläche (Phase 10)
 
@@ -128,9 +141,10 @@ Lizenz: MIT OR Apache-2.0. Sicherheitslücken bitte vertraulich melden, siehe [S
 |---|---|
 | Öffnen / Speichern / Speichern unter | Strg+O / Strg+S / Strg+Umschalt+S |
 | Suchen (weiter / zurück / schließen) | Strg+F (Enter, F3 / Umschalt+Enter, Umschalt+F3 / Esc) |
-| Kopieren | Strg+C |
+| Kopieren (Text oder ausgewähltes Bild) | Strg+C |
 | Rückgängig / Wiederholen | Strg+Z / Strg+Y oder Strg+Umschalt+Z |
-| Annotation löschen | Entf |
+| Annotation / Bild löschen | Entf |
+| Bild einfügen (aus der Zwischenablage) | Strg+V |
 | Zoomen | Strg+Mausrad, Strg+Plus/Minus |
 | 100 % / Seitenbreite / Ganze Seite | Strg+1 / Strg+2 / Strg+0 |
 | Seite vor/zurück, Anfang/Ende | Bild↓/Bild↑, Pos1/Ende |
@@ -233,6 +247,8 @@ cargo run -p pdftool-core --example text_edit_demo -- in.pdf out.pdf "¶Lorem|72
 cargo run -p pdftool-core --example security_demo -- schützen in.pdf out.pdf benutzer besitzer [nur-lesen]  # verschlüsseln
 cargo run -p pdftool-core --example security_demo -- öffnen datei.pdf [passwort]                # Schutz anzeigen
 cargo run -p pdftool-core --example autotag_demo -- in.pdf [out.pdf] [de-DE] [Titel]          # prüfen / automatisch taggen
+cargo run -p pdftool-core --example font_list -- Arial,Bold Calibri                             # Systemschriften und Zuordnung
+cargo run -p pdftool-core --example rich_text_demo -- in.pdf out.pdf [Familie]                  # Absatz formatiert neu setzen
 ```
 
 ## Projektstruktur

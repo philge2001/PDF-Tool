@@ -55,6 +55,11 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - [x] 10.3 Startseite, Lesezeichen, Menü-Knopf
 - [x] 10.4 Mehrere Dokumente als Tabs + Abschluss
 
+## Meilensteine Phase 11 (Textformat, Systemschriften, Bilder)
+- [x] 11.1 Fehlende Zeichen aus Systemschriften (Suche, Lizenzprüfung, Teilmenge)
+- [x] 11.2 Textformat bei Auswahl (Schrift, Größe, Fett, Kursiv, Unter-/Durchgestrichen, Farbe)
+- [x] 11.3 Bilder mit dem Auswahlwerkzeug, Zwischenablage, Bilder in Formular-XObjects + Abschluss
+
 ## Meilensteine Phase 9 (Sicherheit & Barrierefreiheit)
 - [x] 9.1 Passwortgeschützte PDFs öffnen
 - [x] 9.2 Schutz setzen/entfernen (AES-256)
@@ -164,6 +169,13 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   DocMDP-Berechtigungen werden angezeigt, aber Änderungen danach nicht darauf geprüft. Digitale IDs nur als
   PKCS#12-Datei (kein Windows-Zertifikatspeicher, keine Smartcards). Vertrauen nur über selbst
   hinterlegte Zertifikate (keine eingebaute Liste von Stammzertifikaten).
+- Systemschriften: nur TrueType mit glyf-Tabelle (keine CFF/OpenType-PS-Schriften), nur wenn fsType Einbetten und
+  Teilmengen erlaubt. Fehlender Fett-/Kursivschnitt wird nachgeahmt (Tr 2 mit Kontur, Schrägstellung 0,21).
+  Die Editor-Vorschau zeigt Schriftarten nicht originalgetreu (egui-Schrift, nur fett/kursiv/Linien angedeutet).
+  Formatierter Text wird stückweise mit absoluten Positionen (Tm) geschrieben; Unter-/Durchstreichung als Rechtecke.
+- Bilder: Formular-XObjects zählen nur als Bild, wenn sie Bilder und keinen Text enthalten (dann wird das ganze
+  XObject verschoben). Kopieren/Speichern rendert das Bild über PDFium (Pixelauflösung, max. 25 MP).
+  Eingefügte Bilder aus der Zwischenablage werden als PNG eingebettet (96 dpi). Die Hand bleibt reines Verschieben der Ansicht.
 - Freitext nutzt die eingebettete Noto Sans (Latein, Kyrillisch, Griechisch); CJK fehlt der Schrift.
   Formularfelder und sichtbare Signaturen nutzen weiterhin Helvetica (WinAnsi).
 
@@ -384,10 +396,20 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - `app::tags_ui` – Panel „Tags“ (`TagState`: Baum gecacht nach Bytes/Seiten/Alt-Texten, markierte Inhalte je Seite
   nach Stempel), Overlay `paint_tags` (Auswahl, nummerierte Lesereihenfolge)
 - `app::a11y_ui` – Menü „Barrierefreiheit“: Prüfbericht-Fenster, Dialog „Automatisch taggen“ (Job, `pending_doc`)
+- `core::embedded_font::FontData` – beliebige TrueType-Schrift (statisch oder geladen) für `SubsetFont::with_font`;
+  `embeddable` prüft glyf und fsType
+- `core::system_fonts` – Systemschriften suchen (nur name/OS2 lesen), `find_style`, `find_for_base_font` (Aliase wie
+  Arial → Liberation Sans, Calibri → Carlito), `load` (gecacht)
+- `core::rich_text` – `TextStyle`/`StyledRun`/`FontRef {Original, Family, Noto}`, `Resolver` (je Zeichen: Original →
+  Systemschrift gleicher Familie → Noto), `layout_ops` (Umbruch, Blocksatz, Linien); `core::paragraph::{paragraph_runs,
+  set_paragraph_rich, add_rich_text}`
+- `app::rich_edit` – `RichEdit` (Text + Stil je Zeichen), `format_bar` (Schrift, Größe, F/K/U/S, Farbe)
+- `core::image_edit` – zusätzlich `PageImage::{ctm, in_form, pixels}`, `image_snapshot` (Ein-Bild-PDF zum Kopieren)
+- `app::image_clip` – Rechtsklick-Menü für Bilder, Strg+C/Strg+V/Entf, `paint_selected_image` (Auswahlwerkzeug)
 - `app::toolbar` (`pick_image`), `app::shortcuts` – Tastenkürzel (`impl PdfToolApp`-Block)
 
 ## Tastenkürzel
-Strg+O öffnen · Strg+S speichern · Strg+Umschalt+S speichern unter · Strg+Z/Strg+Y (oder Strg+Umschalt+Z) Rückgängig/Wiederholen · Entf löscht Auswahl · Strg+C kopiert markierten Text · Esc hebt Auswahl auf · Strg+F suchen (Enter/F3 weiter, Umschalt+Enter/Umschalt+F3 zurück, Esc schließen) · Strg+Plus/Minus zoomen · Strg+1 = 100 % · Strg+2 = Seitenbreite · Strg+0 = Ganze Seite ·
+Strg+O öffnen · Strg+S speichern · Strg+Umschalt+S speichern unter · Strg+Z/Strg+Y (oder Strg+Umschalt+Z) Rückgängig/Wiederholen · Entf löscht Auswahl · Strg+C kopiert markierten Text bzw. das ausgewählte Bild · Strg+V fügt ein Bild ein · Esc hebt Auswahl auf · Strg+F suchen (Enter/F3 weiter, Umschalt+Enter/Umschalt+F3 zurück, Esc schließen) · Strg+Plus/Minus zoomen · Strg+1 = 100 % · Strg+2 = Seitenbreite · Strg+0 = Ganze Seite ·
 Formular: Tab/Umschalt+Tab nächstes/voriges Feld · Leertaste schaltet Kästchen/Optionsfeld · Esc verlässt das Feld ·
 Strg+Mausrad zoomt um den Mauszeiger · Bild↑/↓ Seite · Pos1/Ende · Pfeiltasten scrollen
 
@@ -419,4 +441,6 @@ Platz: `target/` wächst schnell (> 25 GB) – im Container mit `CARGO_INCREMENT
 `cargo run -p pdftool-ocr --example ocr_demo -- bild.pgm [deu+eng] [dpi]` erkennt Text in einem 8-Bit-PGM.
 `PDFTOOL_PDFIUM_PATH=… cargo run -p pdftool-render --example offscreen_pgm -- datei.pdf out.pgm 4.1667` rendert
 Seite 1 offscreen (300 dpi), `… --example text_boxes -- datei.pdf [Zeichen]` zeigt PDFiums Zeichen-Rechtecke.
+`cargo run -p pdftool-core --example font_list -- [Schriftname …]` zeigt Systemschriften und Zuordnung,
+`… --example rich_text_demo -- in.pdf out.pdf [Familie]` setzt einen Absatz formatiert neu (Gegenprobe: `pdffonts`).
 `cargo run -p pdftool-core --example form_fill -- in.pdf [out.pdf name=Wert …]` listet/füllt Formularfelder. Screenshots über Xvfb + xdotool + ImageMagick `import`.
