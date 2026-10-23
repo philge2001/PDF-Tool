@@ -180,6 +180,17 @@ impl Viewer {
         self.current_page = page;
     }
 
+    /// Scrollt so, dass die Höhe `unit_y` (0 = oberer Seitenrand, 1 = unterer) der Seite oben im
+    /// Fenster steht – für Lesezeichen und Links.
+    pub fn scroll_to_page_at(&mut self, page: usize, unit_y: f32) {
+        let page = page.min(self.layout.page_count().saturating_sub(1));
+        let (_, h) = self.layout.page_size_pt(page);
+        let x = self.scroll_to.map_or(self.last_viewport.min.x, |v| v.x);
+        let y = self.layout.page_top(page, self.zoom) + unit_y.clamp(0.0, 1.0) * h * self.zoom;
+        self.scroll_to = Some(vec2(x, (y - GAP).max(0.0)));
+        self.current_page = page;
+    }
+
     /// Scrollt so, dass `unit_rect` sichtbar ist – z. B. für Suchtreffer.
     /// `unit_rect` ist in normierten Seitenkoordinaten (0..1, oben links), siehe `transform`.
     pub fn reveal(&mut self, page: usize, unit_rect: Rect) {

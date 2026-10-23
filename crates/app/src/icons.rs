@@ -23,6 +23,7 @@ pub enum Icon {
     Comment,
     Note,
     Thumbnails,
+    Bookmark,
     Signature,
     Accessibility,
     Cursor,
@@ -203,6 +204,15 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
             rect_r(13.0, 3.5, 20.0, 11.0, 1.0);
             rect_r(4.0, 13.0, 11.0, 20.5, 1.0);
             rect_r(13.0, 13.0, 20.0, 20.5, 1.0);
+        }
+        Icon::Bookmark => {
+            closed(&[
+                (6.5, 3.5),
+                (17.5, 3.5),
+                (17.5, 20.5),
+                (12.0, 16.0),
+                (6.5, 20.5),
+            ]);
         }
         Icon::Signature => {
             let wave: Vec<(f32, f32)> = (0..=16)

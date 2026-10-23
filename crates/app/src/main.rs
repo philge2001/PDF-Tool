@@ -3,6 +3,7 @@
 mod a11y_ui;
 mod annot_draw;
 mod app;
+mod bookmarks;
 mod comments;
 mod compare;
 mod compress_ui;
@@ -13,6 +14,7 @@ mod form_draw;
 mod form_edit;
 mod form_props;
 mod forms;
+mod home;
 mod icons;
 mod image_tool;
 mod jobs;

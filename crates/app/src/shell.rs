@@ -23,14 +23,16 @@ use serde::{Deserialize, Serialize};
 pub enum RightPane {
     Comments,
     Thumbnails,
+    Bookmarks,
     Signatures,
     Tags,
 }
 
 impl RightPane {
-    pub const ALL: [RightPane; 4] = [
+    pub const ALL: [RightPane; 5] = [
         RightPane::Comments,
         RightPane::Thumbnails,
+        RightPane::Bookmarks,
         RightPane::Signatures,
         RightPane::Tags,
     ];
@@ -39,6 +41,7 @@ impl RightPane {
         match self {
             RightPane::Comments => Icon::Comment,
             RightPane::Thumbnails => Icon::Thumbnails,
+            RightPane::Bookmarks => Icon::Bookmark,
             RightPane::Signatures => Icon::Signature,
             RightPane::Tags => Icon::Accessibility,
         }
@@ -48,6 +51,7 @@ impl RightPane {
         match self {
             RightPane::Comments => "Kommentare",
             RightPane::Thumbnails => "Seitenminiaturen",
+            RightPane::Bookmarks => "Lesezeichen",
             RightPane::Signatures => "Signaturen",
             RightPane::Tags => "Tags (Barrierefreiheit)",
         }
@@ -495,6 +499,11 @@ impl PdfToolApp {
                         RightPane::Thumbnails => {
                             if let Some(d) = &mut self.document {
                                 d.thumbnails_pane(ui);
+                            }
+                        }
+                        RightPane::Bookmarks => {
+                            if let Some(d) = &mut self.document {
+                                d.bookmarks_pane(ui);
                             }
                         }
                     }

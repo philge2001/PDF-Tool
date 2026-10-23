@@ -1062,6 +1062,81 @@ fn scan(path: &Path) {
     b.finish(path);
 }
 
+/// Drei Seiten mit Lesezeichen: verschachtelt, direkte Ziele (/Dest), Aktion /GoTo, benanntes
+/// Ziel über den /Names-Baum, Farbe/Fettdruck und ein Weblink ohne Seite.
+fn bookmarks(path: &Path) {
+    let mut b = Builder::new();
+    let p1 = b.page(
+        A4,
+        0,
+        &[
+            (72.0, 760.0, 20.0, "Kapitel 1"),
+            (72.0, 500.0, 14.0, "Abschnitt 1.1"),
+        ],
+    );
+    let p2 = b.page(A4, 0, &[(72.0, 760.0, 20.0, "Kapitel 2")]);
+    let p3 = b.page(A4, 0, &[(72.0, 760.0, 20.0, "Anhang")]);
+    let doc = &mut b.doc;
+    let root = doc.new_object_id();
+    let k1 = doc.new_object_id();
+    let s11 = doc.new_object_id();
+    let k2 = doc.new_object_id();
+    let anh = doc.new_object_id();
+    let ext = doc.new_object_id();
+    let xyz = |page: ObjectId, left: Object, top: Object| -> Object {
+        vec![page.into(), "XYZ".into(), left, top, Object::Null].into()
+    };
+    doc.objects.insert(
+        k1,
+        Object::Dictionary(dictionary! {
+            "Title" => winansi("Kapitel 1"), "Parent" => root, "Next" => k2,
+            "First" => s11, "Last" => s11, "Count" => 1,
+            "Dest" => xyz(p1, 0.into(), 800.into()),
+        }),
+    );
+    doc.objects.insert(
+        s11,
+        Object::Dictionary(dictionary! {
+            "Title" => winansi("Abschnitt 1.1"), "Parent" => k1,
+            "A" => dictionary! { "S" => "GoTo", "D" => xyz(p1, 72.into(), 520.into()) },
+        }),
+    );
+    doc.objects.insert(
+        k2,
+        Object::Dictionary(dictionary! {
+            "Title" => winansi("Kapitel 2"), "Parent" => root, "Prev" => k1, "Next" => anh,
+            "Dest" => Object::string_literal("kap2"),
+        }),
+    );
+    doc.objects.insert(
+        anh,
+        Object::Dictionary(dictionary! {
+            "Title" => winansi("Anhang"), "Parent" => root, "Prev" => k2, "Next" => ext,
+            "Dest" => vec![p3.into(), "FitH".into(), 700.into()],
+            "C" => vec![0.8.into(), 0.into(), 0.into()], "F" => 2,
+        }),
+    );
+    doc.objects.insert(ext, Object::Dictionary(dictionary! {
+        "Title" => winansi("Projektseite"), "Parent" => root, "Prev" => anh,
+        "A" => dictionary! { "S" => "URI", "URI" => Object::string_literal("https://example.org") },
+    }));
+    doc.objects.insert(
+        root,
+        Object::Dictionary(dictionary! {
+            "Type" => "Outlines", "First" => k1, "Last" => ext, "Count" => 5,
+        }),
+    );
+    b.catalog_extra.set("Outlines", root);
+    b.catalog_extra.set("PageMode", "UseOutlines");
+    b.catalog_extra.set(
+        "Names",
+        dictionary! { "Dests" => dictionary! {
+            "Names" => vec![Object::string_literal("kap2"), vec![p2.into(), "Fit".into()].into()],
+        } },
+    );
+    b.finish(path);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) == Some("big") {
@@ -1088,4 +1163,5 @@ fn main() {
     scan(&dir.join("scan.pdf"));
     photo(&dir.join("photo.pdf"));
     tagged(&dir.join("tagged.pdf"));
+    bookmarks(&dir.join("bookmarks.pdf"));
 }

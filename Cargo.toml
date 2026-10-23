@@ -44,6 +44,8 @@ pdfium-render = { version = "0.9.4", default-features = false, features = ["pdfi
 # glow (OpenGL) statt wgpu: schnellerer Build, weniger Abhängigkeiten, reicht für 2D.
 eframe = { version = "0.37", default-features = false, features = [
     "accesskit", "clipboard", "default_fonts", "glow", "persistence", "wayland", "x11",
+    # Weblinks (z. B. aus Lesezeichen) im Standardbrowser öffnen (Crate webbrowser, MIT/Apache).
+    "links",
 ] }
 rfd = "0.17"
 # HTTP für Zeitstempeldienste (RFC 3161); TLS über rustls, damit auch https-Dienste gehen.

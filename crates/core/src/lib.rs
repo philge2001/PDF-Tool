@@ -22,6 +22,7 @@ pub mod geometry;
 pub mod image_codec;
 pub mod image_edit;
 pub mod ocr_layer;
+pub mod outline;
 pub mod page_export;
 pub mod page_import;
 pub mod page_ops;

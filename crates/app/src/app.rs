@@ -51,6 +51,8 @@ pub struct OpenDocument {
     pub content_edit: crate::content_edit::ContentEdit,
     /// Panel "Tags": Strukturbaum, Auswahl, Eingaben.
     pub tags: crate::tags_ui::TagState,
+    /// Panel "Lesezeichen".
+    pub bookmarks: crate::bookmarks::BookmarkState,
 }
 
 pub struct PdfToolApp {
@@ -68,6 +70,8 @@ pub struct PdfToolApp {
     pub(crate) show_home: bool,
     /// Fenster mit den Tastenkürzeln.
     pub(crate) show_shortcuts: bool,
+    /// Werkzeug, das nach dem Öffnen einer Datei starten soll (Kachel auf der Startseite).
+    pub(crate) pending_group: Option<crate::tools_panel::ToolGroup>,
     pub(crate) tool: Tool,
     pub(crate) tool_settings: ToolSettings,
     /// Aktion, die auf die Antwort "Änderungen speichern?" wartet.
@@ -185,6 +189,7 @@ impl PdfToolApp {
             tool_group: None,
             show_home: false,
             show_shortcuts: false,
+            pending_group: None,
             tool: Tool::default(),
             tool_settings: settings.tool_settings(),
             pending: None,
@@ -272,6 +277,14 @@ impl PdfToolApp {
         }
         let sizes: Vec<_> = doc.pages().iter().map(|p| p.display_size()).collect();
         self.show_home = false;
+        // Wunsch der Datei, welches Panel beim Öffnen zu sehen ist (/PageMode).
+        match doc.page_mode().as_str() {
+            "UseOutlines" if doc.has_outline() => {
+                self.right_pane = Some(crate::shell::RightPane::Bookmarks);
+            }
+            "UseThumbs" => self.right_pane = Some(crate::shell::RightPane::Thumbnails),
+            _ => {}
+        }
         self.document = Some(OpenDocument {
             thumbs: Thumbnails::new(&sizes),
             texts: TextCache::new(id, sizes.len()),
@@ -289,6 +302,7 @@ impl PdfToolApp {
             signatures: Default::default(),
             content_edit: Default::default(),
             tags: Default::default(),
+            bookmarks: Default::default(),
             editor: None,
             selected: None,
             annot_drag: None,
@@ -336,48 +350,6 @@ impl PdfToolApp {
         if let Some(path) = dropped {
             self.request_open(ctx, path);
         }
-    }
-
-    fn empty_state(&mut self, ui: &mut egui::Ui) {
-        if let Err(e) = &self.render {
-            ui.centered_and_justified(|ui| {
-                ui.label(egui::RichText::new(e).color(ui.visuals().error_fg_color))
-            });
-            return;
-        }
-        let ctx = ui.ctx().clone();
-        ui.vertical_centered(|ui| {
-            ui.add_space(ui.available_height() * 0.25);
-            ui.heading("PDF hierher ziehen oder mit Strg+O öffnen");
-            ui.add_space(8.0);
-            if crate::icons::text_button(ui, crate::icons::Icon::Open, "Datei öffnen", true)
-                .clicked()
-            {
-                self.open_dialog(&ctx);
-            }
-            if self.settings.recent_files.is_empty() {
-                return;
-            }
-            ui.add_space(24.0);
-            ui.label(egui::RichText::new("Zuletzt geöffnet").strong());
-            let mut open = None;
-            for path in &self.settings.recent_files {
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy())
-                    .unwrap_or_default();
-                if ui
-                    .link(name)
-                    .on_hover_text(path.display().to_string())
-                    .clicked()
-                {
-                    open = Some(path.clone());
-                }
-            }
-            if let Some(path) = open {
-                self.request_open(&ctx, path);
-            }
-        });
     }
 
     /// Fortschritt des laufenden Jobs; nach dem Ende Erfolgs- bzw. Fehlermeldung.
@@ -691,10 +663,16 @@ impl eframe::App for PdfToolApp {
                 d.update_search(render);
             }
         }
+        if self.document.is_some()
+            && !self.show_home
+            && let Some(g) = self.pending_group.take()
+        {
+            self.open_tool_group(&ctx, g);
+        }
         if self.document.is_none() || self.show_home {
             egui::CentralPanel::default()
                 .frame(egui::Frame::NONE.fill(crate::style::canvas(dark)))
-                .show(ui, |ui| self.empty_state(ui));
+                .show(ui, |ui| self.home_page(ui));
         } else {
             self.document_layout(ui, &ctx, bar(window_fill));
         }

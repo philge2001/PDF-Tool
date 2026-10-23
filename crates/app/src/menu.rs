@@ -109,9 +109,6 @@ impl PdfToolApp {
                     self.show_settings_window = true;
                 }
                 ui.separator();
-                if ui.button("Beenden").clicked() {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
             }
 
             ui.menu_button("Bearbeiten", |ui| {
@@ -341,6 +338,10 @@ impl PdfToolApp {
                     }
                 }
             });
+        }
+        ui.separator();
+        if ui.button("Beenden").clicked() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
 
