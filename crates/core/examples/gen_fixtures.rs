@@ -891,6 +891,91 @@ impl TextRaster {
     }
 }
 
+/// Getaggte Seite (Tagged PDF): Überschrift, zwei Absätze, Bild mit und ohne Alternativtext,
+/// Rahmen als Artefakt; Sprache, Titel, MarkInfo, Strukturbaum mit ParentTree.
+fn tagged(path: &Path) {
+    let mut b = Builder::new();
+    let font = b.font_id;
+    let pixels: Vec<u8> = (0..16).map(|i| (i * 16) as u8).collect();
+    let image = b.doc.add_object(Stream::new(
+        dictionary! {
+            "Type" => "XObject", "Subtype" => "Image", "Width" => 4, "Height" => 4,
+            "ColorSpace" => "DeviceGray", "BitsPerComponent" => 8,
+        },
+        pixels,
+    ));
+    let content = b"/Artifact BMC 0.7 G 20 20 555 802 re S EMC\n\
+        /H1 <</MCID 0>> BDC BT /F1 20 Tf 72 760 Td (Barrierefreies Dokument) Tj ET EMC\n\
+        /P <</MCID 1>> BDC BT /F1 12 Tf 72 720 Td (Erster Absatz mit Text.) Tj ET EMC\n\
+        /Figure <</MCID 2>> BDC q 100 0 0 60 72 640 cm /Im1 Do Q EMC\n\
+        /P <</MCID 3>> BDC BT /F1 12 Tf 72 600 Td (Zweiter Absatz unter dem Bild.) Tj ET EMC\n\
+        /Figure <</MCID 4>> BDC q 60 0 0 60 72 520 cm /Im1 Do Q EMC\n"
+        .to_vec();
+    let page = b.raw_page(
+        A4,
+        content,
+        dictionary! {
+            "Font" => dictionary! { "F1" => font },
+            "XObject" => dictionary! { "Im1" => image },
+        },
+    );
+    let doc = &mut b.doc;
+    let root_id = doc.new_object_id();
+    let document_id = doc.new_object_id();
+    let elem = |doc: &mut Document, role: &str, mcid: i64, alt: Option<&str>| {
+        let mut d = dictionary! {
+            "Type" => "StructElem", "S" => Object::Name(role.as_bytes().to_vec()),
+            "P" => document_id, "Pg" => page, "K" => mcid,
+        };
+        if let Some(alt) = alt {
+            d.set("Alt", Object::string_literal(alt));
+        }
+        doc.add_object(d)
+    };
+    let h1 = elem(doc, "H1", 0, None);
+    let p1 = elem(doc, "P", 1, None);
+    let fig1 = elem(doc, "Figure", 2, Some("Graustufen-Verlauf"));
+    let p2 = elem(doc, "P", 3, None);
+    let fig2 = elem(doc, "Figure", 4, None);
+    let kids: Vec<Object> = [h1, p1, fig1, p2, fig2]
+        .into_iter()
+        .map(Object::from)
+        .collect();
+    doc.objects.insert(
+        document_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "StructElem", "S" => "Document", "P" => root_id, "K" => kids.clone(),
+        }),
+    );
+    doc.objects.insert(
+        root_id,
+        Object::Dictionary(dictionary! {
+            "Type" => "StructTreeRoot", "K" => document_id,
+            "ParentTree" => dictionary! { "Nums" => vec![0.into(), Object::Array(kids)] },
+            "ParentTreeNextKey" => 1,
+        }),
+    );
+    let p = doc
+        .get_object_mut(page)
+        .and_then(Object::as_dict_mut)
+        .expect("Seite");
+    p.set("StructParents", 0);
+    p.set("Tabs", "S");
+    let info = doc.add_object(
+        dictionary! { "Title" => Object::string_literal("Barrierefreies Testdokument") },
+    );
+    doc.trailer.set("Info", info);
+    b.catalog_extra.set("StructTreeRoot", root_id);
+    b.catalog_extra
+        .set("MarkInfo", dictionary! { "Marked" => true });
+    b.catalog_extra.set("Lang", Object::string_literal("de-DE"));
+    b.catalog_extra.set(
+        "ViewerPreferences",
+        dictionary! { "DisplayDocTitle" => true },
+    );
+    b.finish(path);
+}
+
 /// Seite mit einem hoch aufgelösten "Foto" (1200 × 800 Pixel auf 200 × 133 pt ≈ 430 dpi,
 /// mit weicher Transparenzmaske) und Text – zum Testen der Komprimierung.
 fn photo(path: &Path) {
@@ -1002,4 +1087,5 @@ fn main() {
     sanitize(&dir.join("sanitize.pdf"));
     scan(&dir.join("scan.pdf"));
     photo(&dir.join("photo.pdf"));
+    tagged(&dir.join("tagged.pdf"));
 }

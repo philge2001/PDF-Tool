@@ -25,6 +25,10 @@ pub struct Model {
     pub page_content: std::collections::BTreeMap<lopdf::ObjectId, crate::text_edit::PageContent>,
     /// Zählt jede Inhaltsänderung (auch Undo/Redo); liefert die `stamp`-Werte.
     pub content_epoch: u64,
+    /// Dokumenttitel und -sprache (Barrierefreiheit), wie sie aktuell gelten sollen.
+    pub properties: crate::tags::DocProperties,
+    /// Geänderte Alternativtexte je Strukturelement (`None` = entfernen).
+    pub alt_texts: std::collections::BTreeMap<lopdf::ObjectId, Option<String>>,
     next_page_id: u32,
 }
 

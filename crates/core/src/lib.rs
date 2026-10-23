@@ -32,6 +32,7 @@ pub mod sanitize;
 mod save;
 pub mod security;
 pub mod signature_prep;
+pub mod tags;
 pub mod text;
 pub mod text_edit;
 

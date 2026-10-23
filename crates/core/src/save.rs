@@ -190,6 +190,7 @@ pub(crate) fn incremental(doc: &Document) -> Result<SaveOutput> {
 
     write_page_tree(doc, &mut inc)?;
     write_page_contents(doc, &mut inc)?;
+    crate::tags::write(doc, &mut inc)?;
     let forms = form_save::write(doc, &mut inc)?;
     // Widgets ausfüllbarer Felder – auch die gerade erst angelegten.
     let widgets: HashSet<ObjectId> = doc

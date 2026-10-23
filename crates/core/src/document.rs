@@ -93,6 +93,9 @@ pub struct Document {
     /// Passwortschutz (verschlüsselte Datei bzw. neu gesetzter Schutz). `bytes` und `pdf` sind
     /// immer Klartext; verschlüsselt wird erst beim Schreiben der Datei.
     security: Option<crate::security::Security>,
+    /// Titel/Sprache und Alternativtexte, wie sie in der Datei stehen (Änderungen erkennen).
+    saved_properties: crate::tags::DocProperties,
+    saved_alts: std::collections::BTreeMap<ObjectId, Option<String>>,
 }
 
 impl Document {
@@ -150,7 +153,11 @@ impl Document {
             imported_fields: HashMap::new(),
             saved_content: HashMap::new(),
             security,
+            saved_properties: Default::default(),
+            saved_alts: Default::default(),
         };
+        doc.model.properties = crate::tags::read_properties(&doc.pdf);
+        doc.saved_properties = doc.model.properties.clone();
         doc.saved_pages = doc.page_structure();
         doc.next_object_id = doc.pdf.max_id + 1;
         doc.import_annotations();
@@ -385,6 +392,15 @@ impl Document {
         self.imported_fields.get(&id)
     }
 
+    pub(crate) fn saved_properties(&self) -> crate::tags::DocProperties {
+        self.saved_properties.clone()
+    }
+
+    /// Alternativtext eines Elements, wie er zuletzt gespeichert wurde (`None` = nie geändert).
+    pub(crate) fn saved_alt(&self, elem: ObjectId) -> Option<&Option<String>> {
+        self.saved_alts.get(&elem)
+    }
+
     /// Wurde der Inhalt dieser Seite seit dem Laden/Speichern geändert?
     pub(crate) fn content_changed(&self, page: ObjectId) -> bool {
         self.model
@@ -492,6 +508,8 @@ impl Document {
         for pc in self.model.page_content.values_mut() {
             pc.images.clear();
         }
+        self.saved_properties = self.model.properties.clone();
+        self.saved_alts = self.model.alt_texts.clone();
         self.saved_content = self
             .model
             .page_content
