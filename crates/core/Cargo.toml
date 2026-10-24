@@ -19,6 +19,11 @@ jpeg-encoder.workspace = true
 zip.workspace = true
 similar.workspace = true
 getrandom.workspace = true
+web-time.workspace = true
+
+# Im Browser (wasm32-unknown-unknown) kommen Zufallszahlen von crypto.getRandomValues.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { workspace = true, features = ["wasm_js"] }
 
 [lints]
 workspace = true

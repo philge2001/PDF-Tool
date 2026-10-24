@@ -52,3 +52,25 @@ jobs:
             grep -E "panicked|FAILED|^---- " test.log | head -20 | sed 's/^/::error::/'
             exit 1
           }
+
+  # Der Kern läuft auch im Browser (PDF Webeditor, github.com/philge2001/PDF-Webeditor):
+  # core und sign müssen für wasm32 kompilieren. Kein SystemTime::now()/Instant::now() direkt
+  # verwenden, sondern pdftool_core::date::system_now() (sonst Absturz im Browser).
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (wasm32)
+        run: cargo clippy --target wasm32-unknown-unknown -p pdftool-core -p pdftool-sign -- -D warnings
+      - name: Keine Systemzeit direkt
+        run: |
+          if grep -rn --include=*.rs -E "(SystemTime|Instant)::now" crates/core/src crates/sign/src \
+              | grep -v "^crates/core/src/date.rs:"; then
+            echo "::error::SystemTime::now()/Instant::now() stürzt im Browser ab – pdftool_core::date::system_now() verwenden"
+            exit 1
+          fi

@@ -24,6 +24,11 @@ sha2.workspace = true
 p12-keystore.workspace = true
 rand_core.workspace = true
 
+# Im Browser (wasm32-unknown-unknown): rand_core 0.6 nutzt getrandom 0.2, das dort das Feature
+# `js` braucht (Zufall aus crypto.getRandomValues). Nur ein Feature-Schalter, keine neue Crate im Baum.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom-02 = { package = "getrandom", version = "0.2", features = ["js"] }
+
 [dev-dependencies]
 
 [lints]

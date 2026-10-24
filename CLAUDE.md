@@ -18,9 +18,9 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 ## Workspace
 | Crate | Pfad | Aufgabe | Darf abhängen von |
 |---|---|---|---|
-| pdftool-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg, ttf-parser, subsetter, png, jpeg-encoder, zip, similar, getrandom (Zufallsschlüssel für AES-256) |
+| pdftool-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg, ttf-parser, subsetter, png, jpeg-encoder, zip, similar, getrandom (Zufallsschlüssel für AES-256; wasm32: Feature `wasm_js`), web-time (Uhrzeit, auch im Browser) |
 | pdftool-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
-| pdftool-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore |
+| pdftool-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore; wasm32: getrandom 0.2 mit Feature `js` |
 | pdftool-ocr | crates/ocr | Texterkennung (Tesseract), Wörter mit Pixelrechteck | tesseract-rs (baut Tesseract/Leptonica mit CMake) |
 | pdftool-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, ocr (Feature `ocr`, Standard), eframe (Feature `links`: Weblinks im Browser öffnen), rfd, der, ureq; Build: winresource (nur Windows, Icon in der .exe) |
 
@@ -41,6 +41,11 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   (cms 0.2, x509-cert 0.2, der 0.7, rsa 0.9, p256/p384 0.13) – die nächste Generation ist noch RC.
 - **Speichern** ist ein inkrementelles Update: Die Originalbytes bleiben unverändert, die Änderungen werden angehängt.
 - Fehler: `thiserror` in Library-Crates, `anyhow` nur in der App. Logging mit `tracing`.
+- **Browser (PDF Webeditor):** `core` und `sign` laufen auch als WebAssembly (github.com/philge2001/PDF-Webeditor
+  bindet `pdftool-core` per Git ein). Deshalb dort kein `SystemTime::now()`/`Instant::now()` (Absturz im Browser) –
+  stattdessen `core::date::system_now()`; CI-Job `wasm` prüft Clippy für wasm32 und sucht nach `::now`.
+  `std::fs`/`std::env` liefern im Browser nur Fehler/`None` (kein Absturz): Pfad-Funktionen wie
+  `Document::open`/`save_as` und `system_fonts` sind dort einfach nicht nutzbar, die Bytes-Varianten schon.
 - Keine AGPL-Abhängigkeiten. Jede neue Crate wird im Commit bzw. hier mit einem Satz begründet.
 
 ## Konventionen
@@ -285,6 +290,7 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   Stempel), Klick = Auswahl, Ziehen = verschieben, Anfasser rechts = Breite, Doppelklick/Enter = mehrzeiliger
   Editor (Strg+Enter übernimmt), Blocksatz-Schalter; `sync_structure` erkennt Inhaltsänderungen am Stempel
 - `core::font` (Helvetica-Breiten, WinAnsi, Umbruch), `core::pdf_string` (Textstrings), `core::date`
+  (`system_now` = browserfeste Systemzeit als `std::time::SystemTime`, `pdf_date_now`)
 - `core::text` – `PageText`/`CharBox` (Zeichen + Rechteck im PDF-Raum), `find`, `range_rects`, `char_at`
 - `render::worker` – Textextraktion (`extract_text`, Event `Text`), eigene Warteschlange:
   sichtbare Seiten > Text > Prefetch > Miniaturen

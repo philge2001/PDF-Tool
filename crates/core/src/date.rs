@@ -2,9 +2,21 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Aktuelle Zeit als `std::time::SystemTime`.
+///
+/// `SystemTime::now()` stürzt im Browser (wasm32-unknown-unknown) ab; `web_time` liest dort
+/// `Date.now()`. Zurückgegeben wird trotzdem der std-Typ (Epoche + Dauer), damit Aufrufer
+/// (z. B. x509-cert in `sign`) unverändert bleiben. Auf dem Desktop ist das exakt `SystemTime::now()`.
+pub fn system_now() -> SystemTime {
+    let since_epoch = web_time::SystemTime::now()
+        .duration_since(web_time::UNIX_EPOCH)
+        .unwrap_or_default();
+    UNIX_EPOCH + since_epoch
+}
+
 /// Aktuelle Zeit (UTC) im PDF-Datumsformat.
 pub fn pdf_date_now() -> String {
-    let secs = SystemTime::now()
+    let secs = system_now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
