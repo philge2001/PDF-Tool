@@ -39,10 +39,16 @@ unter „Artifacts“ des Laufs.
 ```bash
 cargo install cargo-packager --version 0.11.8 --locked
 cargo install cargo-about --version 0.9.2 --locked --features cli   # Lizenzübersicht
-bash packaging/prepare.sh win-x64        # bzw. mac-arm64, mac-x64, linux-x64 (lädt PDFium)
-cargo packager --release -p pdftool-app --formats nsis   # bzw. dmg, deb, appimage
+bash packaging/prepare.sh mac-arm64      # bzw. mac-x64, linux-x64 (lädt PDFium)
+cargo packager --release -p pdftool-app --formats dmg    # bzw. deb, appimage
 ```
-Unter Windows `prepare.sh` in der Git-Bash ausführen. Ergebnis in `target/release/`.
+Windows (PowerShell, im Projektordner):
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\prepare.ps1    # lädt pdfium.dll nach packaging\dist
+cargo packager --release -p pdftool-app --formats nsis
+```
+Ergebnis in `target/release/`. Fehlt PDFium in `packaging/dist`, bricht `cargo packager` mit einem Hinweis ab
+(Prüfung `cargo run -p pdftool-render --example check_dist`).
 Konfiguration: `[package.metadata.packager]` in `crates/app/Cargo.toml`, deutsche Installer-Texte in
 `packaging/German.nsh`, App-Icon in `assets/icons/` (Quelle `pdftool.svg`, eigene Zeichnung).
 

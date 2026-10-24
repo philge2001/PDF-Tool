@@ -37,7 +37,7 @@ ocr = ["dep:pdftool-ocr"]
 [lints]
 workspace = true
 
-# Installer (cargo-packager): `bash packaging/prepare.sh` legt PDFium und die Lizenztexte in
+# Installer (cargo-packager): `packaging/prepare.ps1` (Windows) bzw. `bash packaging/prepare.sh` legt PDFium und die Lizenztexte in
 # `packaging/dist/` ab, danach `cargo packager --release -p pdftool-app --formats nsis|dmg|deb`.
 # Pfade hier sind relativ zu `crates/app`.
 [package.metadata.packager]
@@ -54,7 +54,8 @@ Text und Bilder bearbeiten, Formulare ausfüllen und gestalten, signieren, schw�
 Texterkennung (OCR), Export, Komprimieren, PDF/A und Barrierefreiheit."""
 authors = ["philge2001"]
 license-file = "../../LICENSE-MIT"
-before-packaging-command = "cargo build --release -p pdftool-app"
+# Erst prüfen, ob PDFium bereitliegt (sonst entstünde ein Installer ohne PDFium), dann bauen.
+before-packaging-command = "cargo run -q -p pdftool-render --example check_dist && cargo build --release -p pdftool-app"
 icons = [
     "../../assets/icons/pdftool-32.png",
     "../../assets/icons/pdftool-128.png",

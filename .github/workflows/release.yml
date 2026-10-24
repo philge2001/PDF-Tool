@@ -16,6 +16,7 @@ on:
       - "crates/app/Cargo.toml"
       - "crates/app/build.rs"
       - "crates/render/src/loader.rs"
+      - "crates/render/examples/check_dist.rs"
   workflow_dispatch:
 
 permissions:
@@ -72,8 +73,14 @@ jobs:
             exit 1
           fi
       - name: PDFium und Lizenztexte vorbereiten
+        if: runner.os != 'Windows'
         shell: bash
         run: bash packaging/prepare.sh ${{ matrix.platform }}
+      # Windows: das PowerShell-Skript, das auch lokal unter Windows benutzt wird.
+      - name: PDFium und Lizenztexte vorbereiten (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: .\packaging\prepare.ps1 ${{ matrix.platform }}
       - name: Installer bauen
         shell: bash
         run: cargo packager --release -p pdftool-app --formats ${{ matrix.formats }}
