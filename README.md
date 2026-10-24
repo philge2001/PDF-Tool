@@ -28,6 +28,9 @@ macOS → Rechtsklick auf eine PDF → Informationen → „Öffnen mit“ → �
    git tag v0.1.0
    git push origin v0.1.0
    ```
+   Oder auf der Website: Releases → „Draft a new release“ → „Choose a tag“ → `v0.1.0` eintippen
+   („Create new tag on publish“, Ziel `main`) → „Publish release“. Der Tag muss klein mit `v` beginnen
+   und zur Version passen; die Installer erscheinen nach ca. 30 Minuten im Release.
 Zum Ausprobieren ohne Release: GitHub → Actions → „Installer“ → „Run workflow“; die Dateien liegen dann
 unter „Artifacts“ des Laufs.
 

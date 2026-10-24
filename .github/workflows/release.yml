@@ -116,12 +116,18 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: GitHub-Release anlegen
+      # Wurde das Release vorher auf der Website angelegt (dabei entsteht der Tag), kommen die
+      # Installer dort dazu; sonst wird es hier neu angelegt.
+      - name: GitHub-Release anlegen bzw. ergänzen
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           ls -la dist
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "PDF Tool ${GITHUB_REF_NAME#v}" \
-            --generate-notes
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "PDF Tool ${GITHUB_REF_NAME#v}" \
+              --generate-notes
+          fi
