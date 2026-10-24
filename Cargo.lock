@@ -3299,7 +3299,7 @@ dependencies = [
 
 [[package]]
 name = "pdftool-app"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "der",
@@ -3318,7 +3318,7 @@ dependencies = [
 
 [[package]]
 name = "pdftool-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "getrandom 0.4.3",
  "jpeg-encoder",
@@ -3335,7 +3335,7 @@ dependencies = [
 
 [[package]]
 name = "pdftool-ocr"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "lopdf",
  "pdftool-core",
@@ -3346,7 +3346,7 @@ dependencies = [
 
 [[package]]
 name = "pdftool-render"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "pdfium-render",
  "pdftool-core",
@@ -3356,7 +3356,7 @@ dependencies = [
 
 [[package]]
 name = "pdftool-sign"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cms",
  "der",

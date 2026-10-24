@@ -69,7 +69,7 @@ jobs:
         run: |
           version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
           if [ "v$version" != "$GITHUB_REF_NAME" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME passt nicht zur Version $version in Cargo.toml"
+            echo "::error::Tag $GITHUB_REF_NAME passt nicht zur Version $version in Cargo.toml. Erwartet wird der Tag v$version (ohne Punkt nach dem v). Für eine neue Version zuerst version in Cargo.toml erhöhen und mergen, dann den Tag setzen."
             exit 1
           fi
       - name: PDFium und Lizenztexte vorbereiten
