@@ -181,22 +181,33 @@ impl PdfToolApp {
                 _ => None,
             })
         });
-        let (Some(img), Some(d)) = (pasted, &mut self.document) else {
+        let Some(img) = pasted else {
             return;
         };
         let [w, h] = img.size;
         let rgba: Vec<u8> = img.pixels.iter().flat_map(|c| c.to_array()).collect();
+        match encode_png(&rgba, w as u32, h as u32, PixelFormat::Rgba) {
+            Ok(png) => self.insert_pasted_image(&png),
+            Err(e) => self.error = Some(format!("Bild einfügen:\n{e}")),
+        }
+    }
+
+    /// Fügt ein Bild (PNG/JPEG-Bytes) in die Mitte des sichtbaren Seitenbereichs ein. Im Browser
+    /// kommen Bilder aus der Zwischenablage als Datei an (`Pick::PasteImage`, siehe `platform`).
+    pub(crate) fn insert_pasted_image(&mut self, bytes: &[u8]) {
+        let Some(d) = &mut self.document else {
+            return;
+        };
         let target = d.content_edit.visible_center;
         let page = target.map_or(d.viewer.current_page, |t| t.0);
-        let result = encode_png(&rgba, w as u32, h as u32, PixelFormat::Rgba)
-            .and_then(|png| NewImage::from_bytes(&png))
-            .and_then(|new| {
-                let info = d.doc.page(page)?.clone();
-                let center = target.map_or(info.crop_box.center(), |t| t.1);
-                let (page_w, _) = info.display_size();
-                let width = (w as f32 * 0.75).min(page_w / 2.0);
-                d.doc.insert_image(page, new, center, width)
-            });
+        let result = NewImage::from_bytes(bytes).and_then(|new| {
+            let info = d.doc.page(page)?.clone();
+            let center = target.map_or(info.crop_box.center(), |t| t.1);
+            let (page_w, _) = info.display_size();
+            // 0,75 pt je Pixel = 96 dpi, höchstens halbe Seitenbreite.
+            let width = (new.width as f32 * 0.75).min(page_w / 2.0);
+            d.doc.insert_image(page, new, center, width)
+        });
         if let Err(e) = result {
             self.error = Some(format!("Bild einfügen:\n{e}"));
         } else {

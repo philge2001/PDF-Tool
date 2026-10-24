@@ -37,6 +37,9 @@ pub(crate) enum Pick {
     InsertImage,
     /// Ausgewähltes Bild ersetzen.
     ReplaceImage,
+    /// Bild aus der Zwischenablage (Browser: Strg+V, siehe `install_web_hooks`).
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    PasteImage,
 }
 
 thread_local! {
@@ -261,6 +264,22 @@ pub(crate) fn receive_dropped(ctx: &egui::Context, files: Vec<egui::DroppedFileH
     }
 }
 
+/// Merkt sich, ob es ungespeicherte Änderungen gibt (Browser: Rückfrage beim Schließen des Tabs;
+/// auf dem Desktop fragt die App selbst beim Beenden).
+pub(crate) fn set_unsaved(unsaved: bool) {
+    #[cfg(target_arch = "wasm32")]
+    web::UNSAVED.with(|u| u.set(unsaved));
+    #[cfg(not(target_arch = "wasm32"))]
+    let _ = unsaved;
+}
+
+/// Browser: Ereignisse der Webseite anmelden, die egui nicht selbst liefert – Rückfrage beim
+/// Schließen mit ungespeicherten Änderungen und Bilder aus der Zwischenablage (Strg+V).
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn install_web_hooks(ctx: &egui::Context) {
+    web::install(ctx.clone());
+}
+
 /// Läuft die App im Browser?
 pub(crate) const fn is_web() -> bool {
     cfg!(target_arch = "wasm32")
@@ -269,12 +288,68 @@ pub(crate) const fn is_web() -> bool {
 #[cfg(target_arch = "wasm32")]
 mod web {
     use super::*;
+    use std::cell::Cell;
     use std::collections::HashMap;
     use wasm_bindgen::JsCast;
+    use wasm_bindgen::closure::Closure;
 
     thread_local! {
         // Virtuelle Dateien dieser Sitzung (gewählt oder gespeichert), Schlüssel = Pfad/Name.
         static FILES: RefCell<HashMap<PathBuf, Vec<u8>>> = RefCell::new(HashMap::new());
+        /// Gibt es ungespeicherte Änderungen? (setzt die App jeden Frame, siehe `set_unsaved`)
+        pub(super) static UNSAVED: Cell<bool> = const { Cell::new(false) };
+    }
+
+    pub(super) fn install(ctx: egui::Context) {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        // Schließen/Neuladen mit ungespeicherten Änderungen: Der Browser zeigt seine eigene
+        // Rückfrage („Seite verlassen?“), sobald das Ereignis abgebrochen wird.
+        let on_unload = Closure::<dyn FnMut(web_sys::BeforeUnloadEvent)>::new(
+            |e: web_sys::BeforeUnloadEvent| {
+                if UNSAVED.with(Cell::get) {
+                    e.prevent_default();
+                    e.set_return_value("");
+                }
+            },
+        );
+        let _ = window
+            .add_event_listener_with_callback("beforeunload", on_unload.as_ref().unchecked_ref());
+        // `forget`: Die Funktion muss so lange leben wie die Seite (sonst ruft JS ins Leere).
+        on_unload.forget();
+
+        // Strg+V: egui liefert im Browser nur Text. Bilder holen wir uns selbst aus dem Ereignis.
+        let on_paste = Closure::<dyn FnMut(web_sys::ClipboardEvent)>::new(
+            move |e: web_sys::ClipboardEvent| {
+                let Some(files) = e.clipboard_data().and_then(|d| d.files()) else {
+                    return;
+                };
+                let image = (0..files.length())
+                    .filter_map(|i| files.get(i))
+                    .find(|f| f.type_().starts_with("image/"));
+                let Some(file) = image else {
+                    return;
+                };
+                let ctx = ctx.clone();
+                wasm_bindgen_futures::spawn_local(async move {
+                    match wasm_bindgen_futures::JsFuture::from(file.array_buffer()).await {
+                        Ok(buffer) => {
+                            let path = PathBuf::from("Eingefügtes Bild");
+                            insert(path.clone(), js_sys::Uint8Array::new(&buffer).to_vec());
+                            push_picked(Pick::PasteImage, vec![path]);
+                        }
+                        Err(e) => tracing::error!(?e, "Bild aus der Zwischenablage nicht lesbar"),
+                    }
+                    ctx.request_repaint();
+                });
+            },
+        );
+        if let Some(document) = window.document() {
+            let _ = document
+                .add_event_listener_with_callback("paste", on_paste.as_ref().unchecked_ref());
+        }
+        on_paste.forget();
     }
 
     pub(super) fn pick(dialog: FileDialog, ctx: egui::Context, pick: Pick, multiple: bool) {

@@ -43,8 +43,9 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - Fehler: `thiserror` in Library-Crates, `anyhow` nur in der App. Logging mit `tracing`.
 - **Browser (PDF Webeditor):** Die ganze App läuft auch als WebAssembly (github.com/philge2001/PDF-Webeditor
   bindet `pdftool-app` per Git ein, ohne Feature `ocr`). Regeln:
-  - Kein `SystemTime::now()`/`Instant::now()` (Absturz im Browser; `clippy.toml` verbietet sie) – stattdessen
-    `core::date::system_now()` bzw. `web_time::Instant`.
+  - Kein `SystemTime::now()`/`Instant::now()` (Absturz im Browser; `clippy.toml` verbietet sie, auch
+    Bibliotheksfunktionen wie `x509_cert::time::Validity::from_now`) – stattdessen `core::date::system_now()` bzw.
+    `web_time::Instant`. Neue Abhängigkeiten auf versteckte `::now()`-Aufrufe prüfen (Absturz erst zur Laufzeit).
   - In der App keine Dateien/Dialoge/Threads direkt: immer über `app::platform` (`FileDialog` mit `pick(ctx, Pick, …)`
     → Ergebnis über `take_picked`/`PdfToolApp::handle_picked`; `save_file`/`pick_folder`; `read`, `write`,
     `exists`, `open_document`, `save_document`, `spawn`, `is_web`). Neue Dateiauswahl = neuer `Pick`-Fall.
@@ -355,7 +356,8 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - `app::platform` – Desktop/Browser-Unterschiede: `FileDialog` (wie rfd; Browser: Auswahl asynchron, Speichern =
   Download ohne Dialog), `Pick` + `take_picked` (gewählte Dateien, verarbeitet in `PdfToolApp::handle_picked`),
   `read`/`write`/`exists` (Browser: virtuelle Dateien der Sitzung, Schreiben = Download), `open_document`,
-  `save_document` (`Document::save_with`), `spawn` (Browser: sofort), `receive_dropped` (Drag & Drop im Browser)
+  `save_document` (`Document::save_with`), `spawn` (Browser: sofort), `receive_dropped` (Drag & Drop im Browser),
+  `install_web_hooks` (Browser: Rückfrage beim Schließen über `set_unsaved`, Bilder per Strg+V als `Pick::PasteImage`)
 - `app::jobs` – Hintergrund-Jobs (`Job::spawn`, Fortschritt, Abbrechen, modales Fortschrittsfenster);
   höchstens ein Job gleichzeitig (`PdfToolApp::job`), Ergebnis als Info- oder Fehlerdialog
 - `core::form` – `FormField`/`FieldKind`/`FieldValue`/`Widget`, `FormStore` (Dateireihenfolge = Tab-Reihenfolge);

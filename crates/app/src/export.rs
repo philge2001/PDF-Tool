@@ -322,7 +322,11 @@ impl PdfToolApp {
                     };
                     let n =
                         export_images(&renderer, &snapshot, &sized, &options, &dest, &progress)?;
-                    Ok(format!("{n} Bild(er) gespeichert in\n{}", target.display()))
+                    Ok(if crate::platform::is_web() {
+                        format!("{n} Bild(er) heruntergeladen.")
+                    } else {
+                        format!("{n} Bild(er) gespeichert in\n{}", target.display())
+                    })
                 }
                 ExportFormat::Text => {
                     let text = export_text(&renderer, &snapshot, &pages, &progress)?;

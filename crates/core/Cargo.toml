@@ -24,6 +24,8 @@ web-time.workspace = true
 # Im Browser (wasm32-unknown-unknown) kommen Zufallszahlen von crypto.getRandomValues.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { workspace = true, features = ["wasm_js"] }
+# Zeitlimits im Textvergleich über web-time statt std::time (sonst Absturz im Browser).
+similar = { workspace = true, features = ["wasm32_web_time"] }
 
 [lints]
 workspace = true

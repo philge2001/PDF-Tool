@@ -545,10 +545,11 @@ impl PdfToolApp {
                     crate::platform::write(target, &bytes)
                         .map_err(|e| format!("„{}“: {e}", target.display()))?;
                 }
-                Ok(format!(
-                    "{total} Dateien in „{}“ geschrieben.",
-                    folder.display()
-                ))
+                Ok(if crate::platform::is_web() {
+                    format!("{total} Dateien heruntergeladen.")
+                } else {
+                    format!("{total} Dateien in „{}“ geschrieben.", folder.display())
+                })
             },
         ));
     }

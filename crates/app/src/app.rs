@@ -167,6 +167,8 @@ impl PdfToolApp {
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
         install_fonts(&cc.egui_ctx);
         crate::style::install(&cc.egui_ctx);
+        #[cfg(target_arch = "wasm32")]
+        crate::platform::install_web_hooks(&cc.egui_ctx);
 
         // Der Worker weckt die UI auf, wenn ein Bild fertig ist. `Context` ist intern ein
         // `Arc` – das Klonen ist billig und der Klon darf in den Worker-Thread wandern.
@@ -367,6 +369,15 @@ impl PdfToolApp {
                 Pick::SigningId => {
                     if let Some(path) = paths.into_iter().next() {
                         self.set_signing_id(path);
+                    }
+                }
+                Pick::PasteImage => {
+                    // Nicht, wenn gerade in ein Textfeld eingefügt wird.
+                    if ctx.egui_wants_keyboard_input() {
+                        continue;
+                    }
+                    if let Some(bytes) = paths.first().and_then(|p| crate::platform::read(p).ok()) {
+                        self.insert_pasted_image(&bytes);
                     }
                 }
                 Pick::InsertImage | Pick::ReplaceImage => {
@@ -748,6 +759,7 @@ impl eframe::App for PdfToolApp {
         let ctx = ui.ctx().clone();
         self.poll_render(&ctx);
         self.handle_picked(&ctx);
+        crate::platform::set_unsaved(self.first_dirty_tab().is_some());
         self.handle_close_request(&ctx);
         self.handle_dropped_files(&ctx);
         self.handle_shortcuts(&ctx);

@@ -17,7 +17,7 @@ use x509_cert::builder::{Builder, CertificateBuilder, Profile};
 use x509_cert::ext::pkix::ExtendedKeyUsage;
 use x509_cert::name::Name;
 use x509_cert::serial_number::SerialNumber;
-use x509_cert::time::Validity;
+use x509_cert::time::{Time, Validity};
 
 /// E-Mail-Schutz – Standard-Verwendungszweck für persönliche Signaturzertifikate.
 const OID_EKU_EMAIL: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.3.6.1.5.5.7.3.4");
@@ -236,8 +236,13 @@ impl Signer {
             dn.push_str(&format!(",1.2.840.113549.1.9.1={}", escape_dn(email)));
         }
         let subject = Name::from_str(&dn).map_err(other)?;
-        let validity = Validity::from_now(Duration::from_secs(u64::from(years) * 365 * 86_400))
-            .map_err(other)?;
+        // Nicht `Validity::from_now`: das nutzt `SystemTime::now()` und stürzt im Browser ab.
+        let now = pdftool_core::date::system_now();
+        let validity = Validity {
+            not_before: Time::try_from(now).map_err(other)?,
+            not_after: Time::try_from(now + Duration::from_secs(u64::from(years) * 365 * 86_400))
+                .map_err(other)?,
+        };
         let key = match kind {
             KeyKind::Rsa2048 => PrivateKey::Rsa(Box::new(
                 rsa::RsaPrivateKey::new(&mut OsRng, 2048).map_err(other)?,
