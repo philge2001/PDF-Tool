@@ -5,6 +5,47 @@ Lizenz: MIT OR Apache-2.0. Sicherheitslücken bitte vertraulich melden, siehe [S
 
 **Stand:** Phase 1 (Viewer + Annotationen), Phase 2 (Seitenorganisation), Phase 3 (Formulare), Phase 4 (Signaturen), Phase 5 (Schwärzen & Bereinigen), Phase 6 (Text und Bilder bearbeiten), Phase 7 (Texterkennung), Phase 8 (Export, Vergleich, Komprimierung, PDF/A), Phase 9 (Sicherheit & Barrierefreiheit), Phase 10 (neues Oberflächen-Layout) und Phase 11 (Textformat, Systemschriften, Bilder) abgeschlossen.
 
+## Installieren
+
+Fertige Installer gibt es unter [Releases](https://github.com/philge2001/PDF-Tool/releases)
+(PDFium ist enthalten, kein Rust nötig):
+
+| System | Datei | Hinweis |
+|---|---|---|
+| Windows 10/11 | `PDF-Tool-<Version>-Windows-Setup.exe` | Installation ohne Administratorrechte; Startmenü, Deinstallation über „Apps“, „Öffnen mit → PDF Tool“. Windows SmartScreen warnt, weil der Installer nicht signiert ist: „Weitere Informationen → Trotzdem ausführen“. |
+| macOS (Apple Silicon) | `PDF-Tool-<Version>-macOS-AppleSilicon.dmg` | App in „Programme“ ziehen. Nicht notarisiert: beim ersten Start Rechtsklick → „Öffnen“ bzw. Systemeinstellungen → Datenschutz & Sicherheit → „Trotzdem öffnen“. |
+| Debian/Ubuntu | `pdf-tool_<Version>_amd64.deb` | `sudo apt install ./pdf-tool_<Version>_amd64.deb` |
+| andere Linux | `PDF-Tool-<Version>-x86_64.AppImage` | `chmod +x …AppImage` und starten |
+
+Als PDF-Standardprogramm festlegen: Windows → Einstellungen → Apps → Standard-Apps → `.pdf`;
+macOS → Rechtsklick auf eine PDF → Informationen → „Öffnen mit“ → „Alle ändern“.
+
+### Neue Version veröffentlichen
+
+1. Version in `Cargo.toml` (`[workspace.package] version`) erhöhen, committen, nach `main` mergen.
+2. Tag setzen und pushen – der Workflow „Installer“ baut alles und legt das Release an:
+   ```bash
+   git tag v0.1.0
+   git push origin v0.1.0
+   ```
+   Oder auf der Website: Releases → „Draft a new release“ → „Choose a tag“ → `v0.1.0` eintippen
+   („Create new tag on publish“, Ziel `main`) → „Publish release“. Der Tag muss klein mit `v` beginnen
+   und zur Version passen; die Installer erscheinen nach ca. 30 Minuten im Release.
+Zum Ausprobieren ohne Release: GitHub → Actions → „Installer“ → „Run workflow“; die Dateien liegen dann
+unter „Artifacts“ des Laufs.
+
+### Installer selbst bauen
+
+```bash
+cargo install cargo-packager --version 0.11.8 --locked
+cargo install cargo-about --version 0.9.2 --locked --features cli   # Lizenzübersicht
+bash packaging/prepare.sh win-x64        # bzw. mac-arm64, mac-x64, linux-x64 (lädt PDFium)
+cargo packager --release -p pdftool-app --formats nsis   # bzw. dmg, deb, appimage
+```
+Unter Windows `prepare.sh` in der Git-Bash ausführen. Ergebnis in `target/release/`.
+Konfiguration: `[package.metadata.packager]` in `crates/app/Cargo.toml`, deutsche Installer-Texte in
+`packaging/German.nsh`, App-Icon in `assets/icons/` (Quelle `pdftool.svg`, eigene Zeichnung).
+
 ## Funktionen (Phase 1)
 
 - PDF öffnen (Dialog, Drag & Drop, Kommandozeile, „Zuletzt geöffnet“), flüssiges Scrollen auch bei 500+ Seiten
@@ -220,7 +261,8 @@ cargo run -p pdftool-app
 
 Die App sucht PDFium in dieser Reihenfolge:
 1. Umgebungsvariable `PDFTOOL_PDFIUM_PATH` (Ordner oder Datei)
-2. Ordner der ausführbaren Datei (für Auslieferung: Bibliothek neben `pdftool[.exe]` legen)
+2. Ordner der ausführbaren Datei, im macOS-App-Paket `Contents/Resources`, unter Linux `../lib/pdftool`
+   (dort legen die Installer sie ab)
 3. Unterordner `pdfium/lib` bzw. `pdfium/bin` im aktuellen Arbeitsverzeichnis
 4. Systembibliothek (z. B. `/usr/lib`)
 

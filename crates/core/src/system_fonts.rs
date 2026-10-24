@@ -163,6 +163,11 @@ fn describe_one(f: &mut File, path: &Path, index: u32, off: u64) -> Option<Syste
     }
     let family = get(ttf_parser::name_id::TYPOGRAPHIC_FAMILY)
         .or_else(|| get(ttf_parser::name_id::FAMILY))?;
+    // macOS: Namen mit Punkt (".SF NS", ".New York") sind interne Systemschriften, die
+    // Apple nicht zur Verwendung in Dokumenten vorsieht.
+    if family.starts_with('.') {
+        return None;
+    }
     let style = get(ttf_parser::name_id::TYPOGRAPHIC_SUBFAMILY)
         .or_else(|| get(ttf_parser::name_id::SUBFAMILY))
         .unwrap_or_else(|| "Regular".into());
@@ -352,12 +357,23 @@ mod tests {
         if fonts.is_empty() {
             return;
         }
-        let first = &fonts[0];
-        let data = load(first).expect("aufgeführte Schriften sind ladbar");
+        // Jede aufgeführte Schrift muss ladbar sein (höchstens 40 prüfen, das Lesen dauert).
+        // Symbolschriften (z. B. ohne „A“) sind erlaubt, aber mindestens eine Schrift hat Latein.
+        let mut latin = false;
+        for font in fonts.iter().take(40) {
+            let data = load(font).unwrap_or_else(|| {
+                panic!(
+                    "aufgeführte Schrift nicht ladbar: {} ({}, Index {})",
+                    font.postscript,
+                    font.path.display(),
+                    font.index
+                )
+            });
+            latin |= data.has_glyph('A') && data.has_glyph('a');
+        }
         assert!(
-            data.has_glyph('A') || data.has_glyph('a'),
-            "{}",
-            first.postscript
+            latin,
+            "keine der ersten Schriften enthält lateinische Buchstaben"
         );
         if let Some(f) = find_style("Liberation Sans", true, false) {
             assert!(f.bold && !f.italic, "{f:?}");

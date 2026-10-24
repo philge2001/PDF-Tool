@@ -127,10 +127,12 @@ impl FontData {
                 .filter(|n| n.name_id == id)
                 .find_map(|n| n.to_string())
         };
-        let postscript = name(ttf_parser::name_id::POST_SCRIPT_NAME)?;
+        // Wie bei der Suche (`system_fonts::describe_one`): fehlt der PostScript-Name (z. B. nur
+        // Namen in Mac-Kodierung), wird er aus der Familie gebildet.
         let family = name(ttf_parser::name_id::TYPOGRAPHIC_FAMILY)
-            .or_else(|| name(ttf_parser::name_id::FAMILY))
-            .unwrap_or_else(|| postscript.clone());
+            .or_else(|| name(ttf_parser::name_id::FAMILY))?;
+        let postscript =
+            name(ttf_parser::name_id::POST_SCRIPT_NAME).unwrap_or_else(|| family.replace(' ', ""));
         let (bold, italic) = (face.is_bold(), face.is_italic() || face.is_oblique());
         Some(Arc::new(FontData {
             bytes: FontBytes::Owned(bytes),

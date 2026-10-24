@@ -22,7 +22,7 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 | pdftool-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
 | pdftool-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore |
 | pdftool-ocr | crates/ocr | Texterkennung (Tesseract), Wörter mit Pixelrechteck | tesseract-rs (baut Tesseract/Leptonica mit CMake) |
-| pdftool-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, ocr (Feature `ocr`, Standard), eframe (Feature `links`: Weblinks im Browser öffnen), rfd, der, ureq |
+| pdftool-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, ocr (Feature `ocr`, Standard), eframe (Feature `links`: Weblinks im Browser öffnen), rfd, der, ureq; Build: winresource (nur Windows, Icon in der .exe) |
 
 ## Architekturregeln
 - **core** kennt weder UI noch PDFium und ist vollständig unit-testbar.
@@ -54,6 +54,21 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - [x] 10.2 Werkzeugbereich links (Alle Werkzeuge + Werkzeug-Panels), schwebende Schnellwerkzeuge
 - [x] 10.3 Startseite, Lesezeichen, Menü-Knopf
 - [x] 10.4 Mehrere Dokumente als Tabs + Abschluss
+
+## Installer / Releases
+- `cargo-packager` (Konfiguration `[package.metadata.packager]` in `crates/app/Cargo.toml`, Pfade relativ zu
+  `crates/app`): Windows NSIS (Benutzerinstallation, deutsch über `packaging/German.nsh` mit UTF-8-BOM),
+  macOS DMG (nur Apple Silicon), Linux deb + AppImage (optional). Werkzeuge nur in CI/lokal installiert, keine Abhängigkeit.
+- `packaging/prepare.sh <plattform>` → `packaging/dist/` (gitignored): PDFium chromium/7881 (= `pdfium_latest`
+  von pdfium-render 0.9.4 – bei Update von pdfium-render mitziehen), Lizenztexte, `cargo about` →
+  `Rust-Bibliotheken.html` (`packaging/about.toml` = erlaubte Lizenzen, `about.hbs` = Vorlage).
+- PDFium-Fundorte im Paket: neben der exe, `../Resources` (macOS), `../lib/pdftool` (deb/AppImage) – `render::loader`.
+- Workflow `.github/workflows/release.yml`: Tag `v*` = bauen + GitHub-Release (Version muss zu Cargo.toml passen),
+  PR mit Paketier-Änderungen/„Run workflow“ = nur Artifacts.
+- App-Icon: `assets/icons/pdftool.svg` (eigene Zeichnung) → PNG/ICO (gerendert mit Chromium headless + ImageMagick);
+  Fenster-Icon per `include_bytes!` in `main.rs`, exe-Icon über `crates/app/build.rs`. Release-Builds unter
+  Windows ohne Konsole (`windows_subsystem`).
+- Nicht signiert (SmartScreen-/Gatekeeper-Warnung); jeder Doppelklick auf eine PDF startet ein eigenes Fenster.
 
 ## Meilensteine Phase 11 (Textformat, Systemschriften, Bilder)
 - [x] 11.1 Fehlende Zeichen aus Systemschriften (Suche, Lizenzprüfung, Teilmenge)

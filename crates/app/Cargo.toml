@@ -26,9 +26,67 @@ rfd.workspace = true
 # Texterkennung (Feature "ocr"): baut Tesseract mit – braucht CMake und einen C++-Compiler.
 pdftool-ocr = { workspace = true, optional = true }
 
+# Windows: Icon und Versionsinfo in pdftool.exe einbetten (Explorer, Startmenü, Taskleiste) – MIT.
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1.34"
+
 [features]
 default = ["ocr"]
 ocr = ["dep:pdftool-ocr"]
 
 [lints]
 workspace = true
+
+# Installer (cargo-packager): `bash packaging/prepare.sh` legt PDFium und die Lizenztexte in
+# `packaging/dist/` ab, danach `cargo packager --release -p pdftool-app --formats nsis|dmg|deb`.
+# Pfade hier sind relativ zu `crates/app`.
+[package.metadata.packager]
+product-name = "PDF Tool"
+identifier = "io.github.philge2001.pdftool"
+publisher = "philge2001"
+homepage = "https://github.com/philge2001/PDF-Tool"
+copyright = "MIT OR Apache-2.0"
+category = "Productivity"
+description = "PDF-Editor: ansehen, kommentieren, bearbeiten, Formulare, Signaturen, OCR"
+long-description = """
+PDF Tool ist ein PDF-Editor: PDFs ansehen, durchsuchen, kommentieren, Seiten organisieren,
+Text und Bilder bearbeiten, Formulare ausfüllen und gestalten, signieren, schwärzen,
+Texterkennung (OCR), Export, Komprimieren, PDF/A und Barrierefreiheit."""
+authors = ["philge2001"]
+license-file = "../../LICENSE-MIT"
+before-packaging-command = "cargo build --release -p pdftool-app"
+icons = [
+    "../../assets/icons/pdftool-32.png",
+    "../../assets/icons/pdftool-128.png",
+    "../../assets/icons/pdftool-256.png",
+    "../../assets/icons/pdftool-512.png",
+    "../../assets/icons/pdftool.ico",
+]
+# PDFium kommt neben die App (Windows), nach Contents/Resources (macOS) bzw. /usr/lib/pdftool
+# (Linux) – genau dort sucht `render::loader` danach.
+resources = [
+    "../../packaging/dist/lib/*",
+    { src = "../../packaging/dist/licenses", target = "licenses" },
+]
+binaries = [{ path = "pdftool", main = true }]
+
+# „Öffnen mit → PDF Tool“ für PDF-Dateien.
+[[package.metadata.packager.file-associations]]
+extensions = ["pdf"]
+mime-type = "application/pdf"
+description = "PDF-Dokument"
+role = "editor"
+
+[package.metadata.packager.nsis]
+# Installation ohne Administratorrechte in den Benutzerordner.
+installer-mode = "currentUser"
+installer-icon = "../../assets/icons/pdftool.ico"
+languages = ["German", "English"]
+custom-language-file = { German = "../../packaging/German.nsh" }
+compression = "lzma"
+
+[package.metadata.packager.macos]
+minimum-system-version = "11.0"
+
+[package.metadata.packager.deb]
+section = "graphics"
