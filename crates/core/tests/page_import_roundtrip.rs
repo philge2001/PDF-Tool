@@ -138,7 +138,7 @@ fn annotations_on_existing_pages_shift_and_save_after_insert() {
 fn save_to_file_then_undo_insert() {
     let path = std::env::temp_dir().join(format!(
         "pdftool-insert-{}.pdf",
-        std::time::SystemTime::now()
+        pdftool_core::date::system_now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos()

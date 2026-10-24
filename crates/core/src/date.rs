@@ -7,6 +7,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// `SystemTime::now()` stürzt im Browser (wasm32-unknown-unknown) ab; `web_time` liest dort
 /// `Date.now()`. Zurückgegeben wird trotzdem der std-Typ (Epoche + Dauer), damit Aufrufer
 /// (z. B. x509-cert in `sign`) unverändert bleiben. Auf dem Desktop ist das exakt `SystemTime::now()`.
+// Die einzige erlaubte Stelle: web_time ist auf dem Desktop std::time (siehe clippy.toml).
+#[allow(clippy::disallowed_methods)]
 pub fn system_now() -> SystemTime {
     let since_epoch = web_time::SystemTime::now()
         .duration_since(web_time::UNIX_EPOCH)

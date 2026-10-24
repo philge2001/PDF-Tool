@@ -105,11 +105,11 @@ impl PdfToolApp {
             },
             ImageAction::Save => self.save_image_as(page, &img),
             ImageAction::Replace => {
-                if let Some(bytes) = crate::toolbar::pick_image()
-                    && let Some(d) = &mut self.document
-                {
+                // Erst auswählen, dann die Datei wählen: Das Ersetzen passiert, sobald sie
+                // da ist (`Pick::ReplaceImage`, im Browser asynchron).
+                if let Some(d) = &mut self.document {
                     d.content_edit.selected_image = Some((page, img));
-                    d.replace_selected_image(&bytes);
+                    crate::toolbar::pick_image(ctx, crate::platform::Pick::ReplaceImage);
                 }
             }
             ImageAction::Delete => {
@@ -143,7 +143,7 @@ impl PdfToolApp {
                 .unwrap_or_default(),
             page + 1
         );
-        let Some(path) = rfd::FileDialog::new()
+        let Some(path) = crate::platform::FileDialog::new()
             .add_filter("PNG", &["png"])
             .add_filter("JPEG", &["jpg", "jpeg"])
             .set_file_name(name)
@@ -162,7 +162,7 @@ impl PdfToolApp {
                 encode_png(&rgba, w, h, PixelFormat::Rgba)
             }
             .map_err(|e| e.to_string())?;
-            std::fs::write(&path, data).map_err(|e| e.to_string())
+            crate::platform::write(&path, &data).map_err(|e| e.to_string())
         });
         match result {
             Ok(()) => self.info = Some(format!("Bild gespeichert:\n{}", path.display())),

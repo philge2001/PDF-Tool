@@ -83,7 +83,7 @@ impl Settings {
 
     /// Entfernt Einträge, deren Datei es nicht mehr gibt.
     pub fn prune_missing(&mut self) {
-        self.recent_files.retain(|p| p.is_file());
+        self.recent_files.retain(|p| crate::platform::exists(p));
     }
 
     pub fn tool_settings(&self) -> ToolSettings {

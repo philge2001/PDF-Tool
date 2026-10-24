@@ -5,8 +5,8 @@
 
 use crate::app::PdfToolApp;
 use eframe::egui;
+use pdftool_core::CoreError;
 use pdftool_core::security::{Permissions, Protection};
-use pdftool_core::{CoreError, Document};
 use std::path::PathBuf;
 
 /// Offene Passwortabfrage für eine Datei.
@@ -147,7 +147,7 @@ impl PdfToolApp {
             return;
         }
         let (path, password) = (p.path.clone(), p.password.clone());
-        match Document::open_with_password(&path, Some(&password)) {
+        match crate::platform::open_document(&path, Some(&password)) {
             Ok(doc) => {
                 self.password_prompt = None;
                 self.open_in_new_tab(doc);

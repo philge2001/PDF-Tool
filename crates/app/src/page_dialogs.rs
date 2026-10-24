@@ -31,11 +31,11 @@ pub struct MergeDialog {
     error: Option<String>,
 }
 
-fn pick_pdfs() -> Vec<PathBuf> {
-    rfd::FileDialog::new()
-        .add_filter("PDF", &["pdf"])
-        .pick_files()
-        .unwrap_or_default()
+impl MergeDialog {
+    /// Gewählte Dateien übernehmen (siehe `Pick::MergeFiles`).
+    pub(crate) fn add_files(&mut self, paths: Vec<PathBuf>) {
+        self.files.extend(paths);
+    }
 }
 
 fn file_name(p: &std::path::Path) -> String {
@@ -45,15 +45,17 @@ fn file_name(p: &std::path::Path) -> String {
 }
 
 impl PdfToolApp {
-    /// Datei wählen und den Einfüge-Dialog öffnen.
-    pub(crate) fn start_insert_from_file(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
+    /// Datei wählen; danach öffnet `insert_from_file` den Einfüge-Dialog (`Pick::InsertPages`).
+    pub(crate) fn start_insert_from_file(&mut self, ctx: &egui::Context) {
+        crate::platform::FileDialog::new()
             .add_filter("PDF", &["pdf"])
-            .pick_file()
-        else {
-            return;
-        };
-        match Document::open(&path) {
+            .pick(ctx, crate::platform::Pick::InsertPages, false);
+    }
+
+    /// Öffnet den Einfüge-Dialog für die gewählte Datei.
+    pub(crate) fn insert_from_file(&mut self, path: &std::path::Path) {
+        let path = path.to_path_buf();
+        match crate::platform::open_document(&path, None) {
             Ok(source) => {
                 let n = source.page_count();
                 self.insert_dialog = Some(InsertDialog {
@@ -194,7 +196,9 @@ impl PdfToolApp {
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
                     if ui.button("Dateien hinzufügen…").clicked() {
-                        dlg.files.extend(pick_pdfs());
+                        crate::platform::FileDialog::new()
+                            .add_filter("PDF", &["pdf"])
+                            .pick(ctx, crate::platform::Pick::MergeFiles, true);
                     }
                     let ok = dlg.files.len() >= 2;
                     confirmed = ui
@@ -228,10 +232,10 @@ impl PdfToolApp {
 fn merge_files(files: &[PathBuf]) -> Result<Document, String> {
     let err = |p: &PathBuf, e: pdftool_core::CoreError| format!("„{}“: {e}", file_name(p));
     let (first, rest) = files.split_first().ok_or("Keine Dateien ausgewählt")?;
-    let mut doc = Document::open(first).map_err(|e| err(first, e))?;
+    let mut doc = crate::platform::open_document(first, None).map_err(|e| err(first, e))?;
     doc.forget_path();
     for p in rest {
-        let source = Document::open(p).map_err(|e| err(p, e))?;
+        let source = crate::platform::open_document(p, None).map_err(|e| err(p, e))?;
         let all: Vec<usize> = (0..source.page_count()).collect();
         let at = doc.page_count();
         let cmd = doc
@@ -394,7 +398,7 @@ impl PdfToolApp {
             return;
         }
         let delete_after = dlg.delete_after;
-        let Some(target) = rfd::FileDialog::new()
+        let Some(target) = crate::platform::FileDialog::new()
             .add_filter("PDF", &["pdf"])
             .set_file_name(format!("{}_Auszug.pdf", self.document_stem()))
             .save_file()
@@ -424,7 +428,7 @@ impl PdfToolApp {
                 let bytes =
                     pdftool_core::extract_pages(&snapshot, &pages).map_err(|e| e.to_string())?;
                 job.progress(0.8, "Datei schreiben …");
-                std::fs::write(&target, bytes)
+                crate::platform::write(&target, &bytes)
                     .map_err(|e| format!("„{}“: {e}", target.display()))?;
                 Ok(format!(
                     "{count} Seite(n) nach „{}“ extrahiert.",
@@ -491,7 +495,7 @@ impl PdfToolApp {
         } else {
             pdftool_core::split_every(n, dlg.every)
         };
-        let Some(folder) = rfd::FileDialog::new().pick_folder() else {
+        let Some(folder) = crate::platform::FileDialog::new().pick_folder() else {
             return;
         };
         let stem = self.document_stem();
@@ -499,7 +503,11 @@ impl PdfToolApp {
         let targets: Vec<PathBuf> = (1..=groups.len())
             .map(|i| folder.join(format!("{stem}_Teil{i:0width$}.pdf")))
             .collect();
-        if let Some(existing) = targets.iter().find(|p| p.exists()) {
+        // Im Browser landen die Teile als Downloads – dort gibt es nichts zu überschreiben.
+        if let Some(existing) = targets
+            .iter()
+            .find(|p| !crate::platform::is_web() && p.exists())
+        {
             if let Some(dlg) = &mut self.split_dialog {
                 dlg.error = Some(format!(
                     "„{}“ gibt es schon – bitte anderen Ordner wählen.",
@@ -534,7 +542,7 @@ impl PdfToolApp {
                     );
                     let bytes =
                         pdftool_core::extract_pages(&snapshot, pages).map_err(|e| e.to_string())?;
-                    std::fs::write(target, bytes)
+                    crate::platform::write(target, &bytes)
                         .map_err(|e| format!("„{}“: {e}", target.display()))?;
                 }
                 Ok(format!(

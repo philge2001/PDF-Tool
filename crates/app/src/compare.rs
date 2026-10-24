@@ -75,15 +75,12 @@ fn document_words(
 
 impl PdfToolApp {
     /// "Vergleichen mit…": andere Datei wählen und den Vergleich starten.
+    /// Das Ergebnis kommt über `handle_picked` (`Pick::Compare`) → `start_compare_with`.
     pub(crate) fn start_compare(&mut self, ctx: &egui::Context) {
-        let Some(path) = rfd::FileDialog::new()
+        crate::platform::FileDialog::new()
             .add_filter("PDF", &["pdf"])
             .set_title("Vergleichen mit…")
-            .pick_file()
-        else {
-            return;
-        };
-        self.start_compare_with(ctx, path);
+            .pick(ctx, crate::platform::Pick::Compare, false);
     }
 
     pub(crate) fn start_compare_with(&mut self, ctx: &egui::Context, path: PathBuf) {
@@ -118,7 +115,8 @@ impl PdfToolApp {
         let worker = renderer.clone();
         let job = crate::jobs::Job::spawn("Vergleichen", ctx, move |c| {
             c.progress(0.0, "Datei wird gelesen …");
-            let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+            let bytes =
+                crate::platform::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
             let doc = Document::from_bytes(bytes.clone()).map_err(|e| e.to_string())?;
             let new = Side {
                 bytes: Arc::new(bytes),
@@ -246,7 +244,7 @@ impl CompareView {
                 ctx.clone(),
             );
             // Eigener Thread: `render_page` blockiert, die UI soll weiterlaufen.
-            std::thread::spawn(move || {
+            crate::platform::spawn(move || {
                 let img = renderer
                     .render_page(&bytes, key.1 as u32, size, PREVIEW_SCALE)
                     .map_err(|e| e.to_string());

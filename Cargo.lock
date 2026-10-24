@@ -3304,6 +3304,7 @@ dependencies = [
  "anyhow",
  "der",
  "eframe",
+ "js-sys",
  "pdftool-core",
  "pdftool-ocr",
  "pdftool-render",
@@ -3313,6 +3314,9 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ureq",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "winresource",
 ]
 
@@ -3353,6 +3357,7 @@ dependencies = [
  "pdftool-core",
  "thiserror 2.0.21",
  "tracing",
+ "web-time",
 ]
 
 [[package]]

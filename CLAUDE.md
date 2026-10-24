@@ -19,10 +19,10 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 | Crate | Pfad | Aufgabe | Darf abhängen von |
 |---|---|---|---|
 | pdftool-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg, ttf-parser, subsetter, png, jpeg-encoder, zip, similar, getrandom (Zufallsschlüssel für AES-256; wasm32: Feature `wasm_js`), web-time (Uhrzeit, auch im Browser) |
-| pdftool-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
+| pdftool-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render, web-time (Zeitscheiben im Browser) |
 | pdftool-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore; wasm32: getrandom 0.2 mit Feature `js` |
 | pdftool-ocr | crates/ocr | Texterkennung (Tesseract), Wörter mit Pixelrechteck | tesseract-rs (baut Tesseract/Leptonica mit CMake) |
-| pdftool-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, ocr (Feature `ocr`, Standard), eframe (Feature `links`: Weblinks im Browser öffnen), rfd, der, ureq; Build: winresource (nur Windows, Icon in der .exe) |
+| pdftool-app | crates/app | eframe-App (Bibliothek `pdftool_app` + Programm `pdftool`), Werkzeuge, Panels, Shortcuts | core, render, sign, ocr (Feature `ocr`, Standard), eframe (Feature `links`: Weblinks im Browser öffnen), rfd, der, ureq (nicht wasm32); wasm32: wasm-bindgen, wasm-bindgen-futures, js-sys, web-sys (Dateiauswahl, Downloads); Build: winresource (nur Windows, Icon in der .exe) |
 
 ## Architekturregeln
 - **core** kennt weder UI noch PDFium und ist vollständig unit-testbar.
@@ -41,11 +41,16 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   (cms 0.2, x509-cert 0.2, der 0.7, rsa 0.9, p256/p384 0.13) – die nächste Generation ist noch RC.
 - **Speichern** ist ein inkrementelles Update: Die Originalbytes bleiben unverändert, die Änderungen werden angehängt.
 - Fehler: `thiserror` in Library-Crates, `anyhow` nur in der App. Logging mit `tracing`.
-- **Browser (PDF Webeditor):** `core` und `sign` laufen auch als WebAssembly (github.com/philge2001/PDF-Webeditor
-  bindet `pdftool-core` per Git ein). Deshalb dort kein `SystemTime::now()`/`Instant::now()` (Absturz im Browser) –
-  stattdessen `core::date::system_now()`; CI-Job `wasm` prüft Clippy für wasm32 und sucht nach `::now`.
-  `std::fs`/`std::env` liefern im Browser nur Fehler/`None` (kein Absturz): Pfad-Funktionen wie
-  `Document::open`/`save_as` und `system_fonts` sind dort einfach nicht nutzbar, die Bytes-Varianten schon.
+- **Browser (PDF Webeditor):** Die ganze App läuft auch als WebAssembly (github.com/philge2001/PDF-Webeditor
+  bindet `pdftool-app` per Git ein, ohne Feature `ocr`). Regeln:
+  - Kein `SystemTime::now()`/`Instant::now()` (Absturz im Browser; `clippy.toml` verbietet sie) – stattdessen
+    `core::date::system_now()` bzw. `web_time::Instant`.
+  - In der App keine Dateien/Dialoge/Threads direkt: immer über `app::platform` (`FileDialog` mit `pick(ctx, Pick, …)`
+    → Ergebnis über `take_picked`/`PdfToolApp::handle_picked`; `save_file`/`pick_folder`; `read`, `write`,
+    `exists`, `open_document`, `save_document`, `spawn`, `is_web`). Neue Dateiauswahl = neuer `Pick`-Fall.
+  - `std::fs`/`std::env` liefern im Browser nur Fehler/`None` (kein Absturz): Pfad-Funktionen in core
+    (`Document::open`/`save_as`, `system_fonts`) sind dort nicht nutzbar – `from_bytes`+`set_path`/`save_with`.
+  - CI-Job `wasm`: Clippy für wasm32 über core, sign, render und app.
 - Keine AGPL-Abhängigkeiten. Jede neue Crate wird im Commit bzw. hier mit einem Satz begründet.
 
 ## Konventionen
@@ -202,9 +207,13 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   Formularfelder und sichtbare Signaturen nutzen weiterhin Helvetica (WinAnsi).
 
 ## Wichtige Module
-- `core::document` – `Document::open`, `PageInfo` (CropBox, /Rotate, Umrechnung PDF ↔ Anzeige)
+- `core::document` – `Document::open`, `from_bytes`+`set_path`, `save_as`/`save_with` (eigene Schreibfunktion), `PageInfo` (CropBox, /Rotate, Umrechnung PDF ↔ Anzeige)
 - `render::worker` – `RenderService` (Thread + Channels), `RenderKey` (Seite, Skalierungsstufe, Kachel),
   `page_pixel_size`/`tile_grid`/`tile_rect` (gemeinsame Rechenregeln für App und Worker)
+- `render::worker::Worker` – Zustand des Workers (Dokument, Warteschlangen, Offscreen-Dokument), `step` = eine
+  Arbeitseinheit. Desktop: Thread-Schleife `run`. Browser (`worker::web`): kein Thread, Worker in einem
+  `thread_local`, Aufträge sammeln, `poll` arbeitet pro Frame höchstens `FRAME_BUDGET_MS` ab; `OffscreenRenderer`
+  rendert dort synchron
 - `render::cache::ByteLru` – LRU mit Byte-Budget
 - `app::viewer` – `Layout` (Präfixsummen, Binärsuche), `PageTextures` (GPU-Texturen, pending/wanted),
   `Viewer::show` (zeichnet nur sichtbare Seiten, Kacheln ab 3072 px), Zoom mit Anker (`set_zoom`),
@@ -343,6 +352,10 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - `app::page_dialogs` – Dialoge „Seiten aus Datei einfügen“, „Dateien zusammenführen“, „Seiten extrahieren“,
   „Dokument teilen“
   (Ergebnis = neues unbenanntes Dokument, `adopt_document` zeigt es über eine Momentaufnahme an)
+- `app::platform` – Desktop/Browser-Unterschiede: `FileDialog` (wie rfd; Browser: Auswahl asynchron, Speichern =
+  Download ohne Dialog), `Pick` + `take_picked` (gewählte Dateien, verarbeitet in `PdfToolApp::handle_picked`),
+  `read`/`write`/`exists` (Browser: virtuelle Dateien der Sitzung, Schreiben = Download), `open_document`,
+  `save_document` (`Document::save_with`), `spawn` (Browser: sofort), `receive_dropped` (Drag & Drop im Browser)
 - `app::jobs` – Hintergrund-Jobs (`Job::spawn`, Fortschritt, Abbrechen, modales Fortschrittsfenster);
   höchstens ein Job gleichzeitig (`PdfToolApp::job`), Ergebnis als Info- oder Fehlerdialog
 - `core::form` – `FormField`/`FieldKind`/`FieldValue`/`Widget`, `FormStore` (Dateireihenfolge = Tab-Reihenfolge);

@@ -226,7 +226,7 @@ fn typing_merges_into_one_undo_step() {
 fn save_twice_to_file() {
     let path = std::env::temp_dir().join(format!(
         "pdftool-form-{}.pdf",
-        std::time::SystemTime::now()
+        pdftool_core::date::system_now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos()
@@ -445,7 +445,7 @@ fn add_option_to_existing_radio_group() {
 fn created_field_survives_save_undo_redo() {
     let path = std::env::temp_dir().join(format!(
         "pdftool-formedit-{}.pdf",
-        std::time::SystemTime::now()
+        pdftool_core::date::system_now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos()

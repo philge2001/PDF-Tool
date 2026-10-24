@@ -2,6 +2,7 @@
 //!
 //! `cargo run -p pdftool-ocr --example ocr_demo -- bild.pgm [deu+eng] [dpi]`
 //! (PGM z. B. mit `convert bild.png -colorspace gray bild.pgm` erzeugen)
+#![allow(clippy::disallowed_methods)] // Zeitmessung im Desktop-Werkzeug (nicht im Browser)
 
 use pdftool_ocr::{Engine, Image};
 

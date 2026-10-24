@@ -12,7 +12,6 @@ use pdftool_core::text::{CharBox, PageText};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::thread::JoinHandle;
 
 /// Kennung eines geöffneten Dokuments. Wird bei jedem Öffnen hochgezählt, damit
 /// verspätete Ergebnisse zu einem alten Dokument erkannt und verworfen werden.
@@ -107,6 +106,8 @@ enum Job {
     Retain(HashSet<RenderKey>),
     /// Seite eines beliebigen Dokuments rendern und direkt an `reply` antworten
     /// (für Hintergrund-Jobs wie die Texterkennung).
+    // Im Browser laufen Offscreen-Aufträge direkt, ohne Warteschlange.
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     Offscreen(OffscreenJob),
 }
 
@@ -130,9 +131,19 @@ enum OffscreenKind {
 
 /// Rendert Seiten für Hintergrund-Jobs. Klonbar und `Send`: Jeder Job-Thread bekommt eine
 /// Kopie. Die Anfrage läuft trotzdem im Render-Thread (PDFium nur dort), der Aufrufer wartet.
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone)]
 pub struct OffscreenRenderer {
     jobs: Sender<Job>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl OffscreenRenderer {
+    fn send(&self, job: OffscreenJob) -> Result<()> {
+        self.jobs
+            .send(Job::Offscreen(job))
+            .map_err(|_| RenderError::WorkerGone)
+    }
 }
 
 impl OffscreenRenderer {
@@ -147,7 +158,7 @@ impl OffscreenRenderer {
         scale: f32,
     ) -> Result<RgbaImage> {
         let (reply, answer) = mpsc::channel();
-        self.send(
+        self.submit(
             bytes,
             page,
             OffscreenKind::Render {
@@ -162,25 +173,23 @@ impl OffscreenRenderer {
     /// Text einer Seite (Lesereihenfolge, Zeilen mit `\n` getrennt). Blockiert.
     pub fn page_text(&self, bytes: &Arc<Vec<u8>>, page: u32) -> Result<String> {
         let (reply, answer) = mpsc::channel();
-        self.send(bytes, page, OffscreenKind::Text { reply })?;
+        self.submit(bytes, page, OffscreenKind::Text { reply })?;
         answer.recv().map_err(|_| RenderError::WorkerGone)?
     }
 
     /// Zeichen einer Seite mit Rechtecken (PDF-Raum). Blockiert.
     pub fn page_chars(&self, bytes: &Arc<Vec<u8>>, page: u32) -> Result<PageText> {
         let (reply, answer) = mpsc::channel();
-        self.send(bytes, page, OffscreenKind::Chars { reply })?;
+        self.submit(bytes, page, OffscreenKind::Chars { reply })?;
         answer.recv().map_err(|_| RenderError::WorkerGone)?
     }
 
-    fn send(&self, bytes: &Arc<Vec<u8>>, page: u32, kind: OffscreenKind) -> Result<()> {
-        self.jobs
-            .send(Job::Offscreen(OffscreenJob {
-                bytes: Arc::clone(bytes),
-                page,
-                kind,
-            }))
-            .map_err(|_| RenderError::WorkerGone)
+    fn submit(&self, bytes: &Arc<Vec<u8>>, page: u32, kind: OffscreenKind) -> Result<()> {
+        self.send(OffscreenJob {
+            bytes: Arc::clone(bytes),
+            page,
+            kind,
+        })
     }
 }
 
@@ -220,13 +229,15 @@ pub fn tile_rect(page_px: (u32, u32), tile: (u32, u32)) -> (u32, u32, u32, u32) 
 }
 
 /// Handle auf den laufenden Worker. Wird es gedroppt, endet der Thread.
+#[cfg(not(target_arch = "wasm32"))]
 pub struct RenderService {
     // `Option`, damit wir den Sender in `Drop` vorher wegnehmen können (siehe unten).
     jobs: Option<Sender<Job>>,
     events: Receiver<Event>,
-    thread: Option<JoinHandle<()>>,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl RenderService {
     /// Startet den Worker und bindet PDFium. Schlägt fehl, wenn die Bibliothek fehlt.
     ///
@@ -244,7 +255,7 @@ impl RenderService {
             .spawn(move || match loader::bind_pdfium() {
                 Ok(pdfium) => {
                     let _ = init_tx.send(Ok(()));
-                    run(&pdfium, job_rx, ev_tx, waker);
+                    run(Worker::new(&pdfium, ev_tx, Box::new(waker)), job_rx);
                 }
                 Err(e) => {
                     let _ = init_tx.send(Err(e));
@@ -268,6 +279,21 @@ impl RenderService {
         }
     }
 
+    /// Handle für Hintergrund-Jobs (siehe [`OffscreenRenderer`]).
+    pub fn offscreen(&self) -> Option<OffscreenRenderer> {
+        self.jobs
+            .as_ref()
+            .map(|jobs| OffscreenRenderer { jobs: jobs.clone() })
+    }
+
+    /// Holt alle angekommenen Ereignisse ab, ohne zu blockieren.
+    pub fn poll(&self) -> Vec<Event> {
+        self.events.try_iter().collect()
+    }
+}
+
+/// Gemeinsame Aufträge beider Varianten (Desktop: Thread, Browser: siehe [`web`]).
+impl RenderService {
     /// Öffnet ein Dokument (ersetzt ein evtl. vorher geöffnetes).
     /// `hidden`: Annotationen, die nicht mitgerendert werden sollen.
     pub fn open(&self, doc: DocId, bytes: Arc<Vec<u8>>, hidden: HiddenAnnots) {
@@ -292,20 +318,9 @@ impl RenderService {
     pub fn retain(&self, wanted: HashSet<RenderKey>) {
         self.send(Job::Retain(wanted));
     }
-
-    /// Handle für Hintergrund-Jobs (siehe [`OffscreenRenderer`]).
-    pub fn offscreen(&self) -> Option<OffscreenRenderer> {
-        self.jobs
-            .as_ref()
-            .map(|jobs| OffscreenRenderer { jobs: jobs.clone() })
-    }
-
-    /// Holt alle angekommenen Ereignisse ab, ohne zu blockieren.
-    pub fn poll(&self) -> Vec<Event> {
-        self.events.try_iter().collect()
-    }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl Drop for RenderService {
     fn drop(&mut self) {
         // Sender droppen -> `recv()` im Worker liefert Err -> Schleife endet.
@@ -316,47 +331,173 @@ impl Drop for RenderService {
     }
 }
 
-/// Hauptschleife des Workers.
-///
-/// Die Lifetime `'p` verknüpft das Dokument mit `pdfium`: Ein `PdfDocument<'p>` darf
-/// nicht länger leben als die `Pdfium`-Instanz, von der es stammt. Der Compiler prüft das.
-fn run<'p>(pdfium: &'p Pdfium, jobs: Receiver<Job>, events: Sender<Event>, waker: impl Fn()) {
-    let mut doc: Option<OpenDoc<'p>> = None;
-    let mut queues = Queues::default();
-    // Zuletzt für Offscreen-Aufträge geladenes Dokument (erkannt am Arc-Zeiger).
-    let mut offscreen_doc: Option<(Arc<Vec<u8>>, PdfDocument<'p>)> = None;
-
+/// Hauptschleife des Render-Threads (Desktop).
+#[cfg(not(target_arch = "wasm32"))]
+fn run(mut worker: Worker<'_>, jobs: Receiver<Job>) {
     loop {
         // Nichts zu tun? Dann blockierend auf den nächsten Auftrag warten (kostet keine CPU).
-        if queues.is_empty() {
+        if !worker.has_work() {
             match jobs.recv() {
-                Ok(job) => handle_job(job, pdfium, &mut doc, &mut queues, &events, &waker),
+                Ok(job) => worker.handle_job(job),
                 Err(_) => return, // App wurde beendet
             }
         }
         // Alle weiteren wartenden Aufträge einsammeln, damit wir priorisieren können.
         while let Ok(job) = jobs.try_recv() {
-            handle_job(job, pdfium, &mut doc, &mut queues, &events, &waker);
+            worker.handle_job(job);
         }
+        if !worker.step() {
+            return; // die App holt keine Ergebnisse mehr ab
+        }
+    }
+}
+
+/// Browser-Variante: Es gibt keinen zweiten Thread. PDFium läuft im UI-Thread, und zwar
+/// in Zeitscheiben: Aufträge werden nur gesammelt, [`RenderService::poll`] arbeitet sie pro
+/// Frame höchstens [`web::FRAME_BUDGET_MS`] lang ab und fordert bei Restarbeit einen neuen
+/// Frame an. Offscreen-Aufträge (Hintergrund-Jobs) laufen sofort und synchron.
+#[cfg(target_arch = "wasm32")]
+mod web {
+    use super::*;
+    use std::cell::RefCell;
+
+    /// Höchstens so viele Millisekunden PDFium-Arbeit pro Frame (die Oberfläche bleibt flüssig).
+    pub(super) const FRAME_BUDGET_MS: u128 = 12;
+
+    thread_local! {
+        // Im Browser gibt es nur einen Thread; der Worker lebt hier, damit der klonbare
+        // `OffscreenRenderer` (der `Send` sein muss) ohne eigenen Zeiger an ihn herankommt.
+        static WORKER: RefCell<Option<Worker<'static>>> = const { RefCell::new(None) };
+    }
+
+    pub struct RenderService {
+        events: Receiver<Event>,
+    }
+
+    impl RenderService {
+        /// Bindet pdfium.wasm (vorher von der Webseite geladen, siehe PDF Webeditor).
+        pub fn start(waker: impl Fn() + Send + 'static) -> Result<Self> {
+            let pdfium = loader::bind_pdfium()?;
+            // PDFium lebt bis zum Schließen der Seite: `Box::leak` liefert `&'static Pdfium`,
+            // damit der Worker (und seine `PdfDocument<'static>`) ohne Lifetime auskommt.
+            let pdfium: &'static Pdfium = Box::leak(Box::new(pdfium));
+            let (ev_tx, ev_rx) = mpsc::channel::<Event>();
+            WORKER.with(|w| *w.borrow_mut() = Some(Worker::new(pdfium, ev_tx, Box::new(waker))));
+            Ok(Self { events: ev_rx })
+        }
+
+        pub(super) fn send(&self, job: Job) {
+            with_worker(|w| {
+                w.handle_job(job);
+                (w.waker)(); // nächster Frame arbeitet die Aufträge in `poll` ab
+            });
+        }
+
+        pub fn offscreen(&self) -> Option<OffscreenRenderer> {
+            Some(OffscreenRenderer {})
+        }
+
+        /// Arbeitet Aufträge ab (höchstens eine Zeitscheibe) und liefert die Ergebnisse.
+        pub fn poll(&self) -> Vec<Event> {
+            let start = web_time::Instant::now();
+            with_worker(|w| {
+                while w.has_work() && start.elapsed().as_millis() < FRAME_BUDGET_MS {
+                    w.step();
+                }
+                if w.has_work() {
+                    (w.waker)();
+                }
+            });
+            self.events.try_iter().collect()
+        }
+    }
+
+    pub(super) fn with_worker(f: impl FnOnce(&mut Worker<'static>)) {
+        WORKER.with(|w| match w.try_borrow_mut() {
+            Ok(mut guard) => {
+                if let Some(worker) = guard.as_mut() {
+                    f(worker);
+                }
+            }
+            Err(_) => {
+                tracing::error!("Render-Worker ist gerade beschäftigt (verschachtelter Aufruf)")
+            }
+        });
+    }
+
+    /// Im Browser rendern Hintergrund-Jobs direkt (synchron) im UI-Thread.
+    #[derive(Clone)]
+    pub struct OffscreenRenderer {}
+
+    impl OffscreenRenderer {
+        pub(super) fn send(&self, job: OffscreenJob) -> Result<()> {
+            let mut job = Some(job);
+            with_worker(|w| {
+                if let Some(job) = job.take() {
+                    w.run_offscreen(job);
+                }
+            });
+            // Nicht ausgeführt (kein Worker) → der Aufrufer bekommt beim Warten `WorkerGone`.
+            Ok(())
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub use web::{OffscreenRenderer, RenderService};
+
+/// Der Zustand des Workers: geöffnetes Dokument, Warteschlangen, Offscreen-Dokument.
+///
+/// Die Lifetime `'p` verknüpft die Dokumente mit `pdfium`: Ein `PdfDocument<'p>` darf
+/// nicht länger leben als die `Pdfium`-Instanz, von der es stammt. Der Compiler prüft das.
+struct Worker<'p> {
+    pdfium: &'p Pdfium,
+    doc: Option<OpenDoc<'p>>,
+    queues: Queues,
+    /// Zuletzt für Offscreen-Aufträge geladenes Dokument (erkannt am Arc-Zeiger).
+    offscreen_doc: Option<(Arc<Vec<u8>>, PdfDocument<'p>)>,
+    events: Sender<Event>,
+    /// In der App: `ctx.request_repaint()`. `Box<dyn …>`, damit `Worker` keinen Typparameter braucht.
+    waker: Box<dyn Fn()>,
+}
+
+impl<'p> Worker<'p> {
+    fn new(pdfium: &'p Pdfium, events: Sender<Event>, waker: Box<dyn Fn()>) -> Self {
+        Self {
+            pdfium,
+            doc: None,
+            queues: Queues::default(),
+            offscreen_doc: None,
+            events,
+            waker,
+        }
+    }
+
+    fn has_work(&self) -> bool {
+        !self.queues.is_empty()
+    }
+
+    /// Erledigt eine Arbeitseinheit. `false`, wenn niemand mehr Ergebnisse abholt.
+    fn step(&mut self) -> bool {
         // Offscreen-Aufträge brauchen kein geöffnetes Dokument der Ansicht.
-        if queues.offscreen_is_next()
-            && let Some(job) = queues.offscreen.pop_front()
+        if self.queues.offscreen_is_next()
+            && let Some(job) = self.queues.offscreen.pop_front()
         {
-            run_offscreen(pdfium, &mut offscreen_doc, job);
-            continue;
+            self.run_offscreen(job);
+            return true;
         }
-        if queues.offscreen.is_empty() {
-            offscreen_doc = None; // Speicher freigeben, wenn kein Job mehr rendert
+        if self.queues.offscreen.is_empty() {
+            self.offscreen_doc = None; // Speicher freigeben, wenn kein Job mehr rendert
         }
-        let Some(d) = &mut doc else {
+        let Some(d) = &mut self.doc else {
             // ohne Dokument gibt es nichts zu tun (Offscreen-Aufträge laufen oben weiter)
-            queues.renders.clear();
-            queues.texts.clear();
-            continue;
+            self.queues.renders.clear();
+            self.queues.texts.clear();
+            return true;
         };
         let doc_id = d.id;
 
-        let event = match queues.next() {
+        let event = match self.queues.next() {
             Some(Work::Render(req)) if req.key.doc == doc_id => match d
                 .hide_annotations(req.key.page)
                 .and_then(|_| render(&d.pdf, &req))
@@ -378,12 +519,92 @@ fn run<'p>(pdfium: &'p Pdfium, jobs: Receiver<Job>, events: Sender<Event>, waker
                     PageText::default()
                 }),
             },
-            _ => continue, // leer oder gehört zu einem alten Dokument
+            _ => return true, // leer oder gehört zu einem alten Dokument
         };
-        if events.send(event).is_err() {
-            return;
+        if self.events.send(event).is_err() {
+            return false;
         }
-        waker();
+        (self.waker)();
+        true
+    }
+
+    fn handle_job(&mut self, job: Job) {
+        let queues = &mut self.queues;
+        match job {
+            Job::Open {
+                doc: id,
+                bytes,
+                hidden,
+            } => {
+                queues.clear();
+                self.doc = None; // altes Dokument zuerst freigeben
+                // PDFium will einen eigenen Vec; wir kopieren die Bytes einmalig.
+                let event = match self
+                    .pdfium
+                    .load_pdf_from_byte_vec(bytes.as_ref().clone(), None)
+                {
+                    Ok(d) => {
+                        let page_count = d.pages().len() as usize;
+                        self.doc = Some(OpenDoc { id, pdf: d, hidden });
+                        Event::Opened {
+                            doc: id,
+                            page_count,
+                        }
+                    }
+                    Err(e) => Event::OpenFailed {
+                        doc: id,
+                        error: e.to_string(),
+                    },
+                };
+                let _ = self.events.send(event);
+                (self.waker)();
+            }
+            Job::Close => {
+                queues.clear();
+                self.doc = None;
+            }
+            Job::Render(req) => {
+                // Doppelte Aufträge zusammenführen, dabei die höhere Priorität behalten.
+                if let Some(existing) = queues.renders.iter_mut().find(|r| r.key == req.key) {
+                    existing.priority = existing.priority.min(req.priority);
+                } else {
+                    queues.renders.push(req);
+                }
+            }
+            Job::ExtractText { doc, page } => {
+                if !queues.texts.contains(&(doc, page)) {
+                    queues.texts.push_back((doc, page));
+                }
+            }
+            Job::Retain(wanted) => queues.renders.retain(|r| wanted.contains(&r.key)),
+            Job::Offscreen(job) => queues.offscreen.push_back(job),
+        }
+    }
+
+    /// Offscreen-Auftrag ausführen und direkt beantworten.
+    fn run_offscreen(&mut self, job: OffscreenJob) {
+        let pdf = offscreen_doc(self.pdfium, &mut self.offscreen_doc, &job.bytes);
+        match job.kind {
+            OffscreenKind::Render {
+                page_size_pt,
+                scale,
+                reply,
+            } => {
+                let result =
+                    pdf.and_then(|pdf| render_offscreen(pdf, job.page, page_size_pt, scale));
+                let _ = reply.send(result);
+            }
+            OffscreenKind::Chars { reply } => {
+                let _ = reply.send(pdf.and_then(|pdf| extract_text(pdf, job.page)));
+            }
+            OffscreenKind::Text { reply } => {
+                let result = pdf.and_then(|pdf| {
+                    let page = pdf.pages().get(job.page as PdfPageIndex)?;
+                    Ok(page.text()?.all())
+                });
+                let _ = reply.send(result);
+            }
+        }
     }
 }
 
@@ -466,62 +687,6 @@ impl Queues {
     }
 }
 
-fn handle_job<'p>(
-    job: Job,
-    pdfium: &'p Pdfium,
-    doc: &mut Option<OpenDoc<'p>>,
-    queues: &mut Queues,
-    events: &Sender<Event>,
-    waker: &impl Fn(),
-) {
-    match job {
-        Job::Open {
-            doc: id,
-            bytes,
-            hidden,
-        } => {
-            queues.clear();
-            *doc = None; // altes Dokument zuerst freigeben
-            // PDFium will einen eigenen Vec; wir kopieren die Bytes einmalig.
-            let event = match pdfium.load_pdf_from_byte_vec(bytes.as_ref().clone(), None) {
-                Ok(d) => {
-                    let page_count = d.pages().len() as usize;
-                    *doc = Some(OpenDoc { id, pdf: d, hidden });
-                    Event::Opened {
-                        doc: id,
-                        page_count,
-                    }
-                }
-                Err(e) => Event::OpenFailed {
-                    doc: id,
-                    error: e.to_string(),
-                },
-            };
-            let _ = events.send(event);
-            waker();
-        }
-        Job::Close => {
-            queues.clear();
-            *doc = None;
-        }
-        Job::Render(req) => {
-            // Doppelte Aufträge zusammenführen, dabei die höhere Priorität behalten.
-            if let Some(existing) = queues.renders.iter_mut().find(|r| r.key == req.key) {
-                existing.priority = existing.priority.min(req.priority);
-            } else {
-                queues.renders.push(req);
-            }
-        }
-        Job::ExtractText { doc, page } => {
-            if !queues.texts.contains(&(doc, page)) {
-                queues.texts.push_back((doc, page));
-            }
-        }
-        Job::Retain(wanted) => queues.renders.retain(|r| wanted.contains(&r.key)),
-        Job::Offscreen(job) => queues.offscreen.push_back(job),
-    }
-}
-
 /// Liest alle Zeichen einer Seite mit ihren Rechtecken (PDF-Raum, unrotiert).
 fn extract_text(doc: &PdfDocument, page: u32) -> Result<PageText> {
     let page = doc.pages().get(page as PdfPageIndex)?;
@@ -550,35 +715,6 @@ fn extract_text(doc: &PdfDocument, page: u32) -> Result<PageText> {
         })
         .collect();
     Ok(PageText::new(chars))
-}
-
-/// Offscreen-Auftrag ausführen und direkt beantworten.
-fn run_offscreen<'p>(
-    pdfium: &'p Pdfium,
-    cache: &mut Option<(Arc<Vec<u8>>, PdfDocument<'p>)>,
-    job: OffscreenJob,
-) {
-    let pdf = offscreen_doc(pdfium, cache, &job.bytes);
-    match job.kind {
-        OffscreenKind::Render {
-            page_size_pt,
-            scale,
-            reply,
-        } => {
-            let result = pdf.and_then(|pdf| render_offscreen(pdf, job.page, page_size_pt, scale));
-            let _ = reply.send(result);
-        }
-        OffscreenKind::Chars { reply } => {
-            let _ = reply.send(pdf.and_then(|pdf| extract_text(pdf, job.page)));
-        }
-        OffscreenKind::Text { reply } => {
-            let result = pdf.and_then(|pdf| {
-                let page = pdf.pages().get(job.page as PdfPageIndex)?;
-                Ok(page.text()?.all())
-            });
-            let _ = reply.send(result);
-        }
-    }
 }
 
 /// Lädt das Dokument eines Offscreen-Auftrags (oder nimmt das zuletzt geladene).
