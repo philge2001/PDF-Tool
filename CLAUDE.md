@@ -59,9 +59,11 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - `cargo-packager` (Konfiguration `[package.metadata.packager]` in `crates/app/Cargo.toml`, Pfade relativ zu
   `crates/app`): Windows NSIS (Benutzerinstallation, deutsch über `packaging/German.nsh` mit UTF-8-BOM),
   macOS DMG (nur Apple Silicon), Linux deb + AppImage (optional). Werkzeuge nur in CI/lokal installiert, keine Abhängigkeit.
-- `packaging/prepare.sh <plattform>` → `packaging/dist/` (gitignored): PDFium chromium/7881 (= `pdfium_latest`
+- `packaging/prepare.sh <plattform>` bzw. `packaging/prepare.ps1` (Windows, PowerShell 5.1, mit UTF-8-BOM) → `packaging/dist/` (gitignored): PDFium chromium/7881 (= `pdfium_latest`
   von pdfium-render 0.9.4 – bei Update von pdfium-render mitziehen), Lizenztexte, `cargo about` →
   `Rust-Bibliotheken.html` (`packaging/about.toml` = erlaubte Lizenzen, `about.hbs` = Vorlage).
+- `before-packaging-command` prüft zuerst mit `render`-Example `check_dist`, ob PDFium in `packaging/dist/lib` liegt
+  (cargo-packager würde sonst stillschweigend ohne PDFium paketieren).
 - PDFium-Fundorte im Paket: neben der exe, `../Resources` (macOS), `../lib/pdftool` (deb/AppImage) – `render::loader`.
 - Workflow `.github/workflows/release.yml`: Tag `v*` = bauen + GitHub-Release (Version muss zu Cargo.toml passen),
   PR mit Paketier-Änderungen/„Run workflow“ = nur Artifacts.
