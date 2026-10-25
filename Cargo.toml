@@ -35,6 +35,8 @@ png = "0.18"
 jpeg-encoder = "0.7"
 # Zufallszahlen für Verschlüsselungsschlüssel (ohnehin über lopdf im Baum) – MIT/Apache (Phase 9).
 getrandom = "0.4"
+# Uhrzeit, die auch im Browser (wasm32) funktioniert; auf dem Desktop identisch zu std::time – MIT/Apache.
+web-time = "1"
 # Text-Diff für den Dokumentvergleich – Apache-2.0 (Phase 8).
 similar = "3"
 # ZIP schreiben (DOCX-Container), nur Deflate über flate2 – MIT (Phase 8).

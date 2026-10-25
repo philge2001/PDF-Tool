@@ -176,14 +176,14 @@ impl PdfToolApp {
             "{}-signierte-Fassung.pdf",
             d.file_name().trim_end_matches(".pdf")
         );
-        let Some(path) = rfd::FileDialog::new()
+        let Some(path) = crate::platform::FileDialog::new()
             .add_filter("PDF", &["pdf"])
             .set_file_name(name)
             .save_file()
         else {
             return;
         };
-        if let Err(e) = std::fs::write(&path, signed) {
+        if let Err(e) = crate::platform::write(&path, signed) {
             self.error = Some(format!(
                 "„{}“ konnte nicht gespeichert werden:\n{e}",
                 path.display()
@@ -230,25 +230,28 @@ impl PdfToolApp {
             }
             self.rebuild_trust();
         }
-        if ui.button("Zertifikat importieren…").clicked()
-            && let Some(path) = rfd::FileDialog::new()
+        if ui.button("Zertifikat importieren…").clicked() {
+            crate::platform::FileDialog::new()
                 .add_filter("Zertifikat", &["cer", "crt", "der", "pem"])
-                .pick_file()
+                .pick(ui.ctx(), crate::platform::Pick::Certificate, false);
+        }
+    }
+
+    /// Gewähltes Zertifikat als vertrauenswürdig übernehmen (`Pick::Certificate`).
+    pub(crate) fn import_certificate(&mut self, path: &std::path::Path) {
+        match crate::platform::read(path)
+            .ok()
+            .and_then(|b| cert::parse_certificate(&b))
         {
-            match std::fs::read(&path)
-                .ok()
-                .and_then(|b| cert::parse_certificate(&b))
-            {
-                Some(c) => {
-                    let der = der::Encode::to_der(&c).unwrap_or_default();
-                    self.trust_certificate(&der);
-                }
-                None => {
-                    self.error = Some(format!(
-                        "„{}“ ist kein lesbares Zertifikat (erwartet: DER oder PEM).",
-                        path.display()
-                    ));
-                }
+            Some(c) => {
+                let der = der::Encode::to_der(&c).unwrap_or_default();
+                self.trust_certificate(&der);
+            }
+            None => {
+                self.error = Some(format!(
+                    "„{}“ ist kein lesbares Zertifikat (erwartet: DER oder PEM).",
+                    path.display()
+                ));
             }
         }
     }

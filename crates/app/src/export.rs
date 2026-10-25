@@ -139,7 +139,7 @@ pub fn export_images(
             page_count,
             options.format.extension(),
         ));
-        std::fs::write(&path, data).map_err(|e| format!("{}: {e}", path.display()))?;
+        crate::platform::write(&path, &data).map_err(|e| format!("{}: {e}", path.display()))?;
     }
     Ok(total)
 }
@@ -260,12 +260,12 @@ impl PdfToolApp {
         );
         // Ziel wählen: Ordner für Bilder, Datei sonst.
         let target = if options.format.per_page() {
-            rfd::FileDialog::new()
+            crate::platform::FileDialog::new()
                 .set_title("Ordner für die Bilder wählen")
                 .pick_folder()
         } else {
             let ext = options.format.extension();
-            rfd::FileDialog::new()
+            crate::platform::FileDialog::new()
                 .add_filter(ext.to_uppercase(), &[ext])
                 .set_file_name(format!("{stem}.{ext}"))
                 .save_file()
@@ -322,11 +322,15 @@ impl PdfToolApp {
                     };
                     let n =
                         export_images(&renderer, &snapshot, &sized, &options, &dest, &progress)?;
-                    Ok(format!("{n} Bild(er) gespeichert in\n{}", target.display()))
+                    Ok(if crate::platform::is_web() {
+                        format!("{n} Bild(er) heruntergeladen.")
+                    } else {
+                        format!("{n} Bild(er) gespeichert in\n{}", target.display())
+                    })
                 }
                 ExportFormat::Text => {
                     let text = export_text(&renderer, &snapshot, &pages, &progress)?;
-                    std::fs::write(&target, text).map_err(|e| e.to_string())?;
+                    crate::platform::write(&target, text.as_bytes()).map_err(|e| e.to_string())?;
                     Ok(format!("Text gespeichert:\n{}", target.display()))
                 }
                 ExportFormat::Docx => {
@@ -335,7 +339,7 @@ impl PdfToolApp {
                     let bytes =
                         pdftool_core::docx::export_docx(&doc, &pages, &|f, t| progress(f, t))
                             .map_err(|e| e.to_string())?;
-                    std::fs::write(&target, bytes).map_err(|e| e.to_string())?;
+                    crate::platform::write(&target, &bytes).map_err(|e| e.to_string())?;
                     Ok(format!("Word-Datei gespeichert:\n{}", target.display()))
                 }
             }

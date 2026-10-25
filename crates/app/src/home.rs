@@ -127,7 +127,7 @@ impl PdfToolApp {
             );
             return;
         }
-        let now = SystemTime::now();
+        let now = pdftool_core::date::system_now();
         let mut open: Option<PathBuf> = None;
         let mut remove: Option<PathBuf> = None;
         let row_h = 40.0;
@@ -141,11 +141,15 @@ impl PdfToolApp {
                     ui.label(RichText::new(h).weak());
                 }
                 ui.end_row();
-                for path in &self.settings.recent_files {
+                // Im Browser lassen sich nur Dateien dieser Sitzung erneut öffnen.
+                let reachable =
+                    |p: &&PathBuf| !crate::platform::is_web() || crate::platform::exists(p);
+                for path in self.settings.recent_files.iter().filter(reachable) {
                     let name = path
                         .file_name()
                         .map(|n| n.to_string_lossy().into_owned())
                         .unwrap_or_default();
+                    // Im Browser gibt es keine Dateiinfos (Datum/Größe bleiben leer).
                     let meta = std::fs::metadata(path).ok();
                     let resp = ui
                         .horizontal(|ui| {

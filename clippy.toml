@@ -1,0 +1,7 @@
+# Diese Aufrufe stürzen im Browser (PDF Webeditor, wasm32) ab.
+disallowed-methods = [
+    { path = "std::time::SystemTime::now", reason = "stürzt im Browser ab – pdftool_core::date::system_now() verwenden" },
+    { path = "std::time::Instant::now", reason = "stürzt im Browser ab – web_time::Instant verwenden" },
+    # Bibliotheksfunktionen, die intern SystemTime::now() aufrufen:
+    { path = "x509_cert::time::Validity::from_now", reason = "nutzt SystemTime::now() – Validity mit pdftool_core::date::system_now() bauen" },
+]

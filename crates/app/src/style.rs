@@ -64,6 +64,9 @@ pub fn install(ctx: &egui::Context) {
             v.window_fill = window;
             v.faint_bg_color = faint;
             v.extreme_bg_color = extreme;
+            // Eingabefelder: im hellen Design sonst weiß auf weißem Dialog und ohne Rahmen –
+            // also unsichtbar, bis man hineinklickt.
+            v.text_edit_bg_color = (!dark).then(|| Color32::from_gray(242));
             v.window_stroke = Stroke::new(1.0, border(dark));
             v.window_corner_radius = CornerRadius::same(10);
             v.menu_corner_radius = CornerRadius::same(8);

@@ -66,7 +66,8 @@ impl Job {
             cancel: cancel.clone(),
             ui: ui.clone(),
         };
-        std::thread::spawn(move || {
+        // Desktop: eigener Thread. Browser: läuft sofort (dort gibt es keine Threads).
+        crate::platform::spawn(move || {
             let result = work(&ctx);
             let _ = tx.send(result);
             ctx.ui.request_repaint();
@@ -122,6 +123,7 @@ impl Job {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)] // Zeitlimits in Desktop-Tests (nicht im Browser)
 mod tests {
     use super::*;
     use std::time::{Duration, Instant};

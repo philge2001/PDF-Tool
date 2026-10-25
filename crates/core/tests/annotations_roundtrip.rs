@@ -15,7 +15,7 @@ fn fixture(name: &str) -> PathBuf {
 
 /// Eindeutiger Pfad im Temp-Verzeichnis (Tests laufen parallel).
 fn temp_pdf(tag: &str) -> PathBuf {
-    let nanos = std::time::SystemTime::now()
+    let nanos = pdftool_core::date::system_now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();

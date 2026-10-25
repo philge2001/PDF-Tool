@@ -30,6 +30,21 @@ use lopdf::content::{Content, Operation};
 /// Name des Abschnitts, in dem PDF Tool neu gesetzte Absätze ablegt.
 const MARK: &[u8] = b"FcPara";
 
+/// Markierung `/FcBr MP` hinter einer Zeile, die mit einem harten Umbruch (Enter) endet. In der
+/// Datei stehen sonst nur einzeln platzierte Zeilen – ohne sie würde ein neu gesetzter Absatz
+/// beim nächsten Umbruch (z. B. nach dem Ändern der Breite) zu einem Fließtext zusammenlaufen.
+pub(crate) const BREAK_MARK: &[u8] = b"FcBr";
+
+/// Ist `op` eine Umbruch-Markierung (`/FcBr MP`)?
+pub(crate) fn is_break_mark(op: &Operation) -> bool {
+    op.operator == "MP"
+        && op
+            .operands
+            .first()
+            .and_then(|o| o.as_name().ok())
+            .is_some_and(|n| n == BREAK_MARK)
+}
+
 /// Ein erkannter Absatz.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Paragraph {
@@ -37,7 +52,8 @@ pub struct Paragraph {
     pub stamp: u64,
     /// Indizes aller Textausgabe-Operationen des Absatzes.
     pub shows: Vec<usize>,
-    /// Text, Zeilen mit Leerzeichen verbunden (Trennstriche am Zeilenende entfernt).
+    /// Text, Zeilen mit Leerzeichen verbunden (Trennstriche am Zeilenende entfernt); harte
+    /// Umbrüche als `\n` (siehe `breaks`).
     pub text: String,
     /// Umfassendes Rechteck der Zeichen (PDF-Benutzerraum).
     pub bounds: Rect,
@@ -53,6 +69,8 @@ pub struct Paragraph {
     /// Breite der längsten Zeile ab dem linken Rand (pt).
     pub width: f32,
     pub lines: usize,
+    /// Je Zeile die Zahl harter Umbrüche davor (`breaks[0]` = 0; 2 = Leerzeile dazwischen).
+    pub breaks: Vec<usize>,
     pub justified: bool,
     /// Schrift (Ressourcenname) und Größe der ersten Zeile.
     pub font: Vec<u8>,
@@ -81,6 +99,16 @@ impl Paragraph {
             width: (self.lines > 1).then_some(self.width + 0.5),
             justify: self.justified,
         }
+    }
+
+    /// Zeilen einschließlich Leerzeilen aus harten Umbrüchen (für die Höhe des Kastens).
+    pub fn rows(&self) -> usize {
+        self.lines
+            + self
+                .breaks
+                .iter()
+                .map(|b| b.saturating_sub(1))
+                .sum::<usize>()
     }
 
     /// Kasten als Rechteck (für die Anzeige): von der Oberlänge der ersten bis zur Unterlänge
@@ -115,6 +143,18 @@ struct Line<'a> {
     end: f32,
     text: String,
     bounds: Rect,
+    /// Erste und letzte Operation der Zeile.
+    first_op: usize,
+    last_op: usize,
+    /// Ende des ersten Worts entlang der Richtung (ab `origin`), falls die Zeile mehrere hat.
+    first_word: Option<f32>,
+}
+
+impl Line<'_> {
+    /// Breite des ersten Worts (bei nur einem Wort die ganze Zeile).
+    fn first_word(&self) -> f32 {
+        self.first_word.unwrap_or(self.end)
+    }
 }
 
 fn dot(a: Point, b: Point) -> f32 {
@@ -156,6 +196,9 @@ fn lines<'a>(it: &'a Interpreted) -> Vec<Line<'a>> {
                 end: 0.0,
                 text: String::new(),
                 bounds: t.bounds,
+                first_op: t.op,
+                last_op: t.op,
+                first_word: None,
             });
         }
         let Some(l) = out.last_mut() else { continue };
@@ -163,12 +206,19 @@ fn lines<'a>(it: &'a Interpreted) -> Vec<Line<'a>> {
         let mut last_end = if joins { Some(l.end) } else { None };
         for g in &t.glyphs {
             let start = project(l.origin, l.dir, t.matrix.apply(Point::new(g.x, t.rise))).0;
-            if let Some(e) = last_end
-                && start - e > 0.25 * em
+            let gap = last_end.is_some_and(|e| start - e > 0.25 * em);
+            if gap
                 && !l.text.ends_with(char::is_whitespace)
                 && !g.text.starts_with(char::is_whitespace)
             {
                 l.text.push(' ');
+            }
+            // Erstes Wort endet vor dem ersten Leerzeichen bzw. der ersten Lücke.
+            if l.first_word.is_none()
+                && (gap || g.text.starts_with(char::is_whitespace))
+                && !l.text.trim().is_empty()
+            {
+                l.first_word = last_end;
             }
             l.text.push_str(&g.text);
             let end = t
@@ -178,7 +228,21 @@ fn lines<'a>(it: &'a Interpreted) -> Vec<Line<'a>> {
         }
         l.end = l.end.max(project(l.origin, l.dir, t.end()).0);
         l.bounds = l.bounds.union(&t.bounds);
+        l.first_op = l.first_op.min(t.op);
+        l.last_op = l.last_op.max(t.op);
         l.shows.push(t);
+    }
+    out
+}
+
+/// Je Zeile die Zahl der Umbruch-Markierungen zwischen ihr und der vorigen Zeile.
+fn break_marks(it: &Interpreted, lines: &[Line]) -> Vec<usize> {
+    let mut out = vec![0; lines.len()];
+    for i in 1..lines.len() {
+        let (a, b) = (lines[i - 1].last_op, lines[i].first_op);
+        if a < b {
+            out[i] = it.ops[a + 1..b].iter().filter(|o| is_break_mark(o)).count();
+        }
     }
     out
 }
@@ -186,12 +250,18 @@ fn lines<'a>(it: &'a Interpreted) -> Vec<Line<'a>> {
 /// Fasst Zeilen zu Absätzen zusammen.
 pub fn group_paragraphs(it: &Interpreted, stamp: u64) -> Vec<Paragraph> {
     let lines = lines(it);
+    let marks = break_marks(it, &lines);
+    // Abstand zur vorigen Grundlinie (nach unten positiv), geteilt durch die Zahl der Zeilen
+    // dazwischen: Leerzeilen aus harten Umbrüchen (`\n\n`) gehören zum Absatz.
+    let step = |i: usize| {
+        let prev = &lines[i - 1];
+        -project(prev.origin, prev.dir, lines[i].origin).1 / marks[i].max(1) as f32
+    };
     // Absätze als Bereiche von Zeilenindizes.
     let mut groups: Vec<Vec<usize>> = Vec::new();
     for (i, l) in lines.iter().enumerate() {
         let joins = groups.last().is_some_and(|g| {
             let first = &lines[g[0]];
-            let prev = &lines[*g.last().expect("nicht leer")];
             if dot(l.dir, first.dir) < 0.999
                 || l.shows[0].render_mode != first.shows[0].render_mode
                 || l.em < first.em * 0.8
@@ -199,15 +269,14 @@ pub fn group_paragraphs(it: &Interpreted, stamp: u64) -> Vec<Paragraph> {
             {
                 return false;
             }
-            // Abstand zur vorigen Grundlinie (nach unten positiv) und linker Rand.
-            let (_, v) = project(prev.origin, prev.dir, l.origin);
-            let step = -v;
-            if step < 1.0 * first.em || step > 2.2 * first.em {
+            // Zeilenabstand (gleichmäßig) und linker Rand.
+            let s = step(i);
+            if s < 1.0 * first.em || s > 2.2 * first.em {
                 return false;
             }
             if g.len() >= 2 {
-                let (_, v1) = project(first.origin, first.dir, lines[g[1]].origin);
-                if (step + v1).abs() > 0.15 * -v1 {
+                let s1 = step(g[1]);
+                if (s - s1).abs() > 0.15 * s1 {
                     return false;
                 }
             }
@@ -259,19 +328,38 @@ pub fn group_paragraphs(it: &Interpreted, stamp: u64) -> Vec<Paragraph> {
                 .collect();
             let width = ends.iter().copied().fold(0.0, f32::max);
             let line_height = if g.len() >= 2 {
-                -project(first.origin, dir, lines[g[1]].origin).1
+                step(g[1])
             } else {
                 1.2 * first.em
             };
+            // Harte Umbrüche: markiert, sonst wenn das erste Wort der Zeile noch in die vorige
+            // gepasst hätte (fremde PDFs: Adressen, Aufzählungen ohne Zeichen, Gedichte).
+            let breaks: Vec<usize> = g
+                .iter()
+                .enumerate()
+                .map(|(k, &i)| {
+                    if k == 0 {
+                        0
+                    } else if marks[i] > 0 {
+                        marks[i]
+                    } else {
+                        let fits = ends[k - 1] + 0.28 * first.em + lines[i].first_word()
+                            < width - 0.1 * first.em;
+                        usize::from(fits)
+                    }
+                })
+                .collect();
             // Blocksatz: mindestens zwei volle Zeilen, die rechts (fast) gleich enden.
             let full = &ends[..ends.len() - 1];
             let justified =
                 full.len() >= 2 && full.iter().all(|e| (width - e).abs() <= 0.25 * first.em);
             // Text: Zeilen verbinden, Trennstrich vor Kleinbuchstaben entfernen.
             let mut text = String::new();
-            for &i in &g {
+            for (k, &i) in g.iter().enumerate() {
                 let t = lines[i].text.trim();
-                if text.ends_with('-')
+                if breaks[k] > 0 {
+                    text.push_str(&"\n".repeat(breaks[k]));
+                } else if text.ends_with('-')
                     && t.chars().next().is_some_and(char::is_lowercase)
                     && text.len() > 1
                 {
@@ -300,6 +388,7 @@ pub fn group_paragraphs(it: &Interpreted, stamp: u64) -> Vec<Paragraph> {
                 line_height,
                 width,
                 lines: g.len(),
+                breaks,
                 justified,
                 font: show.font.clone(),
                 font_size: show.font_size,
@@ -420,8 +509,15 @@ impl Document {
             .filter(|l| l.shows.iter().all(|t| para.shows.contains(&t.op)))
             .enumerate()
         {
-            // Zeilen verbinden: Trennstrich vor Kleinbuchstaben weg, sonst Leerzeichen.
-            if li > 0 {
+            // Zeilen verbinden: harter Umbruch als `\n`, Trennstrich vor Kleinbuchstaben weg,
+            // sonst Leerzeichen.
+            let hard = para.breaks.get(li).copied().unwrap_or(0);
+            if li > 0 && hard > 0 {
+                if let Some(r) = runs.last_mut() {
+                    let t = r.text.trim_end().to_string();
+                    r.text = t + &"\n".repeat(hard);
+                }
+            } else if li > 0 {
                 let next_lower = l
                     .text
                     .trim_start()
@@ -509,9 +605,14 @@ impl Document {
 
         // 1) Alte Zeilen entfernen: eigener Abschnitt ganz, sonst Verschiebungen statt Text.
         let range = marked_range(&it.ops, first.op);
+        // Umbruch-Markierungen zwischen den alten Zeilen fallen mit weg.
+        let span = para.shows.iter().min().zip(para.shows.iter().max());
         let mut ops = Vec::with_capacity(it.ops.len());
         for (i, op) in it.ops.iter().enumerate() {
             if range.is_some_and(|(a, b)| (a..=b).contains(&i)) {
+                continue;
+            }
+            if span.is_some_and(|(&a, &b)| (a..=b).contains(&i)) && is_break_mark(op) {
                 continue;
             }
             if para.shows.contains(&i) {

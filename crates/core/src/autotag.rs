@@ -270,7 +270,7 @@ pub fn auto_tag_pdf(
                 let role = if is_heading(p) {
                     report.headings += 1;
                     if first_heading.is_none() {
-                        first_heading = Some(p.text.clone());
+                        first_heading = Some(p.text.replace('\n', " "));
                     }
                     Role::Heading(level(p))
                 } else {

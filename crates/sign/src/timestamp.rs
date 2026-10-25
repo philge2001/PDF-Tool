@@ -299,7 +299,7 @@ pub(crate) mod tests {
             policy: ObjectIdentifier::new_unwrap("1.2.3.4.1"),
             message_imprint: req.message_imprint,
             serial_number: 42,
-            gen_time: GeneralizedTime::from_system_time(SystemTime::now())
+            gen_time: GeneralizedTime::from_system_time(pdftool_core::date::system_now())
                 .map_err(|e| e.to_string())?,
             nonce: req.nonce,
         }

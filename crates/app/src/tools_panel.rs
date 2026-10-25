@@ -147,7 +147,11 @@ impl PdfToolApp {
                 self.open_ocr_dialog();
                 #[cfg(not(feature = "ocr"))]
                 {
-                    self.error = Some("Diese Version wurde ohne Texterkennung gebaut.".into());
+                    self.error = Some(if crate::platform::is_web() {
+                        "Texterkennung gibt es in der Browser-Version noch nicht.".into()
+                    } else {
+                        "Diese Version wurde ohne Texterkennung gebaut.".into()
+                    });
                 }
                 return;
             }
@@ -379,16 +383,12 @@ impl PdfToolApp {
                 ui.weak("Absatz anklicken · ziehen = verschieben · Anfasser rechts = Breite · Doppelklick = Text ändern und einzelne Wörter formatieren");
             }
             Tool::EditImage => {
-                if ui.button("Bild einfügen…").clicked()
-                    && let Some(bytes) = crate::toolbar::pick_image()
-                {
-                    d.start_image_insert(&bytes);
+                if ui.button("Bild einfügen…").clicked() {
+                    crate::toolbar::pick_image(ui.ctx(), crate::platform::Pick::InsertImage);
                 }
                 if d.content_edit.selected_image.is_some() {
-                    if ui.button("Ersetzen…").clicked()
-                        && let Some(bytes) = crate::toolbar::pick_image()
-                    {
-                        d.replace_selected_image(&bytes);
+                    if ui.button("Ersetzen…").clicked() {
+                        crate::toolbar::pick_image(ui.ctx(), crate::platform::Pick::ReplaceImage);
                     }
                     if ui.button("Löschen").on_hover_text("Entf").clicked() {
                         d.delete_selected_image();
@@ -434,7 +434,7 @@ impl PdfToolApp {
         }
         Self::section(ui, "Einfügen");
         if icons::row_button(ui, Icon::Insert, "Aus Datei einfügen…", false).clicked() {
-            self.start_insert_from_file();
+            self.start_insert_from_file(ui.ctx());
         }
         if icons::row_button(ui, Icon::Plus, "Leere Seite einfügen", false).clicked() {
             self.insert_blank_page();

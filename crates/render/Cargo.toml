@@ -12,6 +12,8 @@ pdftool-core.workspace = true
 pdfium-render.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+# Zeitscheiben im Browser (wasm32 hat kein std::time::Instant).
+web-time.workspace = true
 
 [lints]
 workspace = true

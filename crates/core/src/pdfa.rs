@@ -24,58 +24,6 @@ use std::collections::{BTreeSet, HashMap};
 /// sRGB-Profil (Compact-ICC-Profiles, CC0).
 static SRGB_ICC: &[u8] = include_bytes!("../../../assets/icc/sRGB-v2-magic.icc");
 
-/// Liberation-Schriften (SIL OFL 1.1): (Datei-Kennung, Daten).
-static LIBERATION: &[(&str, &[u8])] = &[
-    (
-        "LiberationSans-Regular",
-        include_bytes!("../../../assets/fonts/liberation/LiberationSans-Regular.ttf"),
-    ),
-    (
-        "LiberationSans-Bold",
-        include_bytes!("../../../assets/fonts/liberation/LiberationSans-Bold.ttf"),
-    ),
-    (
-        "LiberationSans-Italic",
-        include_bytes!("../../../assets/fonts/liberation/LiberationSans-Italic.ttf"),
-    ),
-    (
-        "LiberationSans-BoldItalic",
-        include_bytes!("../../../assets/fonts/liberation/LiberationSans-BoldItalic.ttf"),
-    ),
-    (
-        "LiberationSerif-Regular",
-        include_bytes!("../../../assets/fonts/liberation/LiberationSerif-Regular.ttf"),
-    ),
-    (
-        "LiberationSerif-Bold",
-        include_bytes!("../../../assets/fonts/liberation/LiberationSerif-Bold.ttf"),
-    ),
-    (
-        "LiberationSerif-Italic",
-        include_bytes!("../../../assets/fonts/liberation/LiberationSerif-Italic.ttf"),
-    ),
-    (
-        "LiberationSerif-BoldItalic",
-        include_bytes!("../../../assets/fonts/liberation/LiberationSerif-BoldItalic.ttf"),
-    ),
-    (
-        "LiberationMono-Regular",
-        include_bytes!("../../../assets/fonts/liberation/LiberationMono-Regular.ttf"),
-    ),
-    (
-        "LiberationMono-Bold",
-        include_bytes!("../../../assets/fonts/liberation/LiberationMono-Bold.ttf"),
-    ),
-    (
-        "LiberationMono-Italic",
-        include_bytes!("../../../assets/fonts/liberation/LiberationMono-Italic.ttf"),
-    ),
-    (
-        "LiberationMono-BoldItalic",
-        include_bytes!("../../../assets/fonts/liberation/LiberationMono-BoldItalic.ttf"),
-    ),
-];
-
 /// Ergebnis der Umwandlung.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PdfaReport {
@@ -135,10 +83,10 @@ fn replacement(base_font: &str) -> Option<(&'static str, &'static [u8], bool)> {
         (false, false) => "Regular",
     };
     let key = format!("Liberation{family}-{style}");
-    LIBERATION
-        .iter()
+    crate::embedded_font::liberation()
+        .into_iter()
         .find(|(k, _)| *k == key)
-        .map(|(k, data)| (*k, *data, known))
+        .map(|(k, data)| (k, data, known))
 }
 
 pub(crate) fn has_font_file(pdf: &lopdf::Document, font: &Dictionary) -> bool {

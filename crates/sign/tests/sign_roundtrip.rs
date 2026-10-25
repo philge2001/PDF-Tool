@@ -1,5 +1,6 @@
 //! Signieren -> Prüfen: selbst ausgestellt, mit Zertifizierungsstelle, manipuliert,
 //! nachträglich geändert und doppelt signiert.
+#![allow(clippy::disallowed_methods)] // Testzertifikate nur auf dem Desktop (nicht im Browser)
 
 use der::Encode;
 use pdftool_core::signature_prep::{SigPlacement, SignatureSpec};

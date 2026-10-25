@@ -164,7 +164,7 @@ impl PdfToolApp {
                     return;
                 }
                 if ui.button("Seiten aus Datei einfügen…").clicked() {
-                    self.start_insert_from_file();
+                    self.start_insert_from_file(ui.ctx());
                 }
                 if ui.button("Leere Seite einfügen").clicked() {
                     self.insert_blank_page();
@@ -339,9 +339,12 @@ impl PdfToolApp {
                 }
             });
         }
-        ui.separator();
-        if ui.button("Beenden").clicked() {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        // Im Browser schließt man den Tab; ein Fenster zum Beenden gibt es dort nicht.
+        if !crate::platform::is_web() {
+            ui.separator();
+            if ui.button("Beenden").clicked() {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
         }
     }
 

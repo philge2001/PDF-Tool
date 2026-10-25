@@ -66,6 +66,110 @@ pub fn ascent_descent() -> (f32, f32) {
     )
 }
 
+/// Namen der Liberation-Schriften (SIL OFL 1.1, PostScript-Namen = Dateinamen ohne `.ttf`).
+/// Metrisch gleich zu Arial, Times New Roman und Courier New. Gebraucht für PDF/A (Ersatz nicht
+/// eingebetteter Standardschriften) und als eingebaute Schriftarten (`system_fonts`).
+pub const LIBERATION_NAMES: [&str; 12] = [
+    "LiberationSans-Regular",
+    "LiberationSans-Bold",
+    "LiberationSans-Italic",
+    "LiberationSans-BoldItalic",
+    "LiberationSerif-Regular",
+    "LiberationSerif-Bold",
+    "LiberationSerif-Italic",
+    "LiberationSerif-BoldItalic",
+    "LiberationMono-Regular",
+    "LiberationMono-Bold",
+    "LiberationMono-Italic",
+    "LiberationMono-BoldItalic",
+];
+
+/// Desktop: die Liberation-Schriften sind fest eingebaut.
+#[cfg(not(target_arch = "wasm32"))]
+static LIBERATION: &[(&str, &[u8])] = &[
+    (
+        "LiberationSans-Regular",
+        include_bytes!("../../../assets/fonts/liberation/LiberationSans-Regular.ttf"),
+    ),
+    (
+        "LiberationSans-Bold",
+        include_bytes!("../../../assets/fonts/liberation/LiberationSans-Bold.ttf"),
+    ),
+    (
+        "LiberationSans-Italic",
+        include_bytes!("../../../assets/fonts/liberation/LiberationSans-Italic.ttf"),
+    ),
+    (
+        "LiberationSans-BoldItalic",
+        include_bytes!("../../../assets/fonts/liberation/LiberationSans-BoldItalic.ttf"),
+    ),
+    (
+        "LiberationSerif-Regular",
+        include_bytes!("../../../assets/fonts/liberation/LiberationSerif-Regular.ttf"),
+    ),
+    (
+        "LiberationSerif-Bold",
+        include_bytes!("../../../assets/fonts/liberation/LiberationSerif-Bold.ttf"),
+    ),
+    (
+        "LiberationSerif-Italic",
+        include_bytes!("../../../assets/fonts/liberation/LiberationSerif-Italic.ttf"),
+    ),
+    (
+        "LiberationSerif-BoldItalic",
+        include_bytes!("../../../assets/fonts/liberation/LiberationSerif-BoldItalic.ttf"),
+    ),
+    (
+        "LiberationMono-Regular",
+        include_bytes!("../../../assets/fonts/liberation/LiberationMono-Regular.ttf"),
+    ),
+    (
+        "LiberationMono-Bold",
+        include_bytes!("../../../assets/fonts/liberation/LiberationMono-Bold.ttf"),
+    ),
+    (
+        "LiberationMono-Italic",
+        include_bytes!("../../../assets/fonts/liberation/LiberationMono-Italic.ttf"),
+    ),
+    (
+        "LiberationMono-BoldItalic",
+        include_bytes!("../../../assets/fonts/liberation/LiberationMono-BoldItalic.ttf"),
+    ),
+];
+
+/// Browser: Die Schriften (4,7 MB) stecken nicht im WebAssembly, sondern werden nach dem Start
+/// nachgeladen und hier angemeldet (`register_liberation`) – die Seite startet so schneller.
+#[cfg(target_arch = "wasm32")]
+static REGISTERED: std::sync::Mutex<Vec<(&'static str, &'static [u8])>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Die verfügbaren Liberation-Schriften als (PostScript-Name, Daten). Desktop: alle zwölf;
+/// Browser: die bisher nachgeladenen (anfangs keine).
+pub fn liberation() -> Vec<(&'static str, &'static [u8])> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        LIBERATION.to_vec()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        REGISTERED.lock().map(|r| r.clone()).unwrap_or_default()
+    }
+}
+
+/// Browser: eine nachgeladene Liberation-Schrift anmelden. Unbekannte Namen werden ignoriert.
+/// Die Daten leben danach bis zum Schließen der Seite (`Box::leak` → `&'static`).
+#[cfg(target_arch = "wasm32")]
+pub fn register_liberation(name: &str, bytes: Vec<u8>) {
+    let Some(name) = LIBERATION_NAMES.iter().find(|n| **n == name) else {
+        return;
+    };
+    if let Ok(mut reg) = REGISTERED.lock()
+        && !reg.iter().any(|(n, _)| n == name)
+    {
+        reg.push((*name, Box::leak(bytes.into_boxed_slice())));
+    }
+}
+
 /// Eine einbettbare TrueType-Schrift (Noto Sans oder eine Systemschrift).
 pub struct FontData {
     bytes: FontBytes,
@@ -80,7 +184,10 @@ pub struct FontData {
 }
 
 enum FontBytes {
+    /// Die eingebaute Noto Sans.
     Static(&'static [u8]),
+    /// Eine andere eingebaute Schrift (Liberation).
+    Builtin(&'static [u8]),
     Owned(Vec<u8>),
 }
 
@@ -117,7 +224,20 @@ impl FontData {
     /// Schrift aus Dateibytes. `None`, wenn sie keine TrueType-Konturen hat (`glyf`) oder ihre
     /// Lizenz das Einbetten als Teilmenge nicht erlaubt (OS/2 fsType).
     pub fn from_bytes(bytes: Vec<u8>, index: u32) -> Option<Arc<FontData>> {
-        let face = ttf_parser::Face::parse(&bytes, index).ok()?;
+        Self::from_source(FontBytes::Owned(bytes), index)
+    }
+
+    /// Eingebaute Schrift (z. B. Liberation) ohne Kopie der Daten.
+    pub fn from_static(bytes: &'static [u8]) -> Option<Arc<FontData>> {
+        Self::from_source(FontBytes::Builtin(bytes), 0)
+    }
+
+    fn from_source(source: FontBytes, index: u32) -> Option<Arc<FontData>> {
+        let bytes: &[u8] = match &source {
+            FontBytes::Static(b) | FontBytes::Builtin(b) => b,
+            FontBytes::Owned(b) => b,
+        };
+        let face = ttf_parser::Face::parse(bytes, index).ok()?;
         if !embeddable(&face) {
             return None;
         }
@@ -135,7 +255,7 @@ impl FontData {
             name(ttf_parser::name_id::POST_SCRIPT_NAME).unwrap_or_else(|| family.replace(' ', ""));
         let (bold, italic) = (face.is_bold(), face.is_italic() || face.is_oblique());
         Some(Arc::new(FontData {
-            bytes: FontBytes::Owned(bytes),
+            bytes: source,
             index,
             postscript,
             family,
@@ -146,7 +266,7 @@ impl FontData {
 
     pub fn bytes(&self) -> &[u8] {
         match &self.bytes {
-            FontBytes::Static(b) => b,
+            FontBytes::Static(b) | FontBytes::Builtin(b) => b,
             FontBytes::Owned(b) => b,
         }
     }

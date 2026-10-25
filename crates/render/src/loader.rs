@@ -37,8 +37,18 @@ pub fn candidate_paths() -> Vec<PathBuf> {
     out
 }
 
+/// Im Browser: an pdfium.wasm binden, das die Webseite vorher geladen und mit
+/// `initialize_pdfium_render` angemeldet hat (siehe PDF Webeditor, `web/index.html`).
+#[cfg(target_arch = "wasm32")]
+pub fn bind_pdfium() -> Result<Pdfium> {
+    Pdfium::bind_to_system_library()
+        .map(Pdfium::new)
+        .map_err(|e| RenderError::Pdfium(format!("pdfium.wasm nicht angemeldet: {e}")))
+}
+
 /// Bindet PDFium. Darf pro Prozess nur EINMAL erfolgreich aufgerufen werden
 /// (PDFium hält globalen Zustand) – deshalb lebt das Ergebnis im Render-Worker.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn bind_pdfium() -> Result<Pdfium> {
     let mut searched = Vec::new();
     for candidate in candidate_paths() {

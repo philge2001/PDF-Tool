@@ -3304,6 +3304,7 @@ dependencies = [
  "anyhow",
  "der",
  "eframe",
+ "js-sys",
  "pdftool-core",
  "pdftool-ocr",
  "pdftool-render",
@@ -3313,6 +3314,9 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "ureq",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "winresource",
 ]
 
@@ -3329,6 +3333,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tracing",
  "ttf-parser",
+ "web-time",
  "zip 9.0.5",
  "zune-jpeg",
 ]
@@ -3352,6 +3357,7 @@ dependencies = [
  "pdftool-core",
  "thiserror 2.0.21",
  "tracing",
+ "web-time",
 ]
 
 [[package]]
@@ -3360,6 +3366,7 @@ version = "0.1.1"
 dependencies = [
  "cms",
  "der",
+ "getrandom 0.2.17",
  "lopdf",
  "p12-keystore",
  "p256",
@@ -4450,6 +4457,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f66ca1f7aca2474dc10c942eb22feffc897735f54cd1db90138c2fddb490987"
 dependencies = [
  "bstr",
+ "web-time",
 ]
 
 [[package]]

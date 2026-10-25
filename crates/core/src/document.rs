@@ -194,6 +194,12 @@ impl Document {
         self.path.as_deref()
     }
 
+    /// Ordnet das Dokument einer Datei zu, ohne sie zu lesen – z. B. im Browser, wo nur die
+    /// Bytes und der Dateiname ankommen (`from_bytes` + `set_path` statt `open`).
+    pub fn set_path(&mut self, path: Option<PathBuf>) {
+        self.path = path;
+    }
+
     /// Löst das Dokument von seiner Datei (z. B. nach dem Zusammenführen): Das nächste
     /// Speichern fragt dann nach einem neuen Namen.
     pub fn forget_path(&mut self) {
@@ -450,6 +456,17 @@ impl Document {
 
     /// Speichert unter einem (neuen) Pfad. Danach gilt dieser Pfad als Dokumentpfad.
     pub fn save_as(&mut self, path: impl AsRef<Path>) -> Result<()> {
+        self.save_with(path, write_atomically)
+    }
+
+    /// Wie [`Document::save_as`], aber `write` schreibt die fertigen Dateibytes – z. B. im
+    /// Browser als Download statt ins Dateisystem. Schlägt `write` fehl, bleibt das Dokument
+    /// unverändert (weiterhin „geändert“).
+    pub fn save_with(
+        &mut self,
+        path: impl AsRef<Path>,
+        write: impl FnOnce(&Path, &[u8]) -> Result<()>,
+    ) -> Result<()> {
         let path = path.as_ref();
         let out = save::incremental(self)?;
         match &self.security {
@@ -461,8 +478,8 @@ impl Document {
                 ));
             }
             // Datei verschlüsselt schreiben; im Speicher bleibt der Klartext.
-            Some(sec) => write_atomically(path, &sec.encrypt(&out.bytes)?)?,
-            None => write_atomically(path, &out.bytes)?,
+            Some(sec) => write(path, &sec.encrypt(&out.bytes)?)?,
+            None => write(path, &out.bytes)?,
         }
         self.after_save(out)?;
         self.path = Some(path.to_path_buf());

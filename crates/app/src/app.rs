@@ -167,6 +167,8 @@ impl PdfToolApp {
         cc.egui_ctx.options_mut(|o| o.zoom_with_keyboard = false);
         install_fonts(&cc.egui_ctx);
         crate::style::install(&cc.egui_ctx);
+        #[cfg(target_arch = "wasm32")]
+        crate::platform::install_web_hooks(&cc.egui_ctx);
 
         // Der Worker weckt die UI auf, wenn ein Bild fertig ist. `Context` ist intern ein
         // `Arc` – das Klonen ist billig und der Klon darf in den Worker-Thread wandern.
@@ -255,7 +257,7 @@ impl PdfToolApp {
         if self.focus_open_file(path) {
             return;
         }
-        match Document::open(path) {
+        match crate::platform::open_document(path, None) {
             Ok(doc) => {
                 self.open_in_new_tab(doc);
                 self.settings.add_recent(path);
@@ -327,13 +329,77 @@ impl PdfToolApp {
         });
     }
 
+    /// Datei öffnen; das Ergebnis kommt über `handle_picked` (`Pick::OpenPdf`).
     pub(crate) fn open_dialog(&mut self, ctx: &egui::Context) {
-        // Nativer Dialog; blockiert den UI-Thread, solange er offen ist (normal für Dateidialoge).
-        if let Some(path) = rfd::FileDialog::new()
+        crate::platform::FileDialog::new()
             .add_filter("PDF", &["pdf"])
-            .pick_file()
-        {
-            self.request_open(ctx, path);
+            .pick(ctx, crate::platform::Pick::OpenPdf, true);
+    }
+
+    /// Verarbeitet gewählte Dateien (siehe `platform`: im Browser kommen sie asynchron an).
+    fn handle_picked(&mut self, ctx: &egui::Context) {
+        use crate::platform::Pick;
+        while let Some((pick, paths)) = crate::platform::take_picked() {
+            match pick {
+                Pick::OpenPdf => {
+                    for path in paths {
+                        self.request_open(ctx, path);
+                    }
+                }
+                Pick::InsertPages => {
+                    if let Some(path) = paths.into_iter().next() {
+                        self.insert_from_file(&path);
+                    }
+                }
+                Pick::MergeFiles => {
+                    if let Some(dlg) = &mut self.merge_dialog {
+                        dlg.add_files(paths);
+                    }
+                }
+                Pick::Compare => {
+                    if let Some(path) = paths.into_iter().next() {
+                        self.start_compare_with(ctx, path);
+                    }
+                }
+                Pick::Certificate => {
+                    if let Some(path) = paths.into_iter().next() {
+                        self.import_certificate(&path);
+                    }
+                }
+                Pick::SigningId => {
+                    if let Some(path) = paths.into_iter().next() {
+                        self.set_signing_id(path);
+                    }
+                }
+                Pick::PasteImage => {
+                    // Nicht, wenn gerade in ein Textfeld eingefügt wird.
+                    if ctx.egui_wants_keyboard_input() {
+                        continue;
+                    }
+                    if let Some(bytes) = paths.first().and_then(|p| crate::platform::read(p).ok()) {
+                        self.insert_pasted_image(&bytes);
+                    }
+                }
+                Pick::InsertImage | Pick::ReplaceImage => {
+                    let Some(path) = paths.into_iter().next() else {
+                        continue;
+                    };
+                    let bytes = match crate::platform::read(&path) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            self.error = Some(format!("„{}“: {e}", path.display()));
+                            continue;
+                        }
+                    };
+                    if let Some(d) = &mut self.document {
+                        if pick == Pick::InsertImage {
+                            d.start_image_insert(&bytes);
+                        } else {
+                            d.replace_selected_image(&bytes);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -355,6 +421,12 @@ impl PdfToolApp {
     }
 
     fn handle_dropped_files(&mut self, ctx: &egui::Context) {
+        // Browser: Dateien haben keinen Pfad, ihr Inhalt kommt asynchron (siehe `platform`).
+        #[cfg(target_arch = "wasm32")]
+        {
+            let files = ctx.input(|i| i.raw.dropped_files.clone());
+            crate::platform::receive_dropped(ctx, files);
+        }
         // `ctx.input` leiht den Eingabezustand kurz aus; wir kopieren den Pfad heraus.
         let dropped = ctx.input(|i| {
             i.raw
@@ -686,6 +758,8 @@ impl eframe::App for PdfToolApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.poll_render(&ctx);
+        self.handle_picked(&ctx);
+        crate::platform::set_unsaved(self.first_dirty_tab().is_some());
         self.handle_close_request(&ctx);
         self.handle_dropped_files(&ctx);
         self.handle_shortcuts(&ctx);

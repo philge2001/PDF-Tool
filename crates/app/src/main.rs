@@ -4,49 +4,8 @@
 // Start aus dem Startmenü). Debug-Builds behalten die Konsole für die Log-Ausgabe.
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
-mod a11y_ui;
-mod annot_draw;
-mod app;
-mod bookmarks;
-mod comments;
-mod compare;
-mod compress_ui;
-mod content_edit;
-mod export;
-mod file_ops;
-mod form_draw;
-mod form_edit;
-mod form_props;
-mod forms;
-mod home;
-mod icons;
-mod image_clip;
-mod image_tool;
-mod jobs;
-mod menu;
-#[cfg(feature = "ocr")]
-mod ocr_ui;
-mod page_dialogs;
-mod pages;
-mod redact;
-mod rich_edit;
-mod search;
-mod security_ui;
-mod settings;
-mod shell;
-mod shortcuts;
-mod sign_ui;
-mod signatures;
-mod style;
-mod tabs;
-mod tags_ui;
-mod text_cache;
-mod toolbar;
-mod tools;
-mod tools_panel;
-mod viewer;
-
 use eframe::egui;
+use pdftool_app::PdfToolApp;
 use std::path::PathBuf;
 
 fn main() -> eframe::Result<()> {
@@ -54,7 +13,7 @@ fn main() -> eframe::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,pdftool=debug".into()),
+                .unwrap_or_else(|_| "info,pdftool=debug,pdftool_app=debug".into()),
         )
         .init();
 
@@ -83,13 +42,7 @@ fn main() -> eframe::Result<()> {
         APP_ID,
         options,
         // Die Closure wird einmal beim Start aufgerufen; `move` übergibt die Pfade hinein.
-        Box::new(move |cc| {
-            Ok(Box::new(app::PdfToolApp::new(
-                cc,
-                initial_files,
-                compare_with,
-            )))
-        }),
+        Box::new(move |cc| Ok(Box::new(PdfToolApp::new(cc, initial_files, compare_with)))),
     )
 }
 

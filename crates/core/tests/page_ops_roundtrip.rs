@@ -143,7 +143,7 @@ fn annotations_follow_moved_pages() {
 fn undo_after_save_restores_page_order() {
     let path = std::env::temp_dir().join(format!(
         "pdftool-pages-{}.pdf",
-        std::time::SystemTime::now()
+        pdftool_core::date::system_now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos()

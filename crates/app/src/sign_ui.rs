@@ -223,18 +223,20 @@ impl PdfToolApp {
             Some(DialogAction::Sign) => self.sign_now(ctx),
             Some(DialogAction::CreateCert) => self.open_cert_dialog(),
             Some(DialogAction::Browse) => {
-                if let Some(path) = rfd::FileDialog::new()
+                crate::platform::FileDialog::new()
                     .add_filter("Digitale ID (PKCS#12)", &["p12", "pfx"])
-                    .pick_file()
-                {
-                    self.settings.signing_cert_path = Some(path);
-                    if let Some(dlg) = &mut self.sign_dialog {
-                        dlg.signer = None;
-                        dlg.load_error = None;
-                    }
-                }
+                    .pick(ctx, crate::platform::Pick::SigningId, false);
             }
             None => {}
+        }
+    }
+
+    /// Gewählte digitale ID übernehmen (`Pick::SigningId`).
+    pub(crate) fn set_signing_id(&mut self, path: PathBuf) {
+        self.settings.signing_cert_path = Some(path);
+        if let Some(dlg) = &mut self.sign_dialog {
+            dlg.signer = None;
+            dlg.load_error = None;
         }
     }
 
@@ -303,7 +305,7 @@ impl PdfToolApp {
         };
         // Erst das Ziel wählen, dann signieren (die Signatur deckt die fertigen Bytes ab).
         let stem = d.file_name().trim_end_matches(".pdf").to_string();
-        let mut dialog = rfd::FileDialog::new()
+        let mut dialog = crate::platform::FileDialog::new()
             .add_filter("PDF", &["pdf"])
             .set_file_name(format!("{stem}-signiert.pdf"));
         if let Some(dir) = d.doc.path().and_then(|p| p.parent()) {
@@ -328,7 +330,7 @@ impl PdfToolApp {
                 transport.as_ref().map(|f| f as _);
             let signed = sign_pdf(&base, spec, &signer, tsa)
                 .map_err(|e| format!("Signieren fehlgeschlagen:\n{e}"))?;
-            std::fs::write(&target, signed).map_err(|e| {
+            crate::platform::write(&target, &signed).map_err(|e| {
                 format!(
                     "„{}“ konnte nicht gespeichert werden:\n{e}",
                     target.display()
@@ -425,7 +427,7 @@ impl PdfToolApp {
         if dlg.error.is_some() {
             return;
         }
-        let Some(path) = rfd::FileDialog::new()
+        let Some(path) = crate::platform::FileDialog::new()
             .add_filter("Digitale ID (PKCS#12)", &["p12"])
             .set_file_name(format!("{}.p12", dlg.name.trim()))
             .save_file()
@@ -448,7 +450,7 @@ impl PdfToolApp {
                 return;
             }
         };
-        if let Err(e) = std::fs::write(&path, p12) {
+        if let Err(e) = crate::platform::write(&path, &p12) {
             dlg.error = Some(format!("Speichern fehlgeschlagen: {e}"));
             return;
         }
@@ -634,8 +636,8 @@ fn sign_dialog_body(
     action
 }
 
-fn load_signer(dlg: &mut SignDialog, path: &PathBuf) {
-    match std::fs::read(path) {
+fn load_signer(dlg: &mut SignDialog, path: &std::path::Path) {
+    match crate::platform::read(path) {
         Ok(data) => match Signer::from_pkcs12(&data, &dlg.password) {
             Ok(s) => {
                 dlg.signer = Some(s);
@@ -647,7 +649,18 @@ fn load_signer(dlg: &mut SignDialog, path: &PathBuf) {
     }
 }
 
+/// Im Browser gibt es (noch) keine Zeitstempel: Die Dienste erlauben meist keine Anfragen aus
+/// Webseiten (CORS), und die HTTP-Bibliothek lässt sich nicht für wasm32 bauen.
+#[cfg(target_arch = "wasm32")]
+fn http_tsa(url: &str, _request: &[u8]) -> Result<Vec<u8>, String> {
+    Err(format!(
+        "Zeitstempel ({url}) sind in der Browser-Version noch nicht verfügbar. \
+         Bitte ohne Zeitstempel signieren."
+    ))
+}
+
 /// Schickt eine Zeitstempel-Anfrage per HTTP(S) an den Dienst (RFC 3161, Abschnitt 3.4).
+#[cfg(not(target_arch = "wasm32"))]
 fn http_tsa(url: &str, request: &[u8]) -> Result<Vec<u8>, String> {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(30)))

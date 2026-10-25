@@ -95,6 +95,20 @@ impl FrameRequests {
     }
 }
 
+/// Wo man im Dokument steht – zum Wiederherstellen, wenn das Dokument neu aufgebaut oder durch
+/// eine neu geschriebene Fassung ersetzt wird (Schwärzen, Komprimieren, PDF/A, Taggen).
+#[derive(Debug, Clone, Copy)]
+pub struct ViewPosition {
+    page: usize,
+    /// Abstand vom oberen Seitenrand bis zum oberen Fensterrand (Inhaltskoordinaten).
+    offset: f32,
+    x: f32,
+    zoom: f32,
+    zoom_mode: ZoomMode,
+    viewport: Rect,
+    screen: Rect,
+}
+
 pub struct Viewer {
     pub doc_id: DocId,
     pub layout: Layout,
@@ -160,10 +174,51 @@ impl Viewer {
         new_page: impl Fn(u32) -> Option<u32>,
     ) {
         let keep = new_page(self.current_page as u32).map(|p| p as usize);
+        // Position vor dem Neuaufbau merken (bezieht sich auf das alte Layout).
+        let mut pos = self.position();
         self.textures.remap(new_doc, new_page);
         self.doc_id = new_doc;
         self.layout = Layout::new(page_sizes);
-        self.scroll_to_page(keep.unwrap_or(self.current_page));
+        pos.page = keep.unwrap_or(pos.page);
+        // Gleiche Stelle innerhalb derselben Seite wieder anzeigen – sonst sprang die Ansicht nach
+        // jeder Inhaltsänderung (Text bearbeiten, Bild verschieben …) an den Seitenanfang.
+        self.restore_position(pos);
+    }
+
+    /// Aktuelle Position (Seite, Stelle in der Seite, Zoom).
+    pub fn position(&self) -> ViewPosition {
+        let view = self
+            .scroll_to
+            .unwrap_or_else(|| self.last_viewport.min.to_vec2());
+        ViewPosition {
+            page: self.current_page,
+            offset: view.y - self.layout.page_top(self.current_page, self.zoom),
+            x: view.x,
+            zoom: self.zoom,
+            zoom_mode: self.zoom_mode,
+            viewport: self.last_viewport,
+            screen: self.last_screen_rect,
+        }
+    }
+
+    /// Springt zu einer gemerkten Position – auch in einer neuen Ansicht desselben Dokuments
+    /// (die Seite wird bei weniger Seiten auf die letzte begrenzt).
+    pub fn restore_position(&mut self, pos: ViewPosition) {
+        self.zoom = pos.zoom;
+        self.zoom_mode = pos.zoom_mode;
+        self.last_viewport = pos.viewport;
+        self.last_screen_rect = pos.screen;
+        let page = pos.page.min(self.layout.page_count().saturating_sub(1));
+        if pos.viewport == Rect::NOTHING || !pos.offset.is_finite() {
+            // Noch nie gezeichnet: einfach an den Seitenanfang.
+            self.scroll_to_page(page);
+            return;
+        }
+        let (_, h) = self.layout.page_size_pt(page);
+        let offset = pos.offset.min(h * self.zoom);
+        let y = (self.layout.page_top(page, self.zoom) + offset).max(0.0);
+        self.scroll_to = Some(vec2(pos.x, y));
+        self.current_page = page;
     }
 
     /// Nach Neuladen im Worker: offene Aufträge gelten als verworfen.
@@ -536,6 +591,43 @@ mod tests {
         let r2 = v.layout.page_rect(page, 2.0, v.content_width());
         let rel2 = (c2 - r2.min) / r2.size();
         assert!((rel - rel2).length() < 1e-3, "{rel:?} vs {rel2:?}");
+    }
+
+    /// Nach einer Inhaltsänderung (neues Layout, gleiche Seiten) bleibt die Ansicht, wo sie war.
+    #[test]
+    fn restructure_keeps_scroll_position() {
+        let mut v = viewer_with_frame(10);
+        // Mitten in Seite 3 (Index 2) gescrollt.
+        let y = v.layout.page_top(2, 1.0) + 300.0;
+        v.last_viewport = v.last_viewport.translate(vec2(0.0, y));
+        v.current_page = 2;
+        v.restructure(2, vec![(600.0, 800.0); 10], Some);
+        assert_eq!(v.current_page, 2);
+        assert!((v.scroll_to.unwrap().y - y).abs() < 1e-3);
+
+        // Seite davor gelöscht: dieselbe Seite (jetzt Index 1) an derselben Stelle.
+        v.last_viewport = Rect::from_min_size(pos2(0.0, y), vec2(1000.0, 700.0));
+        v.scroll_to = None;
+        v.restructure(3, vec![(600.0, 800.0); 9], |old| old.checked_sub(1));
+        assert_eq!(v.current_page, 1);
+        let expected = v.layout.page_top(1, 1.0) + 300.0;
+        assert!((v.scroll_to.unwrap().y - expected).abs() < 1e-3);
+    }
+
+    /// Neue Ansicht (Dokument ersetzt): Zoom und Stelle werden übernommen.
+    #[test]
+    fn position_carries_over_to_new_viewer() {
+        let mut old = viewer_with_frame(10);
+        old.set_zoom(1.5, None);
+        let y = old.layout.page_top(4, 1.5) + 200.0;
+        old.last_viewport = old.last_viewport.translate(vec2(0.0, y));
+        old.scroll_to = None;
+        old.current_page = 4;
+        let mut new = Viewer::new(9, vec![(600.0, 800.0); 10]);
+        new.restore_position(old.position());
+        assert_eq!(new.current_page, 4);
+        assert_eq!(new.zoom(), 1.5);
+        assert!((new.scroll_to.unwrap().y - y).abs() < 1e-3);
     }
 
     #[test]

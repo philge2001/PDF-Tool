@@ -52,3 +52,20 @@ jobs:
             grep -E "panicked|FAILED|^---- " test.log | head -20 | sed 's/^/::error::/'
             exit 1
           }
+
+  # Die App läuft auch im Browser (PDF Webeditor, github.com/philge2001/PDF-Webeditor):
+  # core, sign, render und app müssen für wasm32 kompilieren (ohne OCR). SystemTime::now()/
+  # Instant::now() verbietet clippy.toml (Absturz im Browser).
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (wasm32)
+        run: >
+          cargo clippy --target wasm32-unknown-unknown --lib --no-default-features
+          -p pdftool-core -p pdftool-sign -p pdftool-render -p pdftool-app -- -D warnings

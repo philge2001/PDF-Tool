@@ -358,7 +358,7 @@ fn check(
         .map(|t| t.system_time);
     let at = stamped
         .or_else(|| signing_time(si))
-        .unwrap_or_else(SystemTime::now);
+        .unwrap_or_else(pdftool_core::date::system_now);
     let chain = cert::build_chain(signer, &certs, trust, at);
     report.chain = chain.certs.iter().map(CertInfo::of).collect();
     report.trust = chain.trust;

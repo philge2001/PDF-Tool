@@ -165,7 +165,7 @@ fn write_page_contents(doc: &Document, inc: &mut IncrementalDocument) -> Result<
 
 /// Eindeutiger Name (/NM) für neue Annotationen.
 fn unique_name(id: AnnotId) -> String {
-    let nanos = std::time::SystemTime::now()
+    let nanos = crate::date::system_now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);

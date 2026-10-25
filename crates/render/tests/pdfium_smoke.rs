@@ -2,6 +2,7 @@
 //! wenn die PDFium-Bibliothek nicht gefunden wird – z. B. in CI.
 //!
 //! Lokal: PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo test -p pdftool-render
+#![allow(clippy::disallowed_methods)] // Zeitmessung im Desktop-Test (nicht im Browser)
 
 use pdftool_core::{AddAnnotation, AnnotKind, Annotation, Color, Document, Quad, Rect};
 use pdftool_render::{Event, Priority, RenderKey, RenderRequest, RenderService};

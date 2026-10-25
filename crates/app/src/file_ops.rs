@@ -45,7 +45,7 @@ impl PdfToolApp {
         let target = match d.doc.path() {
             Some(p) if !force_dialog => p.to_path_buf(),
             current => {
-                let mut dialog = rfd::FileDialog::new()
+                let mut dialog = crate::platform::FileDialog::new()
                     .add_filter("PDF", &["pdf"])
                     .set_file_name(d.file_name());
                 if let Some(dir) = current.and_then(|p| p.parent()) {
@@ -57,7 +57,7 @@ impl PdfToolApp {
                 }
             }
         };
-        match d.doc.save_as(&target) {
+        match crate::platform::save_document(&mut d.doc, &target) {
             Ok(()) => {
                 if let Ok(render) = &self.render {
                     d.reload_renderer(render);

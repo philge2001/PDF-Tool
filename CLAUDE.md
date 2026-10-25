@@ -18,11 +18,11 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 ## Workspace
 | Crate | Pfad | Aufgabe | Darf abhängen von |
 |---|---|---|---|
-| pdftool-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg, ttf-parser, subsetter, png, jpeg-encoder, zip, similar, getrandom (Zufallsschlüssel für AES-256) |
-| pdftool-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render |
-| pdftool-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore |
+| pdftool-core | crates/core | Dokumentmodell, Annotationen, Commands/Undo, Text-Logik, Speichern (lopdf) | lopdf, thiserror, tracing, zune-jpeg, ttf-parser, subsetter, png, jpeg-encoder, zip, similar, getrandom (Zufallsschlüssel für AES-256; wasm32: Feature `wasm_js`), web-time (Uhrzeit, auch im Browser) |
+| pdftool-render | crates/render | PDFium-Worker-Thread, Rendering, Textextraktion, Cache | core, pdfium-render, web-time (Zeitscheiben im Browser) |
+| pdftool-sign | crates/sign | Signaturen prüfen/erstellen (CMS, X.509, PAdES) | core, RustCrypto (cms, x509-cert, der, spki, rsa, p256, p384, sha1, sha2), rand_core, p12-keystore; wasm32: getrandom 0.2 mit Feature `js` |
 | pdftool-ocr | crates/ocr | Texterkennung (Tesseract), Wörter mit Pixelrechteck | tesseract-rs (baut Tesseract/Leptonica mit CMake) |
-| pdftool-app | crates/app | eframe-App, Werkzeuge, Panels, Shortcuts | core, render, sign, ocr (Feature `ocr`, Standard), eframe (Feature `links`: Weblinks im Browser öffnen), rfd, der, ureq; Build: winresource (nur Windows, Icon in der .exe) |
+| pdftool-app | crates/app | eframe-App (Bibliothek `pdftool_app` + Programm `pdftool`), Werkzeuge, Panels, Shortcuts | core, render, sign, ocr (Feature `ocr`, Standard), eframe (Feature `links`: Weblinks im Browser öffnen), rfd, der, ureq (nicht wasm32); wasm32: wasm-bindgen, wasm-bindgen-futures, js-sys, web-sys (Dateiauswahl, Downloads); Build: winresource (nur Windows, Icon in der .exe) |
 
 ## Architekturregeln
 - **core** kennt weder UI noch PDFium und ist vollständig unit-testbar.
@@ -41,6 +41,17 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   (cms 0.2, x509-cert 0.2, der 0.7, rsa 0.9, p256/p384 0.13) – die nächste Generation ist noch RC.
 - **Speichern** ist ein inkrementelles Update: Die Originalbytes bleiben unverändert, die Änderungen werden angehängt.
 - Fehler: `thiserror` in Library-Crates, `anyhow` nur in der App. Logging mit `tracing`.
+- **Browser (PDF Webeditor):** Die ganze App läuft auch als WebAssembly (github.com/philge2001/PDF-Webeditor
+  bindet `pdftool-app` per Git ein, ohne Feature `ocr`). Regeln:
+  - Kein `SystemTime::now()`/`Instant::now()` (Absturz im Browser; `clippy.toml` verbietet sie, auch
+    Bibliotheksfunktionen wie `x509_cert::time::Validity::from_now`) – stattdessen `core::date::system_now()` bzw.
+    `web_time::Instant`. Neue Abhängigkeiten auf versteckte `::now()`-Aufrufe prüfen (Absturz erst zur Laufzeit).
+  - In der App keine Dateien/Dialoge/Threads direkt: immer über `app::platform` (`FileDialog` mit `pick(ctx, Pick, …)`
+    → Ergebnis über `take_picked`/`PdfToolApp::handle_picked`; `save_file`/`pick_folder`; `read`, `write`,
+    `exists`, `open_document`, `save_document`, `spawn`, `is_web`). Neue Dateiauswahl = neuer `Pick`-Fall.
+  - `std::fs`/`std::env` liefern im Browser nur Fehler/`None` (kein Absturz): Pfad-Funktionen in core
+    (`Document::open`/`save_as`, `system_fonts`) sind dort nicht nutzbar – `from_bytes`+`set_path`/`save_with`.
+  - CI-Job `wasm`: Clippy für wasm32 über core, sign, render und app.
 - Keine AGPL-Abhängigkeiten. Jede neue Crate wird im Commit bzw. hier mit einem Satz begründet.
 
 ## Konventionen
@@ -186,6 +197,8 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   DocMDP-Berechtigungen werden angezeigt, aber Änderungen danach nicht darauf geprüft. Digitale IDs nur als
   PKCS#12-Datei (kein Windows-Zertifikatspeicher, keine Smartcards). Vertrauen nur über selbst
   hinterlegte Zertifikate (keine eingebaute Liste von Stammzertifikaten).
+- Browser: keine Systemschriften – zur Auswahl stehen Noto Sans und Liberation Sans/Serif/Mono; Liberation wird
+  nach dem Start nachgeladen (bis dahin fehlt sie in der Auswahl und für PDF/A/Taggen).
 - Systemschriften: nur TrueType mit glyf-Tabelle (keine CFF/OpenType-PS-Schriften), nur wenn fsType Einbetten und
   Teilmengen erlaubt. Fehlender Fett-/Kursivschnitt wird nachgeahmt (Tr 2 mit Kontur, Schrägstellung 0,21).
   Die Editor-Vorschau zeigt Schriftarten nicht originalgetreu (egui-Schrift, nur fett/kursiv/Linien angedeutet).
@@ -197,9 +210,13 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   Formularfelder und sichtbare Signaturen nutzen weiterhin Helvetica (WinAnsi).
 
 ## Wichtige Module
-- `core::document` – `Document::open`, `PageInfo` (CropBox, /Rotate, Umrechnung PDF ↔ Anzeige)
+- `core::document` – `Document::open`, `from_bytes`+`set_path`, `save_as`/`save_with` (eigene Schreibfunktion), `PageInfo` (CropBox, /Rotate, Umrechnung PDF ↔ Anzeige)
 - `render::worker` – `RenderService` (Thread + Channels), `RenderKey` (Seite, Skalierungsstufe, Kachel),
   `page_pixel_size`/`tile_grid`/`tile_rect` (gemeinsame Rechenregeln für App und Worker)
+- `render::worker::Worker` – Zustand des Workers (Dokument, Warteschlangen, Offscreen-Dokument), `step` = eine
+  Arbeitseinheit. Desktop: Thread-Schleife `run`. Browser (`worker::web`): kein Thread, Worker in einem
+  `thread_local`, Aufträge sammeln, `poll` arbeitet pro Frame höchstens `FRAME_BUDGET_MS` ab; `OffscreenRenderer`
+  rendert dort synchron
 - `render::cache::ByteLru` – LRU mit Byte-Budget
 - `app::viewer` – `Layout` (Präfixsummen, Binärsuche), `PageTextures` (GPU-Texturen, pending/wanted),
   `Viewer::show` (zeichnet nur sichtbare Seiten, Kacheln ab 3072 px), Zoom mit Anker (`set_zoom`),
@@ -248,7 +265,9 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   gleiche Richtung/Größe, gleicher linker Rand (erste Zeile darf eingerückt sein), gleichmäßiger Abstand; Blocksatz
   erkannt), `Document::paragraphs`/`set_paragraph(…, ParaFrame { origin, width, justify })`: alte Ausgaben →
   Verschiebungen, Absatz neu hinter dem Inhalt in `/FcPara BMC … EMC` (wird beim nächsten Mal ersetzt), Stil der
-  ersten Zeile (Schrift, Größe, Füllfarbe aus `TextShow::fill`, Tc/Tw/Tz/Ts/Tr, Matrix), Umbruch auf die Kastenbreite
+  ersten Zeile (Schrift, Größe, Füllfarbe aus `TextShow::fill`, Tc/Tw/Tz/Ts/Tr, Matrix), Umbruch auf die Kastenbreite; harte
+  Umbrüche (`\n`) als `/FcBr MP` hinter der Zeile, beim Erkennen `Paragraph::breaks` (ohne Markierung: erstes Wort der
+  nächsten Zeile hätte noch gepasst), `rows()` = Zeilen inkl. Leerzeilen
 - `core::image_codec` – `encode_png`/`encode_jpeg` (Gray/Rgb/Rgba, JPEG: Alpha auf Weiß)
 - `core::docx` – `export_docx(doc, seiten, progress)`: Absätze (`core::paragraph`, Größe, Fett aus /BaseFont) und
   Bilder (JPEG direkt, Grau/RGB-8-Bit als PNG; seitenfüllendes Bild nur ohne Text) nach Höhe sortiert,
@@ -285,6 +304,7 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   Stempel), Klick = Auswahl, Ziehen = verschieben, Anfasser rechts = Breite, Doppelklick/Enter = mehrzeiliger
   Editor (Strg+Enter übernimmt), Blocksatz-Schalter; `sync_structure` erkennt Inhaltsänderungen am Stempel
 - `core::font` (Helvetica-Breiten, WinAnsi, Umbruch), `core::pdf_string` (Textstrings), `core::date`
+  (`system_now` = browserfeste Systemzeit als `std::time::SystemTime`, `pdf_date_now`)
 - `core::text` – `PageText`/`CharBox` (Zeichen + Rechteck im PDF-Raum), `find`, `range_rects`, `char_at`
 - `render::worker` – Textextraktion (`extract_text`, Event `Text`), eigene Warteschlange:
   sichtbare Seiten > Text > Prefetch > Miniaturen
@@ -337,6 +357,12 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - `app::page_dialogs` – Dialoge „Seiten aus Datei einfügen“, „Dateien zusammenführen“, „Seiten extrahieren“,
   „Dokument teilen“
   (Ergebnis = neues unbenanntes Dokument, `adopt_document` zeigt es über eine Momentaufnahme an)
+- `app::platform` – Desktop/Browser-Unterschiede: `FileDialog` (wie rfd; Browser: Auswahl asynchron, Speichern =
+  Download ohne Dialog), `Pick` + `take_picked` (gewählte Dateien, verarbeitet in `PdfToolApp::handle_picked`),
+  `read`/`write`/`exists` (Browser: virtuelle Dateien der Sitzung, Schreiben = Download), `open_document`,
+  `save_document` (`Document::save_with`), `spawn` (Browser: sofort), `receive_dropped` (Drag & Drop im Browser),
+  `install_web_hooks` (Browser: Rückfrage beim Schließen über `set_unsaved`, Bilder per Strg+V als `Pick::PasteImage`,
+  Liberation-Schriften im Hintergrund nachladen)
 - `app::jobs` – Hintergrund-Jobs (`Job::spawn`, Fortschritt, Abbrechen, modales Fortschrittsfenster);
   höchstens ein Job gleichzeitig (`PdfToolApp::job`), Ergebnis als Info- oder Fehlerdialog
 - `core::form` – `FormField`/`FieldKind`/`FieldValue`/`Widget`, `FormStore` (Dateireihenfolge = Tab-Reihenfolge);
@@ -415,8 +441,12 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - `app::a11y_ui` – Menü „Barrierefreiheit“: Prüfbericht-Fenster, Dialog „Automatisch taggen“ (Job, `pending_doc`)
 - `core::embedded_font::FontData` – beliebige TrueType-Schrift (statisch oder geladen) für `SubsetFont::with_font`;
   `embeddable` prüft glyf und fsType
-- `core::system_fonts` – Systemschriften suchen (nur name/OS2 lesen), `find_style`, `find_for_base_font` (Aliase wie
-  Arial → Liberation Sans, Calibri → Carlito), `load` (gecacht)
+- `core::system_fonts` – Systemschriften suchen (nur name/OS2 lesen) plus die eingebauten Liberation-Schriften
+  (`SystemFont::builtin`, installierte haben Vorrang; Liste wird neu gebildet, wenn eingebaute dazukommen),
+  `find_style`, `find_for_base_font` (Aliase wie Arial → Liberation Sans, Calibri → Carlito), `load` (gecacht)
+- `core::embedded_font::{LIBERATION_NAMES, liberation()}` – Liberation (Sans/Serif/Mono × 4 Schnitte): Desktop fest
+  eingebaut; Browser nicht im WASM, sondern nachgeladen (`app::platform`, `fonts/<Name>.ttf`) und per
+  `register_liberation` angemeldet. `FontData::from_static` für eingebaute Daten ohne Kopie
 - `core::rich_text` – `TextStyle`/`StyledRun`/`FontRef {Original, Family, Noto}`, `Resolver` (je Zeichen: Original →
   Systemschrift gleicher Familie → Noto), `layout_ops` (Umbruch, Blocksatz, Linien); `core::paragraph::{paragraph_runs,
   set_paragraph_rich, add_rich_text}`
