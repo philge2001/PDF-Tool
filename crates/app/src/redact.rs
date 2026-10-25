@@ -160,7 +160,12 @@ impl PdfToolApp {
                 if let Some(old) = &self.document {
                     doc.inherit_security(&old.doc);
                 }
-                self.adopt_document(doc)
+                // … und man bleibt, wo man war (statt auf Seite 1 zu springen).
+                let position = self.document.as_ref().map(|d| d.viewer.position());
+                self.adopt_document(doc);
+                if let (Some(pos), Some(d)) = (position, &mut self.document) {
+                    d.viewer.restore_position(pos);
+                }
             }
             Err(e) => self.error = Some(format!("Ergebnis unlesbar:\n{e}")),
         }
