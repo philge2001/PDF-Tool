@@ -109,7 +109,7 @@ fn frame_screen(
     let (_, page_rect) = view.pages.iter().find(|(p, _)| *p == page)?;
     let info = d.doc.page(page).ok()?;
     Some(
-        transform::pdf_rect_to_screen(info, *page_rect, para.frame_rect(frame, para.lines))
+        transform::pdf_rect_to_screen(info, *page_rect, para.frame_rect(frame, para.rows()))
             .expand(2.0),
     )
 }
@@ -474,8 +474,8 @@ impl OpenDocument {
         // Position und Größe: über dem Kasten bzw. am Klickpunkt.
         let (rect, rows) = match &ed.para {
             Some((p, f)) => (
-                transform::pdf_rect_to_screen(info, page_rect, p.frame_rect(f, p.lines)),
-                p.lines.max(2),
+                transform::pdf_rect_to_screen(info, page_rect, p.frame_rect(f, p.rows())),
+                p.rows().max(2),
             ),
             None => {
                 let size = ed.rich.current().size;

@@ -170,11 +170,17 @@ pub fn export_docx(
                 Block::Text { text, size, bold } => {
                     // w:sz in halben Punkt.
                     let half_points = (size * 2.0).round().clamp(2.0, 3276.0) as u32;
+                    // Harte Zeilenumbrüche im Absatz als Zeilenwechsel in Word.
+                    let text = text
+                        .split('\n')
+                        .map(xml_escape)
+                        .collect::<Vec<_>>()
+                        .join(r#"</w:t><w:br/><w:t xml:space="preserve">"#);
                     let _ = write!(
                         body,
                         r#"<w:p><w:r><w:rPr>{}<w:sz w:val="{half_points}"/></w:rPr><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#,
                         if bold { "<w:b/>" } else { "" },
-                        xml_escape(&text)
+                        text
                     );
                 }
                 Block::Image {

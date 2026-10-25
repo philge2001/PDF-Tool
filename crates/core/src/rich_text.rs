@@ -714,6 +714,13 @@ pub(crate) fn layout_ops(
             x += width + piece.iter().filter(|a| a.c == ' ').count() as f32 * extra;
             k = j;
         }
+        // Harter Umbruch (`\n`) merken, damit ihn `group_paragraphs` wiedererkennt.
+        if *last && li + 1 < lines.len() {
+            ops.push(Operation::new(
+                "MP",
+                vec![name(crate::paragraph::BREAK_MARK)],
+            ));
+        }
     }
     ops.push(Operation::new("ET", vec![]));
     ops.extend(deco);

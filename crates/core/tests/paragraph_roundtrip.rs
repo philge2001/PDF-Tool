@@ -139,3 +139,101 @@ fn undo_restores_original_paragraph() {
         p.text
     );
 }
+
+#[test]
+fn hard_line_breaks_survive_resizing() {
+    let mut doc = fixture("text_two_pages.pdf");
+    let p = para(&doc.paragraphs(0).unwrap(), "Lorem").clone();
+    let text = "Erste Zeile\nZweite\n\nNach einer Leerzeile folgt hier noch etwas mehr Text, \
+                der im Kasten umbrochen wird.";
+    let frame = ParaFrame {
+        origin: p.origin,
+        width: Some(220.0),
+        justify: false,
+    };
+    doc.set_paragraph(0, &p, text, frame).unwrap();
+    let saved = reload(&doc);
+    let np = para(&saved.paragraphs(0).unwrap(), "Erste").clone();
+    assert_eq!(np.text, text, "{np:#?}");
+    assert_eq!(&np.breaks[..4], &[0, 1, 2, 0]);
+    assert_eq!(np.rows(), np.lines + 1, "Leerzeile zählt für die Höhe");
+    assert!(
+        (np.line_height - 20.0).abs() < 0.01,
+        "Leerzeile zählt nicht als Abstand"
+    );
+
+    // Breite ändern (wie mit dem Anfasser): Umbrüche bleiben, Fließtext wird neu umbrochen.
+    for width in [400.0, 150.0] {
+        let mut d = reload(&saved);
+        let q = para(&d.paragraphs(0).unwrap(), "Erste").clone();
+        let frame = ParaFrame {
+            width: Some(width),
+            ..q.frame()
+        };
+        d.set_paragraph(0, &q, &q.text.clone(), frame).unwrap();
+        let r = para(&d.paragraphs(0).unwrap(), "Erste").clone();
+        assert_eq!(r.text, text, "Breite {width}");
+        assert!(r.width <= width + 0.5);
+    }
+
+    // Formatierte Läufe (Editor) enthalten die Umbrüche ebenfalls.
+    let runs = saved.paragraph_runs(0, &np).unwrap();
+    assert_eq!(pdftool_core::rich_text::plain_text(&runs), text);
+}
+
+/// Fremde PDF ohne Markierungen: kurze Zeilen, deren nächstes Wort noch gepasst hätte,
+/// enden mit einem harten Umbruch (Adresse); volle Zeilen bleiben Fließtext.
+#[test]
+fn short_lines_of_foreign_pdf_are_hard_breaks() {
+    use lopdf::{Object, Stream, content::Content, content::Operation, dictionary};
+    let mut pdf = lopdf::Document::with_version("1.7");
+    let font = pdf.add_object(dictionary! {
+        "Type" => "Font", "Subtype" => "Type1", "BaseFont" => "Helvetica",
+        "Encoding" => "WinAnsiEncoding",
+    });
+    let lines = [
+        "Herr Max Mustermann wohnt seit vielen Jahren unter",
+        "dieser Adresse:",
+        "Hauptstrasse 5",
+        "12345 Koeln",
+    ];
+    let mut ops = vec![
+        Operation::new("BT", vec![]),
+        Operation::new("Tf", vec!["F1".into(), 12.into()]),
+        Operation::new("TL", vec![14.into()]),
+        Operation::new("Td", vec![72.into(), 700.into()]),
+    ];
+    for l in lines {
+        ops.push(Operation::new("Tj", vec![Object::string_literal(l)]));
+        ops.push(Operation::new("T*", vec![]));
+    }
+    ops.push(Operation::new("ET", vec![]));
+    let content = pdf.add_object(Stream::new(
+        dictionary! {},
+        Content { operations: ops }.encode().unwrap(),
+    ));
+    let pages = pdf.new_object_id();
+    let page = pdf.add_object(dictionary! {
+        "Type" => "Page", "Parent" => pages, "MediaBox" => vec![0.into(), 0.into(), 595.into(), 842.into()],
+        "Contents" => content, "Resources" => dictionary! { "Font" => dictionary! { "F1" => font } },
+    });
+    pdf.objects.insert(
+        pages,
+        Object::Dictionary(
+            dictionary! { "Type" => "Pages", "Kids" => vec![page.into()], "Count" => 1 },
+        ),
+    );
+    let catalog = pdf.add_object(dictionary! { "Type" => "Catalog", "Pages" => pages });
+    pdf.trailer.set("Root", catalog);
+    let mut bytes = Vec::new();
+    pdf.save_to(&mut bytes).unwrap();
+
+    let doc = Document::from_bytes(bytes).unwrap();
+    let paras = doc.paragraphs(0).unwrap();
+    let p = para(&paras, "Herr");
+    assert_eq!(
+        p.text,
+        "Herr Max Mustermann wohnt seit vielen Jahren unter dieser Adresse:\nHauptstrasse 5\n12345 Koeln",
+        "{paras:#?}"
+    );
+}

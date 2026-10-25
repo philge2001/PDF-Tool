@@ -265,7 +265,9 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   gleiche Richtung/Größe, gleicher linker Rand (erste Zeile darf eingerückt sein), gleichmäßiger Abstand; Blocksatz
   erkannt), `Document::paragraphs`/`set_paragraph(…, ParaFrame { origin, width, justify })`: alte Ausgaben →
   Verschiebungen, Absatz neu hinter dem Inhalt in `/FcPara BMC … EMC` (wird beim nächsten Mal ersetzt), Stil der
-  ersten Zeile (Schrift, Größe, Füllfarbe aus `TextShow::fill`, Tc/Tw/Tz/Ts/Tr, Matrix), Umbruch auf die Kastenbreite
+  ersten Zeile (Schrift, Größe, Füllfarbe aus `TextShow::fill`, Tc/Tw/Tz/Ts/Tr, Matrix), Umbruch auf die Kastenbreite; harte
+  Umbrüche (`\n`) als `/FcBr MP` hinter der Zeile, beim Erkennen `Paragraph::breaks` (ohne Markierung: erstes Wort der
+  nächsten Zeile hätte noch gepasst), `rows()` = Zeilen inkl. Leerzeilen
 - `core::image_codec` – `encode_png`/`encode_jpeg` (Gray/Rgb/Rgba, JPEG: Alpha auf Weiß)
 - `core::docx` – `export_docx(doc, seiten, progress)`: Absätze (`core::paragraph`, Größe, Fett aus /BaseFont) und
   Bilder (JPEG direkt, Grau/RGB-8-Bit als PNG; seitenfüllendes Bild nur ohne Text) nach Höhe sortiert,
