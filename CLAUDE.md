@@ -197,6 +197,8 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   DocMDP-Berechtigungen werden angezeigt, aber Änderungen danach nicht darauf geprüft. Digitale IDs nur als
   PKCS#12-Datei (kein Windows-Zertifikatspeicher, keine Smartcards). Vertrauen nur über selbst
   hinterlegte Zertifikate (keine eingebaute Liste von Stammzertifikaten).
+- Browser: keine Systemschriften – zur Auswahl stehen Noto Sans und Liberation Sans/Serif/Mono; Liberation wird
+  nach dem Start nachgeladen (bis dahin fehlt sie in der Auswahl und für PDF/A/Taggen).
 - Systemschriften: nur TrueType mit glyf-Tabelle (keine CFF/OpenType-PS-Schriften), nur wenn fsType Einbetten und
   Teilmengen erlaubt. Fehlender Fett-/Kursivschnitt wird nachgeahmt (Tr 2 mit Kontur, Schrägstellung 0,21).
   Die Editor-Vorschau zeigt Schriftarten nicht originalgetreu (egui-Schrift, nur fett/kursiv/Linien angedeutet).
@@ -357,7 +359,8 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   Download ohne Dialog), `Pick` + `take_picked` (gewählte Dateien, verarbeitet in `PdfToolApp::handle_picked`),
   `read`/`write`/`exists` (Browser: virtuelle Dateien der Sitzung, Schreiben = Download), `open_document`,
   `save_document` (`Document::save_with`), `spawn` (Browser: sofort), `receive_dropped` (Drag & Drop im Browser),
-  `install_web_hooks` (Browser: Rückfrage beim Schließen über `set_unsaved`, Bilder per Strg+V als `Pick::PasteImage`)
+  `install_web_hooks` (Browser: Rückfrage beim Schließen über `set_unsaved`, Bilder per Strg+V als `Pick::PasteImage`,
+  Liberation-Schriften im Hintergrund nachladen)
 - `app::jobs` – Hintergrund-Jobs (`Job::spawn`, Fortschritt, Abbrechen, modales Fortschrittsfenster);
   höchstens ein Job gleichzeitig (`PdfToolApp::job`), Ergebnis als Info- oder Fehlerdialog
 - `core::form` – `FormField`/`FieldKind`/`FieldValue`/`Widget`, `FormStore` (Dateireihenfolge = Tab-Reihenfolge);
@@ -436,8 +439,12 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - `app::a11y_ui` – Menü „Barrierefreiheit“: Prüfbericht-Fenster, Dialog „Automatisch taggen“ (Job, `pending_doc`)
 - `core::embedded_font::FontData` – beliebige TrueType-Schrift (statisch oder geladen) für `SubsetFont::with_font`;
   `embeddable` prüft glyf und fsType
-- `core::system_fonts` – Systemschriften suchen (nur name/OS2 lesen), `find_style`, `find_for_base_font` (Aliase wie
-  Arial → Liberation Sans, Calibri → Carlito), `load` (gecacht)
+- `core::system_fonts` – Systemschriften suchen (nur name/OS2 lesen) plus die eingebauten Liberation-Schriften
+  (`SystemFont::builtin`, installierte haben Vorrang; Liste wird neu gebildet, wenn eingebaute dazukommen),
+  `find_style`, `find_for_base_font` (Aliase wie Arial → Liberation Sans, Calibri → Carlito), `load` (gecacht)
+- `core::embedded_font::{LIBERATION_NAMES, liberation()}` – Liberation (Sans/Serif/Mono × 4 Schnitte): Desktop fest
+  eingebaut; Browser nicht im WASM, sondern nachgeladen (`app::platform`, `fonts/<Name>.ttf`) und per
+  `register_liberation` angemeldet. `FontData::from_static` für eingebaute Daten ohne Kopie
 - `core::rich_text` – `TextStyle`/`StyledRun`/`FontRef {Original, Family, Noto}`, `Resolver` (je Zeichen: Original →
   Systemschrift gleicher Familie → Noto), `layout_ops` (Umbruch, Blocksatz, Linien); `core::paragraph::{paragraph_runs,
   set_paragraph_rich, add_rich_text}`

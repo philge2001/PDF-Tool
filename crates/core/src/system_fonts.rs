@@ -8,6 +8,9 @@
 //! (nicht die ganzen Schriften) – so bleibt das Durchsuchen auch bei Hunderten Schriften schnell.
 //! Nur TrueType-Schriften (Tabelle `glyf`), deren Lizenz das Einbetten als Teilmenge erlaubt
 //! (OS/2 fsType), kommen in die Liste.
+//!
+//! Dazu kommen die eingebauten Liberation-Schriften (Sans, Serif, Mono), falls sie nicht installiert
+//! sind – im Browser, wo es keine Systemschriften gibt, sind sie die einzige Auswahl.
 
 use crate::embedded_font::FontData;
 use std::collections::HashMap;
@@ -29,6 +32,8 @@ pub struct SystemFont {
     pub path: PathBuf,
     /// Index in einer Schriftsammlung (.ttc).
     pub index: u32,
+    /// Eingebaute Schrift: die Daten (dann ist `path` nur ein Name zur Anzeige).
+    pub builtin: Option<&'static [u8]>,
 }
 
 /// Ordner, in denen Betriebssysteme Schriften ablegen.
@@ -184,25 +189,73 @@ fn describe_one(f: &mut File, path: &Path, index: u32, off: u64) -> Option<Syste
         italic,
         path: path.to_path_buf(),
         index,
+        builtin: None,
     })
 }
 
-/// Alle installierten, einbettbaren TrueType-Schriften (einmal pro Programmlauf gesucht).
+/// Die eingebauten Liberation-Schriften als Einträge der Schriftliste.
+fn builtin_fonts() -> Vec<SystemFont> {
+    crate::embedded_font::liberation()
+        .into_iter()
+        .filter_map(|(postscript, data)| {
+            let face = ttf_parser::Face::parse(data, 0).ok()?;
+            let name = |id: u16| {
+                face.names()
+                    .into_iter()
+                    .filter(|n| n.name_id == id)
+                    .find_map(|n| n.to_string())
+            };
+            let family = name(ttf_parser::name_id::FAMILY)?;
+            let style = name(ttf_parser::name_id::SUBFAMILY).unwrap_or_else(|| "Regular".into());
+            Some(SystemFont {
+                full_name: name(ttf_parser::name_id::FULL_NAME)
+                    .unwrap_or_else(|| format!("{family} {style}")),
+                family,
+                style,
+                postscript: postscript.to_string(),
+                bold: face.is_bold(),
+                italic: face.is_italic(),
+                path: PathBuf::from(format!("(eingebaut) {postscript}")),
+                index: 0,
+                builtin: Some(data),
+            })
+        })
+        .collect()
+}
+
+/// Alle installierten, einbettbaren TrueType-Schriften plus die eingebauten Liberation-Schriften.
+/// Installierte werden einmal pro Programmlauf gesucht; die Liste wird neu gebildet, sobald
+/// weitere eingebaute Schriften dazukommen (im Browser werden sie nachgeladen).
 pub fn system_fonts() -> &'static [SystemFont] {
-    static FONTS: OnceLock<Vec<SystemFont>> = OnceLock::new();
-    FONTS.get_or_init(|| {
+    static INSTALLED: OnceLock<Vec<SystemFont>> = OnceLock::new();
+    /// (Anzahl eingebauter Schriften beim Bilden, fertige Liste).
+    static MERGED: Mutex<(usize, &'static [SystemFont])> = Mutex::new((usize::MAX, &[]));
+    let installed = INSTALLED.get_or_init(|| {
         let mut files = Vec::new();
         for d in font_dirs() {
             font_files(&d, 0, &mut files);
         }
         files.sort();
         files.dedup();
-        let mut fonts: Vec<SystemFont> = files.iter().flat_map(|p| describe(p)).collect();
+        files.iter().flat_map(|p| describe(p)).collect()
+    });
+    let builtin_count = crate::embedded_font::liberation().len();
+    let Ok(mut merged) = MERGED.lock() else {
+        return &[];
+    };
+    if merged.0 != builtin_count {
+        let mut fonts = installed.clone();
+        // Eingebaute hinten anhängen: Das Sortieren ist stabil und `dedup_by` behält den ersten
+        // Eintrag – eine installierte Liberation-Schrift hat also Vorrang.
+        fonts.extend(builtin_fonts());
         fonts.sort_by(|a, b| (&a.family, &a.style).cmp(&(&b.family, &b.style)));
         fonts.dedup_by(|a, b| a.postscript == b.postscript);
-        tracing::debug!(count = fonts.len(), "Systemschriften gefunden");
-        fonts
-    })
+        tracing::debug!(count = fonts.len(), "Schriften gefunden");
+        // `Box::leak`: Die Liste lebt bis Programmende, Aufrufer bekommen `&'static`. Neu gebildet
+        // wird sie höchstens zweimal (Desktop einmal, Browser zusätzlich nach dem Nachladen).
+        *merged = (builtin_count, Box::leak(fonts.into_boxed_slice()));
+    }
+    merged.1
 }
 
 /// Familiennamen (sortiert, ohne Doppelte) – für die Schriftauswahl.
@@ -319,9 +372,12 @@ pub fn load(font: &SystemFont) -> Option<Arc<FontData>> {
     if let Some(hit) = cache.lock().ok()?.get(&key) {
         return hit.clone();
     }
-    let loaded = std::fs::read(&font.path)
-        .ok()
-        .and_then(|b| FontData::from_bytes(b, font.index));
+    let loaded = match font.builtin {
+        Some(data) => FontData::from_static(data),
+        None => std::fs::read(&font.path)
+            .ok()
+            .and_then(|b| FontData::from_bytes(b, font.index)),
+    };
     if let Ok(mut c) = cache.lock() {
         c.insert(key, loaded.clone());
     }
@@ -347,6 +403,26 @@ mod tests {
             parse_base_font("Calibri,Italic"),
             ("Calibri".into(), false, true)
         );
+    }
+
+    /// Die eingebauten Liberation-Schriften gibt es immer (auch ohne installierte Schriften, z. B.
+    /// im Browser): alle drei Familien mit vier Schnitten, ladbar, mit Umlauten.
+    #[test]
+    fn builtin_fonts_are_always_there() {
+        let builtin = builtin_fonts();
+        assert_eq!(builtin.len(), 12);
+        for family in ["Liberation Sans", "Liberation Serif", "Liberation Mono"] {
+            for (bold, italic) in [(false, false), (true, false), (false, true), (true, true)] {
+                let f = find_style(family, bold, italic).expect(family);
+                assert_eq!((f.bold, f.italic), (bold, italic), "{f:?}");
+                let data = load(f).expect("ladbar");
+                assert!(data.has_glyph('Ä') && data.has_glyph('ß'));
+            }
+        }
+        assert!(families().contains(&"Liberation Serif"));
+        // Arial ohne installierte Arial → metrisch gleiche Liberation Sans
+        let arial = find_for_base_font("ABCDEF+Arial-BoldMT").expect("Ersatz für Arial");
+        assert!(arial.bold);
     }
 
     /// Läuft überall; findet nur dort etwas, wo Schriften installiert sind (Container: DejaVu,

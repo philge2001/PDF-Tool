@@ -304,6 +304,7 @@ mod web {
         let Some(window) = web_sys::window() else {
             return;
         };
+        load_builtin_fonts(window.clone(), ctx.clone());
         // Schließen/Neuladen mit ungespeicherten Änderungen: Der Browser zeigt seine eigene
         // Rückfrage („Seite verlassen?“), sobald das Ereignis abgebrochen wird.
         let on_unload = Closure::<dyn FnMut(web_sys::BeforeUnloadEvent)>::new(
@@ -377,6 +378,42 @@ mod web {
             push_picked(pick, paths);
             ctx.request_repaint();
         });
+    }
+
+    /// Lädt die Liberation-Schriften (`fonts/<Name>.ttf` neben der Seite) im Hintergrund und
+    /// meldet sie im Kern an. Bis dahin fehlen sie in der Schriftauswahl und für PDF/A.
+    fn load_builtin_fonts(window: web_sys::Window, ctx: egui::Context) {
+        wasm_bindgen_futures::spawn_local(async move {
+            let mut loaded = 0;
+            for name in pdftool_core::embedded_font::LIBERATION_NAMES {
+                match fetch_bytes(&window, &format!("fonts/{name}.ttf")).await {
+                    Ok(bytes) => {
+                        pdftool_core::embedded_font::register_liberation(name, bytes);
+                        loaded += 1;
+                    }
+                    Err(e) => tracing::warn!(name, error = %e, "Schrift nicht geladen"),
+                }
+            }
+            tracing::info!(loaded, "Liberation-Schriften nachgeladen");
+            ctx.request_repaint();
+        });
+    }
+
+    /// Lädt eine Datei vom Webserver der Seite.
+    async fn fetch_bytes(window: &web_sys::Window, url: &str) -> Result<Vec<u8>, String> {
+        use wasm_bindgen_futures::JsFuture;
+        let response: web_sys::Response = JsFuture::from(window.fetch_with_str(url))
+            .await
+            .map_err(|e| format!("{e:?}"))?
+            .dyn_into()
+            .map_err(|e| format!("{e:?}"))?;
+        if !response.ok() {
+            return Err(format!("HTTP {}", response.status()));
+        }
+        let buffer = JsFuture::from(response.array_buffer().map_err(|e| format!("{e:?}"))?)
+            .await
+            .map_err(|e| format!("{e:?}"))?;
+        Ok(js_sys::Uint8Array::new(&buffer).to_vec())
     }
 
     pub(super) fn insert(path: PathBuf, bytes: Vec<u8>) {
