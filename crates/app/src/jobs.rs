@@ -40,6 +40,24 @@ impl JobCtx {
     }
 }
 
+/// Die Arbeitsseite eines Jobs aus [`Job::external`].
+pub struct JobHandle {
+    ctx: JobCtx,
+    tx: mpsc::Sender<JobResult>,
+}
+
+impl JobHandle {
+    pub fn ctx(&self) -> &JobCtx {
+        &self.ctx
+    }
+
+    /// Meldet das Ergebnis; das Fortschrittsfenster schließt sich im nächsten Frame.
+    pub fn finish(self, result: JobResult) {
+        let _ = self.tx.send(result);
+        self.ctx.ui.request_repaint();
+    }
+}
+
 /// Ein laufender Job aus Sicht der Oberfläche.
 pub struct Job {
     pub title: String,
@@ -58,6 +76,19 @@ impl Job {
         ui: &egui::Context,
         work: impl FnOnce(&JobCtx) -> JobResult + Send + 'static,
     ) -> Self {
+        let (job, handle) = Self::external(title, ui);
+        // Desktop: eigener Thread. Browser: läuft sofort (dort gibt es keine Threads).
+        crate::platform::spawn(move || {
+            let result = work(handle.ctx());
+            handle.finish(result);
+        });
+        job
+    }
+
+    /// Ein Job, dessen Arbeit der Aufrufer selbst antreibt – im Browser z. B. eine Future, die
+    /// zwischendurch auf JavaScript wartet. Fortschritt/Abbruch über `JobHandle::ctx`, Ende mit
+    /// `JobHandle::finish`. Wird der Handle ohne `finish` verworfen, gilt der Job als abgestürzt.
+    pub fn external(title: impl Into<String>, ui: &egui::Context) -> (Self, JobHandle) {
         let progress = Arc::new(Mutex::new(Progress::default()));
         let cancel = Arc::new(AtomicBool::new(false));
         let (tx, rx) = mpsc::channel();
@@ -66,18 +97,13 @@ impl Job {
             cancel: cancel.clone(),
             ui: ui.clone(),
         };
-        // Desktop: eigener Thread. Browser: läuft sofort (dort gibt es keine Threads).
-        crate::platform::spawn(move || {
-            let result = work(&ctx);
-            let _ = tx.send(result);
-            ctx.ui.request_repaint();
-        });
-        Self {
+        let job = Self {
             title: title.into(),
             progress,
             cancel,
             result: rx,
-        }
+        };
+        (job, JobHandle { ctx, tx })
     }
 
     pub fn cancel(&self) {

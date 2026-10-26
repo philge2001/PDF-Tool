@@ -143,15 +143,16 @@ impl PdfToolApp {
             ToolGroup::Export => return self.open_export_dialog(),
             ToolGroup::Combine => return self.open_merge_dialog(),
             ToolGroup::Scan => {
-                #[cfg(feature = "ocr")]
-                self.open_ocr_dialog();
-                #[cfg(not(feature = "ocr"))]
+                #[cfg(has_ocr)]
+                if crate::ocr_ui::available() {
+                    self.open_ocr_dialog();
+                } else {
+                    self.error =
+                        Some("Texterkennung ist auf dieser Seite nicht eingebunden.".into());
+                }
+                #[cfg(not(has_ocr))]
                 {
-                    self.error = Some(if crate::platform::is_web() {
-                        "Texterkennung gibt es in der Browser-Version noch nicht.".into()
-                    } else {
-                        "Diese Version wurde ohne Texterkennung gebaut.".into()
-                    });
+                    self.error = Some("Diese Version wurde ohne Texterkennung gebaut.".into());
                 }
                 return;
             }
