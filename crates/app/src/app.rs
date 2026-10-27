@@ -186,7 +186,7 @@ impl PdfToolApp {
             })
             .unwrap_or_default();
         settings.prune_missing();
-        cc.egui_ctx.set_theme(settings.theme);
+        crate::style::apply(&cc.egui_ctx, settings.appearance());
 
         let mut app = Self {
             render,
@@ -743,6 +743,19 @@ impl PdfToolApp {
             let ctx = ui.ctx().clone();
             self.image_action(&ctx, action, page, img);
         }
+    }
+}
+
+impl PdfToolApp {
+    /// Gewählte Darstellung (für den PDF Webeditor: gemeinsames Cookie mit Portal und Hausbuch).
+    pub fn appearance(&self) -> crate::style::Appearance {
+        self.settings.appearance()
+    }
+
+    /// Darstellung setzen und sofort anwenden (Menü, Kopfleiste oder von außen).
+    pub fn set_appearance(&mut self, ctx: &egui::Context, appearance: crate::style::Appearance) {
+        self.settings.set_appearance(appearance);
+        crate::style::apply(ctx, appearance);
     }
 }
 

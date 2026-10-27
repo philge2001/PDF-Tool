@@ -9,7 +9,8 @@
 //! Alle Farben stehen in [`Palette`]; die Namen folgen den CSS-Variablen des Portals.
 
 use crate::icons::Icon;
-use eframe::egui::{self, Color32, CornerRadius, Shadow, Stroke, Theme};
+use eframe::egui::{self, Color32, CornerRadius, Shadow, Stroke, Theme, ThemePreference};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Akzentfarbe im hellen Design (Systemblau). Für das aktuelle Design: [`accent`].
 pub const ACCENT: Color32 = Color32::from_rgb(0, 113, 227);
@@ -92,9 +93,101 @@ const DARK: Palette = Palette {
     shadow: Color32::from_black_alpha(110),
 };
 
-/// Farben des hellen bzw. dunklen Designs.
+/// Dämmerung: zwischen hell und dunkel – Indigo-Schiefer mit kräftigeren Farben (wie „Dusk“ im
+/// Portal und „Dämmerung“ im Hausbuch). Technisch ein dunkles Design mit eigener Palette.
+const DUSK: Palette = Palette {
+    background: rgb(54, 60, 112),
+    panel: rgb(62, 68, 121),
+    canvas: rgb(44, 49, 96),
+    surface: rgb(70, 77, 130),
+    floating: rgb(75, 82, 138),
+    field: rgb(80, 87, 143),
+    fill: rgb(80, 87, 143),
+    fill_hover: rgb(91, 98, 152),
+    fill_press: rgb(102, 109, 162),
+    border: rgb(92, 99, 152),
+    text: rgb(245, 246, 251),
+    text_2: rgb(197, 201, 223),
+    accent: rgb(94, 125, 255),
+    danger: rgb(255, 123, 123),
+    warn: rgb(255, 179, 64),
+    graphite: rgb(125, 130, 168),
+    shadow: Color32::from_black_alpha(90),
+};
+
+/// Darstellung, wie man sie auswählt. egui kennt nur hell und dunkel; Dämmerung ist das dunkle
+/// Design mit der Palette [`DUSK`] (siehe [`apply`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Appearance {
+    /// Folgt der Einstellung des Betriebssystems (hell/dunkel).
+    #[default]
+    System,
+    Light,
+    Dusk,
+    Dark,
+}
+
+impl Appearance {
+    /// Reihenfolge beim Durchschalten mit dem Knopf in der Kopfleiste.
+    pub const CYCLE: [Appearance; 3] = [Appearance::Light, Appearance::Dusk, Appearance::Dark];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Appearance::System => "Wie System",
+            Appearance::Light => "Hell",
+            Appearance::Dusk => "Dämmerung",
+            Appearance::Dark => "Dunkel",
+        }
+    }
+
+    /// Welches egui-Design dazu gehört.
+    pub fn theme_preference(self) -> ThemePreference {
+        match self {
+            Appearance::System => ThemePreference::System,
+            Appearance::Light => ThemePreference::Light,
+            Appearance::Dusk | Appearance::Dark => ThemePreference::Dark,
+        }
+    }
+
+    /// Nächste Darstellung beim Durchschalten, ausgehend von der sichtbaren.
+    pub fn next(self) -> Appearance {
+        let i = Self::CYCLE.iter().position(|&a| a == self).unwrap_or(0);
+        Self::CYCLE[(i + 1) % Self::CYCLE.len()]
+    }
+}
+
+/// Liefert das dunkle Design gerade die Dämmerungs-Palette? Eine App pro Prozess, deshalb
+/// genügt ein globaler Schalter; so brauchen `palette(dark)` & Co. keinen Kontext.
+static DUSK_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Stellt die Darstellung ein: Palette für das dunkle Design wählen, Stil neu setzen, egui
+/// auf hell/dunkel/System schalten.
+pub fn apply(ctx: &egui::Context, appearance: Appearance) {
+    let dusk = appearance == Appearance::Dusk;
+    if DUSK_ACTIVE.swap(dusk, Ordering::Relaxed) != dusk {
+        install(ctx);
+    }
+    ctx.set_theme(appearance.theme_preference());
+}
+
+/// Was gerade zu sehen ist (bei „Wie System“ hell oder dunkel).
+pub fn visible(ctx: &egui::Context) -> Appearance {
+    match ctx.theme() {
+        Theme::Light => Appearance::Light,
+        Theme::Dark if DUSK_ACTIVE.load(Ordering::Relaxed) => Appearance::Dusk,
+        Theme::Dark => Appearance::Dark,
+    }
+}
+
+/// Farben des hellen bzw. dunklen Designs (dunkel = Dunkel oder Dämmerung, je nach [`apply`]).
 pub fn palette(dark: bool) -> &'static Palette {
-    if dark { &DARK } else { &LIGHT }
+    if !dark {
+        &LIGHT
+    } else if DUSK_ACTIVE.load(Ordering::Relaxed) {
+        &DUSK
+    } else {
+        &DARK
+    }
 }
 
 /// Akzentfarbe des Designs.
@@ -237,5 +330,37 @@ pub fn icon_tint(icon: Icon, default: Color32) -> Color32 {
         Icon::Compare => rgb(255, 149, 0),
         Icon::Accessibility => rgb(88, 86, 214),
         _ => default,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settings::Settings;
+
+    #[test]
+    fn appearance_round_trips_through_settings() {
+        let mut s = Settings::default();
+        assert_eq!(s.appearance(), Appearance::System);
+        for a in [
+            Appearance::Light,
+            Appearance::Dusk,
+            Appearance::Dark,
+            Appearance::System,
+        ] {
+            s.set_appearance(a);
+            assert_eq!(s.appearance(), a);
+        }
+        // Gespeicherte Einstellungen älterer Versionen (ohne `dusk`) bleiben dunkel.
+        s.theme = ThemePreference::Dark;
+        s.dusk = false;
+        assert_eq!(s.appearance(), Appearance::Dark);
+    }
+
+    #[test]
+    fn button_cycles_light_dusk_dark() {
+        assert_eq!(Appearance::Light.next(), Appearance::Dusk);
+        assert_eq!(Appearance::Dusk.next(), Appearance::Dark);
+        assert_eq!(Appearance::Dark.next(), Appearance::Light);
     }
 }
