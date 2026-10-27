@@ -197,6 +197,8 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   DocMDP-Berechtigungen werden angezeigt, aber Änderungen danach nicht darauf geprüft. Digitale IDs nur als
   PKCS#12-Datei (kein Windows-Zertifikatspeicher, keine Smartcards). Vertrauen nur über selbst
   hinterlegte Zertifikate (keine eingebaute Liste von Stammzertifikaten).
+- Browser-OCR: tesseract.js (im PDF Webeditor eingebunden), Abbrechen erst zwischen zwei Seiten; das Rendern einer
+  Seite (300 dpi) läuft kurz im UI-Thread.
 - Browser: keine Systemschriften – zur Auswahl stehen Noto Sans und Liberation Sans/Serif/Mono; Liberation wird
   nach dem Start nachgeladen (bis dahin fehlt sie in der Auswahl und für PDF/A/Taggen).
 - Systemschriften: nur TrueType mit glyf-Tabelle (keine CFF/OpenType-PS-Schriften), nur wenn fsType Einbetten und
@@ -298,8 +300,11 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - `core::ocr_layer` – `OcrWord` (Anzeige-Einheiten 0..1, oben links), `Document::add_ocr_layers` (3 Tr, Noto, Tz =
   erkannte Breite, Größe = Worthöhe, gedreht wie die Seite, `/FcOcr BMC … EMC` wird ersetzt, `Batch` = 1 Undo),
   `page_has_text`
-- `app::ocr_ui` (Feature `ocr`) – Dialog „Texterkennung (OCR)“ (Seiten, nur ohne Text, Sprachen), Job mit
-  Fortschritt/Abbrechen (Momentaufnahme + Offscreen 300 dpi + Tesseract), Ergebnis über `OcrSlot` → `take_pending_ocr`
+- `app::ocr_ui` (`cfg(has_ocr)` = Feature `ocr` oder wasm32, gesetzt in `build.rs`) – Dialog „Texterkennung (OCR)“
+  (Seiten, nur ohne Text, Sprachen), Job mit Fortschritt/Abbrechen (Momentaufnahme + Offscreen 300 dpi + Tesseract),
+  Ergebnis über `OcrSlot` → `take_pending_ocr`. Desktop: `pdftool-ocr` im Job-Thread (`run_tesseract`). Browser
+  (`ocr_ui::web`): `Job::external` + Future, ruft `window.pdftoolOcr(rgba, w, h, "deu+eng")` (tesseract.js im
+  PDF Webeditor, liefert Tesseracts TSV → `parse_tsv`); `available()` prüft, ob die Seite die Funktion hat
 - `app::content_edit` – Modus „Inhalt bearbeiten“ (`Tool::EditText`/`AddText`): Absätze pro Seite gecacht (nach
   Stempel), Klick = Auswahl, Ziehen = verschieben, Anfasser rechts = Breite, Doppelklick/Enter = mehrzeiliger
   Editor (Strg+Enter übernimmt), Blocksatz-Schalter; `sync_structure` erkennt Inhaltsänderungen am Stempel
@@ -363,7 +368,8 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   `save_document` (`Document::save_with`), `spawn` (Browser: sofort), `receive_dropped` (Drag & Drop im Browser),
   `install_web_hooks` (Browser: Rückfrage beim Schließen über `set_unsaved`, Bilder per Strg+V als `Pick::PasteImage`,
   Liberation-Schriften im Hintergrund nachladen)
-- `app::jobs` – Hintergrund-Jobs (`Job::spawn`, Fortschritt, Abbrechen, modales Fortschrittsfenster);
+- `app::jobs` – Hintergrund-Jobs (`Job::spawn`, Fortschritt, Abbrechen, modales Fortschrittsfenster; `Job::external`
+  + `JobHandle` für Arbeit, die der Aufrufer selbst antreibt, z. B. eine Future im Browser);
   höchstens ein Job gleichzeitig (`PdfToolApp::job`), Ergebnis als Info- oder Fehlerdialog
 - `core::form` – `FormField`/`FieldKind`/`FieldValue`/`Widget`, `FormStore` (Dateireihenfolge = Tab-Reihenfolge);
   `import` (Feldbaum mit vererbten /FT /Ff /V /DA …, voller Name), `appearance` (`layout` = gemeinsame

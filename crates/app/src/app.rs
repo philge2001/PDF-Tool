@@ -121,9 +121,9 @@ pub struct PdfToolApp {
     )>,
     pub(crate) compare: Option<crate::compare::CompareView>,
     /// Dialog "Texterkennung" und Ergebnis des laufenden OCR-Jobs.
-    #[cfg(feature = "ocr")]
+    #[cfg(has_ocr)]
     pub(crate) ocr_dialog: Option<crate::ocr_ui::OcrDialog>,
-    #[cfg(feature = "ocr")]
+    #[cfg(has_ocr)]
     pub(crate) pending_ocr: Option<crate::ocr_ui::OcrSlot>,
     pub(crate) redact_confirm: bool,
     pub(crate) sanitize_dialog: Option<crate::redact::SanitizeDialog>,
@@ -231,9 +231,9 @@ impl PdfToolApp {
             autotag_dialog: None,
             pending_compare: None,
             compare: None,
-            #[cfg(feature = "ocr")]
+            #[cfg(has_ocr)]
             ocr_dialog: None,
-            #[cfg(feature = "ocr")]
+            #[cfg(has_ocr)]
             pending_ocr: None,
             redact_confirm: false,
             sanitize_dialog: None,
@@ -453,7 +453,7 @@ impl PdfToolApp {
                     Ok(msg) => {
                         self.take_pending_doc();
                         self.take_pending_compare();
-                        #[cfg(feature = "ocr")]
+                        #[cfg(has_ocr)]
                         self.take_pending_ocr();
                         if let Some(path) = open {
                             self.open_path(ctx, &path);
@@ -464,7 +464,7 @@ impl PdfToolApp {
                     Err(msg) => {
                         self.pending_doc = None;
                         self.pending_compare = None;
-                        #[cfg(feature = "ocr")]
+                        #[cfg(has_ocr)]
                         {
                             self.pending_ocr = None;
                         }
@@ -819,7 +819,7 @@ impl eframe::App for PdfToolApp {
         self.a11y_report_ui(&ctx);
         self.autotag_dialog_ui(&ctx);
         self.compare_ui(&ctx);
-        #[cfg(feature = "ocr")]
+        #[cfg(has_ocr)]
         self.ocr_dialog_ui(&ctx);
         self.sign_dialog_ui(&ctx);
         self.cert_dialog_ui(&ctx);

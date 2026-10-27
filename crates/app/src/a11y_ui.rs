@@ -33,7 +33,7 @@ pub struct AutoTagDialog {
 enum Fix {
     AutoTag,
     TagsPanel,
-    #[cfg(feature = "ocr")]
+    #[cfg(has_ocr)]
     Ocr,
 }
 
@@ -44,8 +44,8 @@ fn fix_for(kind: CheckKind, tagged: bool) -> Option<(&'static str, Fix)> {
         CheckKind::Language | CheckKind::Title | CheckKind::AltText => {
             Some(("Im Panel „Tags“ ändern", Fix::TagsPanel))
         }
-        #[cfg(feature = "ocr")]
-        CheckKind::Scanned => Some(("Texterkennung…", Fix::Ocr)),
+        #[cfg(has_ocr)]
+        CheckKind::Scanned if crate::ocr_ui::available() => Some(("Texterkennung…", Fix::Ocr)),
         _ => None,
     }
 }
@@ -175,7 +175,7 @@ impl PdfToolApp {
             Some(Fix::TagsPanel) => {
                 self.right_pane = Some(crate::shell::RightPane::Tags);
             }
-            #[cfg(feature = "ocr")]
+            #[cfg(has_ocr)]
             Some(Fix::Ocr) => self.open_ocr_dialog(),
             None => {}
         }
