@@ -286,7 +286,7 @@ impl PdfToolApp {
     pub(crate) fn pane_header(ui: &mut egui::Ui, title: &str) -> bool {
         let mut close = false;
         ui.horizontal(|ui| {
-            ui.label(RichText::new(title).size(16.0).strong());
+            ui.label(RichText::new(title).size(17.0).strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 close = icons::sized_button(ui, Icon::Close, "Schließen", false, 26.0).clicked();
             });
@@ -414,19 +414,15 @@ impl PdfToolApp {
     }
 }
 
-/// Rahmen schwebender Leisten: abgerundet, mit Schatten.
+/// Rahmen schwebender Leisten: stark abgerundet, Haarlinie, weicher Schatten (wie die Karten
+/// im Portal).
 pub(crate) fn floating_frame(dark: bool) -> egui::Frame {
     egui::Frame::NONE
         .fill(style::floating_fill(dark))
-        .corner_radius(10.0)
+        .corner_radius(16.0)
         .stroke(egui::Stroke::new(1.0, style::border(dark)))
-        .inner_margin(egui::Margin::same(5))
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 2],
-            blur: 10,
-            spread: 0,
-            color: egui::Color32::from_black_alpha(if dark { 90 } else { 40 }),
-        })
+        .inner_margin(egui::Margin::same(6))
+        .shadow(style::soft_shadow(dark))
 }
 
 impl PdfToolApp {

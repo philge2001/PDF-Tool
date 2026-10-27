@@ -12,7 +12,7 @@ use crate::shell::{RightPane, floating_frame};
 use crate::tools::Tool;
 use eframe::egui::{self, RichText, Vec2};
 
-/// Werkzeuggruppen in der Liste "Alle Werkzeuge" (Reihenfolge = Anzeige).
+/// Werkzeuggruppen in der Liste "Alle Werkzeuge" (Anzeige nach [`ToolGroup::SECTIONS`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolGroup {
     Comment,
@@ -32,6 +32,8 @@ pub enum ToolGroup {
 }
 
 impl ToolGroup {
+    /// Alle Gruppen (prüft im Test, dass [`Self::SECTIONS`] keine vergisst).
+    #[cfg(test)]
     pub const ALL: [ToolGroup; 14] = [
         ToolGroup::Comment,
         ToolGroup::Edit,
@@ -47,6 +49,41 @@ impl ToolGroup {
         ToolGroup::Compare,
         ToolGroup::Accessibility,
         ToolGroup::Archive,
+    ];
+
+    /// Abschnitte der Liste „Alle Werkzeuge“ (wie die Gruppen der Seitenleiste im Hausbuch).
+    /// Enthält jede Gruppe aus [`Self::ALL`] genau einmal (siehe Test).
+    pub const SECTIONS: &[(&str, &[ToolGroup])] = &[
+        (
+            "Bearbeiten",
+            &[
+                ToolGroup::Edit,
+                ToolGroup::Comment,
+                ToolGroup::Form,
+                ToolGroup::Redact,
+            ],
+        ),
+        (
+            "Seiten und Dateien",
+            &[
+                ToolGroup::Organize,
+                ToolGroup::Combine,
+                ToolGroup::Compare,
+                ToolGroup::Compress,
+            ],
+        ),
+        (
+            "Umwandeln",
+            &[ToolGroup::Export, ToolGroup::Archive, ToolGroup::Scan],
+        ),
+        (
+            "Schützen und prüfen",
+            &[
+                ToolGroup::Protect,
+                ToolGroup::Sign,
+                ToolGroup::Accessibility,
+            ],
+        ),
     ];
 
     pub fn label(self) -> &'static str {
@@ -227,9 +264,12 @@ impl PdfToolApp {
                     self.tools_panel = false;
                 }
                 egui::ScrollArea::vertical().show(ui, |ui| {
-                    for g in ToolGroup::ALL {
-                        if icons::row_button(ui, g.icon(), g.label(), false).clicked() {
-                            self.open_tool_group(&ctx, g);
+                    for (title, groups) in ToolGroup::SECTIONS {
+                        Self::section(ui, title);
+                        for &g in *groups {
+                            if icons::row_button(ui, g.icon(), g.label(), false).clicked() {
+                                self.open_tool_group(&ctx, g);
+                            }
                         }
                     }
                 });
@@ -239,7 +279,7 @@ impl PdfToolApp {
                 ui.horizontal(|ui| {
                     back = icons::sized_button(ui, Icon::Back, "Alle Werkzeuge", false, 28.0)
                         .clicked();
-                    ui.label(RichText::new(group.label()).size(16.0).strong());
+                    ui.label(RichText::new(group.label()).size(17.0).strong());
                 });
                 ui.separator();
                 if back {
@@ -279,9 +319,11 @@ impl PdfToolApp {
         }
     }
 
+    /// Abschnittstitel: klein, grau, in Versalien (wie die Gruppen der Seitenleiste im Hausbuch).
     fn section(ui: &mut egui::Ui, title: &str) {
-        ui.add_space(8.0);
-        ui.label(RichText::new(title).weak().size(12.0));
+        ui.add_space(12.0);
+        ui.label(RichText::new(title.to_uppercase()).weak().size(11.0));
+        ui.add_space(2.0);
     }
 
     fn comment_tools(&mut self, ui: &mut egui::Ui) {
@@ -597,5 +639,22 @@ impl PdfToolApp {
                     });
                 });
             });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sections_cover_every_group_once() {
+        let listed: Vec<ToolGroup> = ToolGroup::SECTIONS
+            .iter()
+            .flat_map(|(_, groups)| groups.iter().copied())
+            .collect();
+        assert_eq!(listed.len(), ToolGroup::ALL.len());
+        for g in ToolGroup::ALL {
+            assert_eq!(listed.iter().filter(|&&x| x == g).count(), 1, "{g:?}");
+        }
     }
 }
