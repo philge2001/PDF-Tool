@@ -4,6 +4,7 @@
 //! Betriebssystems (als RON-Datei). `serde` erzeugt per `derive` den Code zum
 //! (De-)Serialisieren.
 
+use crate::style::Appearance;
 use crate::tools::{Tool, ToolSettings};
 use eframe::egui::ThemePreference;
 use pdftool_core::Color;
@@ -25,6 +26,9 @@ const MAX_RECENT: usize = 10;
 pub struct Settings {
     pub recent_files: Vec<PathBuf>,
     pub theme: ThemePreference,
+    /// Dunkles Design als „Dämmerung“ (nur zusammen mit `theme = Dark`, siehe [`Settings::appearance`]).
+    /// Eigenes Feld, damit gespeicherte Einstellungen älterer Versionen gültig bleiben.
+    pub dusk: bool,
     /// Offenes Panel rechts und ob der Werkzeugbereich links offen ist.
     pub right_pane: Option<crate::shell::RightPane>,
     pub tools_panel: bool,
@@ -47,12 +51,30 @@ pub struct Settings {
     pub tsa_url: String,
 }
 
+impl Settings {
+    /// Gewählte Darstellung (Hell, Dämmerung, Dunkel oder wie das System).
+    pub fn appearance(&self) -> Appearance {
+        match self.theme {
+            ThemePreference::System => Appearance::System,
+            ThemePreference::Light => Appearance::Light,
+            ThemePreference::Dark if self.dusk => Appearance::Dusk,
+            ThemePreference::Dark => Appearance::Dark,
+        }
+    }
+
+    pub fn set_appearance(&mut self, appearance: Appearance) {
+        self.theme = appearance.theme_preference();
+        self.dusk = appearance == Appearance::Dusk;
+    }
+}
+
 impl Default for Settings {
     fn default() -> Self {
         let tools = ToolSettings::default();
         Self {
             recent_files: Vec::new(),
             theme: ThemePreference::System,
+            dusk: false,
             right_pane: None,
             tools_panel: false,
             author: tools.author,

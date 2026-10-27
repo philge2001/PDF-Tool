@@ -66,6 +66,7 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - [x] 10.3 Startseite, Lesezeichen, Menü-Knopf
 - [x] 10.4 Mehrere Dokumente als Tabs + Abschluss
 - [x] 10.5 Gestaltung wie Portal und Hausbuch (Apple-Systemfarben, Pillen, Glyphen, Startseite, Werkzeug-Abschnitte)
+- [x] 10.6 Darstellung „Dämmerung“ zwischen hell und dunkel (Kopfleiste schaltet Hell → Dämmerung → Dunkel)
 
 ## Installer / Releases
 - `cargo-packager` (Konfiguration `[package.metadata.packager]` in `crates/app/Cargo.toml`, Pfade relativ zu
@@ -339,7 +340,10 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   `Palette` (Apple-Systemfarben, Namen wie die CSS-Variablen des Portals), `palette(dark)`, `install` über
   `style_mut_of`, `accent`/`accent_soft`, `background` (Startseite), `canvas` (hinter den Seiten), `surface`,
   `floating_fill`, `border`, `soft_shadow`, `icon_tint` (Kategorie-Farben = Icon-Farben des Portals).
-  Neue Farben nur hier, nicht im Code verteilt
+  Neue Farben nur hier, nicht im Code verteilt. `Appearance` (Wie System, Hell, Dämmerung, Dunkel): Dämmerung =
+  dunkles egui-Design mit der Palette `DUSK` (globaler Schalter, `apply`), `visible`; gespeichert als
+  `Settings::theme` + `dusk` (`Settings::appearance`/`set_appearance`). `PdfToolApp::appearance`/`set_appearance`
+  (öffentlich) nutzt der PDF Webeditor für das mit Portal und Hausbuch geteilte Cookie `pz_theme`
 - `app::shell` – Fensterrahmen: `global_bar` (Menü, Tabs Startseite/Dokumente, Design/Einstellungen/Hilfe),
   `document_bar` (Alle Werkzeuge, Bearbeiten, Konvertieren, Signieren | Schloss, Rückgängig, Wiederholen,
   Suchen, Speichern, ⋯), `document_layout` (Reihenfolge der Panels), `right_rail` + `RightPane`

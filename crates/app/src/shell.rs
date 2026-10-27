@@ -123,19 +123,21 @@ impl PdfToolApp {
                 if icons::button(ui, Icon::Settings, "Einstellungen", false).clicked() {
                     self.show_settings_window = true;
                 }
-                let dark = ui.visuals().dark_mode;
-                let (icon, tip) = if dark {
-                    (Icon::Sun, "Helles Design")
-                } else {
-                    (Icon::Moon, "Dunkles Design")
+                // Darstellung durchschalten: Hell → Dämmerung → Dunkel (Symbol = was zu sehen ist).
+                let visible = style::visible(ui.ctx());
+                let icon = match visible {
+                    style::Appearance::Light | style::Appearance::System => Icon::Sun,
+                    style::Appearance::Dusk => Icon::Sunset,
+                    style::Appearance::Dark => Icon::Moon,
                 };
-                if icons::button(ui, icon, tip, false).clicked() {
-                    self.settings.theme = if dark {
-                        egui::ThemePreference::Light
-                    } else {
-                        egui::ThemePreference::Dark
-                    };
-                    ui.ctx().set_theme(self.settings.theme);
+                let next = visible.next();
+                let tip = format!(
+                    "Darstellung: {} (weiter: {})",
+                    visible.label(),
+                    next.label()
+                );
+                if icons::button(ui, icon, &tip, false).clicked() {
+                    self.set_appearance(ui.ctx(), next);
                 }
             });
         });

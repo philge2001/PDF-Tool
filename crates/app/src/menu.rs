@@ -3,9 +3,10 @@
 use crate::app::PdfToolApp;
 use crate::pages::PageAction;
 use crate::shell::RightPane;
+use crate::style::Appearance;
 use crate::tools::Tool;
 use crate::viewer::ZoomMode;
-use eframe::egui::{self, Button, ThemePreference};
+use eframe::egui::{self, Button};
 
 impl PdfToolApp {
     /// Inhalt des Knopfs "Menü": Datei-Befehle direkt, der Rest als Untermenüs.
@@ -356,16 +357,16 @@ impl PdfToolApp {
     }
 
     fn theme_radios(&mut self, ui: &mut egui::Ui) {
-        let before = self.settings.theme;
-        ui.radio_value(
-            &mut self.settings.theme,
-            ThemePreference::System,
-            "Wie System",
-        );
-        ui.radio_value(&mut self.settings.theme, ThemePreference::Light, "Hell");
-        ui.radio_value(&mut self.settings.theme, ThemePreference::Dark, "Dunkel");
-        if self.settings.theme != before {
-            ui.ctx().set_theme(self.settings.theme);
+        let current = self.settings.appearance();
+        for a in [
+            Appearance::System,
+            Appearance::Light,
+            Appearance::Dusk,
+            Appearance::Dark,
+        ] {
+            if ui.radio(current == a, a.label()).clicked() && current != a {
+                self.set_appearance(ui.ctx(), a);
+            }
         }
     }
 

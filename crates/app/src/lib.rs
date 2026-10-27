@@ -48,3 +48,4 @@ mod tools_panel;
 mod viewer;
 
 pub use app::PdfToolApp;
+pub use style::Appearance;

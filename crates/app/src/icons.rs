@@ -62,6 +62,8 @@ pub enum Icon {
     Split,
     RotateRight,
     Sun,
+    /// Sonne am Horizont (Darstellung „Dämmerung“).
+    Sunset,
     Moon,
 }
 
@@ -496,6 +498,25 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
                     (12.0 + 9.0 * a.cos(), 12.0 + 9.0 * a.sin()),
                 ]);
             }
+        }
+        Icon::Sunset => {
+            // Halbe Sonne über dem Horizont, Strahlen nach oben, Linie darunter.
+            let arc: Vec<(f32, f32)> = (0..=12)
+                .map(|i| {
+                    let a = std::f32::consts::PI * (1.0 + i as f32 / 12.0);
+                    (12.0 + 5.0 * a.cos(), 16.0 + 5.0 * a.sin())
+                })
+                .collect();
+            line(&arc);
+            for deg in [180.0_f32, 225.0, 270.0, 315.0, 360.0] {
+                let a = deg.to_radians();
+                line(&[
+                    (12.0 + 7.5 * a.cos(), 16.0 + 7.5 * a.sin()),
+                    (12.0 + 9.5 * a.cos(), 16.0 + 9.5 * a.sin()),
+                ]);
+            }
+            line(&[(3.0, 16.0), (21.0, 16.0)]);
+            line(&[(7.0, 20.0), (17.0, 20.0)]);
         }
         Icon::Moon => {
             let outer: Vec<(f32, f32)> = (0..=20)
