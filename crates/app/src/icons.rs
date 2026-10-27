@@ -523,7 +523,8 @@ pub fn paint(painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32) {
 /// Größe der normalen Symbol-Schaltflächen (quadratisch).
 pub const BUTTON: f32 = 32.0;
 
-/// Quadratische Schaltfläche mit Icon; `selected` hinterlegt sie in der Akzentfarbe.
+/// Runde Schaltfläche mit Icon (wie die Symbolknöpfe im Hausbuch); `selected` tönt sie in der
+/// Akzentfarbe.
 pub fn button(ui: &mut Ui, icon: Icon, tooltip: &str, selected: bool) -> Response {
     sized_button(ui, icon, tooltip, selected, BUTTON)
 }
@@ -533,19 +534,21 @@ pub fn sized_button(ui: &mut Ui, icon: Icon, tooltip: &str, selected: bool, size
     let enabled = ui.is_enabled();
     if ui.is_rect_visible(rect) {
         let v = ui.visuals();
+        let dark = v.dark_mode;
         let fg = if !enabled {
             v.weak_text_color()
         } else if selected {
-            v.selection.stroke.color
+            crate::style::accent(dark)
         } else {
             v.text_color()
         };
+        let radius = size / 2.0;
         if selected {
             ui.painter()
-                .rect_filled(rect, 6.0, v.selection.bg_fill.gamma_multiply(0.35));
+                .rect_filled(rect, radius, crate::style::accent_soft(dark));
         } else if resp.hovered() && enabled {
             ui.painter()
-                .rect_filled(rect, 6.0, v.widgets.hovered.weak_bg_fill);
+                .rect_filled(rect, radius, v.widgets.hovered.weak_bg_fill);
         }
         paint(ui.painter(), rect.shrink(size * 0.2), icon, fg);
     }
@@ -556,77 +559,121 @@ pub fn sized_button(ui: &mut Ui, icon: Icon, tooltip: &str, selected: bool, size
     }
 }
 
-/// Icon + Text in einer Zeile (für Listen wie "Alle Werkzeuge").
+/// Farbiges, abgerundetes Quadrat mit weißem Symbol – wie die App-Symbole im Portal und die
+/// Bereichssymbole in der Seitenleiste des Hausbuchs. Farbe: Kategorie des Icons (`icon_tint`),
+/// sonst Grau.
+pub fn glyph(painter: &egui::Painter, rect: Rect, icon: Icon, dark: bool) {
+    let fill = crate::style::icon_tint(icon, crate::style::palette(dark).graphite);
+    // 22,5 % Rundung wie `.icon` im Portal (App-Symbol-Form).
+    painter.rect_filled(rect, rect.width() * 0.225, fill);
+    paint(
+        painter,
+        rect.shrink(rect.width() * 0.2),
+        icon,
+        Color32::WHITE,
+    );
+}
+
+/// Listenzeile mit farbigem Symbol und Text (z. B. „Alle Werkzeuge“), wie die Seitenleiste im
+/// Hausbuch: ausgewählt = Akzentfläche mit weißer Schrift.
 pub fn row_button(ui: &mut Ui, icon: Icon, text: &str, selected: bool) -> Response {
-    let height = 34.0;
+    let height = 36.0;
     let (rect, resp) =
         ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::click());
     if ui.is_rect_visible(rect) {
         let v = ui.visuals();
+        let dark = v.dark_mode;
         if selected {
             ui.painter()
-                .rect_filled(rect, 6.0, v.selection.bg_fill.gamma_multiply(0.35));
+                .rect_filled(rect, 10.0, crate::style::accent(dark));
         } else if resp.hovered() {
             ui.painter()
-                .rect_filled(rect, 6.0, v.widgets.hovered.weak_bg_fill);
+                .rect_filled(rect, 10.0, v.widgets.hovered.weak_bg_fill);
         }
         let icon_rect = Rect::from_min_size(
-            rect.left_center() + Vec2::new(8.0, -10.0),
-            Vec2::splat(20.0),
+            rect.left_center() + Vec2::new(6.0, -13.0),
+            Vec2::splat(26.0),
         );
-        let fg = if selected {
-            v.selection.stroke.color
-        } else {
-            v.text_color()
-        };
-        paint(
-            ui.painter(),
-            icon_rect,
-            icon,
-            crate::style::icon_tint(icon, fg),
-        );
+        glyph(ui.painter(), icon_rect, icon, dark);
         ui.painter().text(
-            rect.left_center() + Vec2::new(38.0, 0.0),
+            rect.left_center() + Vec2::new(42.0, 0.0),
             egui::Align2::LEFT_CENTER,
             text,
             egui::TextStyle::Body.resolve(ui.style()),
-            v.text_color(),
+            if selected {
+                Color32::WHITE
+            } else {
+                v.text_color()
+            },
         );
     }
     resp
 }
 
-/// Flache Schaltfläche mit Icon und Text (Kopf-/Dokumentleiste).
+/// Flache Schaltfläche mit Icon und Text (Kopf-/Dokumentleiste), als Pille; ausgewählt
+/// = getönt mit Akzent-Schrift.
 pub fn text_button(ui: &mut Ui, icon: Icon, text: &str, selected: bool) -> Response {
+    let v = ui.visuals();
+    let dark = v.dark_mode;
+    let fg = if selected {
+        crate::style::accent(dark)
+    } else {
+        v.text_color()
+    };
     let font = egui::TextStyle::Body.resolve(ui.style());
-    let galley = ui
-        .painter()
-        .layout_no_wrap(text.to_owned(), font, ui.visuals().text_color());
-    let size = Vec2::new(10.0 + 18.0 + 6.0 + galley.size().x + 12.0, BUTTON);
+    let galley = ui.painter().layout_no_wrap(text.to_owned(), font, fg);
+    let size = Vec2::new(12.0 + 18.0 + 6.0 + galley.size().x + 14.0, BUTTON);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     if ui.is_rect_visible(rect) {
-        let v = ui.visuals();
+        let radius = rect.height() / 2.0;
         if selected {
             ui.painter()
-                .rect_filled(rect, 6.0, v.selection.bg_fill.gamma_multiply(0.35));
+                .rect_filled(rect, radius, crate::style::accent_soft(dark));
         } else if resp.hovered() {
             ui.painter()
-                .rect_filled(rect, 6.0, v.widgets.hovered.weak_bg_fill);
+                .rect_filled(rect, radius, ui.visuals().widgets.hovered.weak_bg_fill);
         }
-        let fg = if selected {
-            v.selection.stroke.color
-        } else {
-            v.text_color()
-        };
         let icon_rect = Rect::from_min_size(
-            rect.left_center() + Vec2::new(10.0, -9.0),
+            rect.left_center() + Vec2::new(12.0, -9.0),
             Vec2::splat(18.0),
         );
         paint(ui.painter(), icon_rect, icon, fg);
         ui.painter().galley(
-            rect.left_center() + Vec2::new(34.0, -galley.size().y / 2.0),
+            rect.left_center() + Vec2::new(36.0, -galley.size().y / 2.0),
             galley,
             fg,
+        );
+    }
+    resp
+}
+
+/// Hauptschaltfläche (`.btn.primary` im Portal): Akzentfarbe, weiße Schrift, Pille.
+pub fn primary_button(ui: &mut Ui, icon: Icon, text: &str) -> Response {
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.to_owned(), font, Color32::WHITE);
+    let size = Vec2::new(16.0 + 18.0 + 8.0 + galley.size().x + 20.0, 40.0);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    if ui.is_rect_visible(rect) {
+        let accent = crate::style::accent(ui.visuals().dark_mode);
+        let fill = if resp.is_pointer_button_down_on() {
+            accent.gamma_multiply(0.85)
+        } else if resp.hovered() {
+            accent.gamma_multiply(0.93)
+        } else {
+            accent
+        };
+        ui.painter().rect_filled(rect, rect.height() / 2.0, fill);
+        let icon_rect = Rect::from_min_size(
+            rect.left_center() + Vec2::new(16.0, -9.0),
+            Vec2::splat(18.0),
+        );
+        paint(ui.painter(), icon_rect, icon, Color32::WHITE);
+        ui.painter().galley(
+            rect.left_center() + Vec2::new(42.0, -galley.size().y / 2.0),
+            galley,
+            Color32::WHITE,
         );
     }
     resp
@@ -663,11 +710,12 @@ pub fn tab(ui: &mut Ui, icon: Icon, text: &str, selected: bool, closable: bool) 
         } else {
             Color32::TRANSPARENT
         };
-        ui.painter().rect_filled(rect, 8.0, fill);
+        let radius = rect.height() / 2.0;
+        ui.painter().rect_filled(rect, radius, fill);
         if selected {
             ui.painter().rect_stroke(
                 rect,
-                8.0,
+                radius,
                 Stroke::new(1.0, crate::style::border(v.dark_mode)),
                 StrokeKind::Inside,
             );
@@ -697,7 +745,7 @@ pub fn tab(ui: &mut Ui, icon: Icon, text: &str, selected: bool, closable: bool) 
             let hovered = ui.rect_contains_pointer(close);
             if hovered {
                 ui.painter()
-                    .rect_filled(close, 4.0, v.widgets.active.weak_bg_fill);
+                    .rect_filled(close, 10.0, v.widgets.active.weak_bg_fill);
             }
             paint(ui.painter(), close.shrink(5.0), Icon::Close, fg);
             close_clicked = hovered && response.clicked();

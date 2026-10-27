@@ -768,11 +768,12 @@ impl eframe::App for PdfToolApp {
 
         self.sync_tool_group();
         let dark = ui.visuals().dark_mode;
+        // Leisten ohne eigenen Rahmen: die Trennlinie zum Nachbarbereich zieht das Panel selbst
+        // (Haarlinie wie `.topbar` im Portal).
         let bar = |fill| {
             egui::Frame::NONE
                 .fill(fill)
-                .inner_margin(egui::Margin::symmetric(8, 2))
-                .stroke(egui::Stroke::new(1.0, crate::style::border(dark)))
+                .inner_margin(egui::Margin::symmetric(10, 2))
         };
         let panel_fill = ui.visuals().panel_fill;
         let window_fill = ui.visuals().window_fill;
@@ -799,7 +800,7 @@ impl eframe::App for PdfToolApp {
         }
         if self.document.is_none() || self.show_home {
             egui::CentralPanel::default()
-                .frame(egui::Frame::NONE.fill(crate::style::canvas(dark)))
+                .frame(egui::Frame::NONE.fill(crate::style::background(dark)))
                 .show(ui, |ui| self.home_page(ui));
         } else {
             self.document_layout(ui, &ctx, bar(window_fill));

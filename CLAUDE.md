@@ -65,6 +65,7 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
 - [x] 10.2 Werkzeugbereich links (Alle Werkzeuge + Werkzeug-Panels), schwebende Schnellwerkzeuge
 - [x] 10.3 Startseite, Lesezeichen, Menü-Knopf
 - [x] 10.4 Mehrere Dokumente als Tabs + Abschluss
+- [x] 10.5 Gestaltung wie Portal und Hausbuch (Apple-Systemfarben, Pillen, Glyphen, Startseite, Werkzeug-Abschnitte)
 
 ## Installer / Releases
 - `cargo-packager` (Konfiguration `[package.metadata.packager]` in `crates/app/Cargo.toml`, Pfade relativ zu
@@ -330,20 +331,25 @@ PDFTOOL_PDFIUM_PATH=/pfad/zu/pdfium/lib cargo run -p pdftool-app -- datei.pdf
   (`PendingAction`), Fenstertitel mit `*`; nach dem Speichern lädt der Worker neu (`reload_renderer`)
 - `app::menu` – Inhalt des Knopfs „Menü“ (`main_menu`: Datei-Befehle direkt, Untermenüs Bearbeiten, Seiten,
   Formular, Schwärzen, Signieren, Barrierefreiheit, Ansicht; „Beenden“ zuletzt)
-- `app::icons` – eigene Vektor-Icons (`Icon`, 24er-Raster, `paint`), Widgets `button`/`sized_button`,
-  `text_button`, `row_button` (Listenzeile), `tab` (`TabResponse` mit Schließen-Kreuz)
-- `app::style` – Farbschema hell/dunkel (`install` über `style_mut_of`), `ACCENT`, `canvas`, `floating_fill`,
-  `border`, `icon_tint` (Kategorie-Farben der Werkzeug-Icons)
+- `app::icons` – eigene Vektor-Icons (`Icon`, 24er-Raster, `paint`), `glyph` (farbiges Quadrat mit weißem
+  Symbol), Widgets `button`/`sized_button` (rund), `text_button` (Pille, ausgewählt = getönt),
+  `primary_button` (Akzent), `row_button` (Listenzeile mit Glyph, ausgewählt = Akzentfläche),
+  `tab` (Pille, `TabResponse` mit Schließen-Kreuz)
+- `app::style` – Farbschema hell/dunkel wie Portal (github.com/philge2001/portal) und Hausbuch (vermietung):
+  `Palette` (Apple-Systemfarben, Namen wie die CSS-Variablen des Portals), `palette(dark)`, `install` über
+  `style_mut_of`, `accent`/`accent_soft`, `background` (Startseite), `canvas` (hinter den Seiten), `surface`,
+  `floating_fill`, `border`, `soft_shadow`, `icon_tint` (Kategorie-Farben = Icon-Farben des Portals).
+  Neue Farben nur hier, nicht im Code verteilt
 - `app::shell` – Fensterrahmen: `global_bar` (Menü, Tabs Startseite/Dokumente, Design/Einstellungen/Hilfe),
   `document_bar` (Alle Werkzeuge, Bearbeiten, Konvertieren, Signieren | Schloss, Rückgängig, Wiederholen,
   Suchen, Speichern, ⋯), `document_layout` (Reihenfolge der Panels), `right_rail` + `RightPane`
   (Kommentare, Seitenminiaturen, Lesezeichen, Signaturen, Tags; erneuter Klick schließt), `pane_header`,
   `page_controls` (schwebend unten rechts: Seite, ↑↓, Zoom, Anpassen), `floating_frame`, `shortcuts_window`
-- `app::tools_panel` – Werkzeugbereich links: `ToolGroup` (14 Gruppen; mit Panel: Kommentieren, Bearbeiten,
+- `app::tools_panel` – Werkzeugbereich links: `ToolGroup` (14 Gruppen in `SECTIONS`-Abschnitten wie die Seitenleiste im Hausbuch; mit Panel: Kommentieren, Bearbeiten,
   Organisieren, Schwärzen, Formular, Zertifikat, Barrierefreiheit – sonst Dialog direkt), `open_tool_group`,
   `leave_tool_group`, `sync_tool_group` (Gruppe folgt dem Werkzeug), `tool_icon`; `quick_tools` (schwebend
   links), `selection_bar` (Farbe/Löschen der ausgewählten Annotation)
-- `app::home` – Startseite: Kacheln „Empfohlene Werkzeuge“ (ohne Dokument erst Datei wählen, `pending_group`),
+- `app::home` – Startseite (mittige Spalte ≤ 1080 px wie im Portal, Begrüßung, „Datei öffnen“): Kacheln „Empfohlene Werkzeuge“ (ohne Dokument erst Datei wählen, `pending_group`),
   „Zuletzt verwendet“ (Ort, `relative_age`, `human_size`)
 - `app::bookmarks` – Panel „Lesezeichen“ (Baum mit Aufklapp-Zustand, `go_to_destination` →
   `Viewer::scroll_to_page_at`, Weblinks nach Rückfrage per `ctx.open_url`)

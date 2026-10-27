@@ -15,7 +15,7 @@ const RECOMMENDED: &[(ToolGroup, &str)] = &[
     (ToolGroup::Comment, "Markieren, Notizen, Zeichnen"),
     (ToolGroup::Combine, "Mehrere PDFs zu einer"),
     (ToolGroup::Organize, "Drehen, löschen, einfügen"),
-    (ToolGroup::Scan, "Gescannte Seiten durchsuchbar"),
+    (ToolGroup::Scan, "Scans durchsuchbar machen"),
     (ToolGroup::Protect, "Passwort und Rechte"),
     (ToolGroup::Compress, "Datei verkleinern"),
     (ToolGroup::Form, "Formularfelder anlegen"),
@@ -59,44 +59,45 @@ impl PdfToolApp {
         egui::ScrollArea::vertical()
             .auto_shrink(false)
             .show(ui, |ui| {
-                egui::Frame::NONE
-                    .inner_margin(egui::Margin::symmetric(40, 28))
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                RichText::new("Willkommen bei PDF Tool!")
-                                    .size(26.0)
-                                    .strong(),
-                            );
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if icons::text_button(ui, Icon::Open, "Datei öffnen", true)
-                                        .clicked()
-                                    {
-                                        self.open_dialog(&ctx);
-                                    }
-                                },
-                            );
-                        });
-                        ui.add_space(20.0);
-                        ui.label(RichText::new("Empfohlene Werkzeuge").size(16.0).strong());
-                        ui.add_space(6.0);
-                        let mut chosen = None;
-                        ui.horizontal_wrapped(|ui| {
-                            ui.spacing_mut().item_spacing = Vec2::new(12.0, 12.0);
-                            for &(group, hint) in RECOMMENDED {
-                                if tile(ui, dark, group, hint).clicked() {
-                                    chosen = Some(group);
-                                }
-                            }
-                        });
-                        if let Some(g) = chosen {
-                            self.start_tool_from_home(&ctx, g);
+                // Mittige Spalte mit höchstens 1080 px wie `.home` im Portal.
+                let full = ui.available_rect_before_wrap();
+                let width = (full.width() - 48.0).clamp(220.0, MAX_WIDTH);
+                let column = egui::Rect::from_min_size(
+                    egui::pos2(full.center().x - width / 2.0, full.top() + 40.0),
+                    Vec2::new(width, full.height()),
+                );
+                ui.scope_builder(egui::UiBuilder::new().max_rect(column), |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label(RichText::new("Willkommen bei PDF Tool").size(34.0).strong());
+                        ui.add_space(2.0);
+                        ui.label(
+                            RichText::new("Öffne eine PDF oder wähle ein Werkzeug.")
+                                .size(16.0)
+                                .weak(),
+                        );
+                        ui.add_space(16.0);
+                        if icons::primary_button(ui, Icon::Open, "Datei öffnen").clicked() {
+                            self.open_dialog(&ctx);
                         }
-                        ui.add_space(24.0);
-                        self.recent_list(ui, &ctx);
                     });
+                    ui.add_space(36.0);
+                    section(ui, "Empfohlene Werkzeuge");
+                    let mut chosen = None;
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = Vec2::new(16.0, 16.0);
+                        for &(group, hint) in RECOMMENDED {
+                            if tile(ui, dark, group, hint).clicked() {
+                                chosen = Some(group);
+                            }
+                        }
+                    });
+                    if let Some(g) = chosen {
+                        self.start_tool_from_home(&ctx, g);
+                    }
+                    ui.add_space(32.0);
+                    self.recent_list(ui, &ctx);
+                    ui.add_space(48.0);
+                });
             });
     }
 
@@ -118,8 +119,21 @@ impl PdfToolApp {
     }
 
     fn recent_list(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
-        ui.label(RichText::new("Zuletzt verwendet").size(16.0).strong());
-        ui.add_space(4.0);
+        section(ui, "Zuletzt verwendet");
+        // Liste als Karte (`.card` im Portal).
+        let dark = ui.visuals().dark_mode;
+        egui::Frame::NONE
+            .fill(style::surface(dark))
+            .stroke(egui::Stroke::new(1.0, style::border(dark)))
+            .corner_radius(18.0)
+            .inner_margin(egui::Margin::symmetric(18, 12))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                self.recent_rows(ui, ctx);
+            });
+    }
+
+    fn recent_rows(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         if self.settings.recent_files.is_empty() {
             ui.label(
                 RichText::new("Noch keine Dateien. Eine PDF hierher ziehen oder „Datei öffnen“.")
@@ -131,11 +145,11 @@ impl PdfToolApp {
         let mut open: Option<PathBuf> = None;
         let mut remove: Option<PathBuf> = None;
         let row_h = 40.0;
+        let dark = ui.visuals().dark_mode;
         egui::Grid::new("recent")
             .num_columns(5)
             .min_row_height(row_h)
             .spacing(Vec2::new(24.0, 0.0))
-            .striped(true)
             .show(ui, |ui| {
                 for h in ["Name", "Ort", "Geändert", "Größe", ""] {
                     ui.label(RichText::new(h).weak());
@@ -154,7 +168,7 @@ impl PdfToolApp {
                     let resp = ui
                         .horizontal(|ui| {
                             let (r, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
-                            icons::paint(ui.painter(), r, Icon::Export, style::ACCENT);
+                            icons::paint(ui.painter(), r, Icon::Export, style::accent(dark));
                             ui.add(
                                 egui::Label::new(RichText::new(&name).strong())
                                     .sense(Sense::click()),
@@ -197,41 +211,50 @@ impl PdfToolApp {
     }
 }
 
-/// Kachel für ein empfohlenes Werkzeug.
+/// Größte Breite der Startseite (wie `.home` im Portal).
+const MAX_WIDTH: f32 = 1080.0;
+
+/// Abschnittstitel der Startseite: klein, grau, in Versalien (`.group > h2` im Portal).
+fn section(ui: &mut egui::Ui, title: &str) {
+    ui.label(RichText::new(title.to_uppercase()).size(12.0).weak());
+    ui.add_space(8.0);
+}
+
+/// Kachel für ein empfohlenes Werkzeug: Karte mit App-Symbol, Name und Kurzbeschreibung
+/// (`.tile` im Portal).
 fn tile(ui: &mut egui::Ui, dark: bool, group: ToolGroup, hint: &str) -> egui::Response {
-    let size = Vec2::new(196.0, 104.0);
+    let size = Vec2::new(200.0, 120.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     if ui.is_rect_visible(rect) {
         let v = ui.visuals();
-        let fill = if resp.hovered() {
-            v.widgets.hovered.weak_bg_fill
-        } else {
-            style::floating_fill(dark)
-        };
-        ui.painter().rect_filled(rect, 10.0, fill);
+        let radius = egui::CornerRadius::same(18);
+        // Überfahren: Schatten wird kräftiger, wie das Anheben der Kacheln im Portal.
+        let mut shadow = style::soft_shadow(dark);
+        if resp.hovered() {
+            shadow.offset[1] += 4;
+            shadow.blur = shadow.blur.saturating_add(12);
+            shadow.color = shadow.color.gamma_multiply(1.8);
+        }
+        ui.painter().add(shadow.as_shape(rect, radius));
+        ui.painter().rect_filled(rect, radius, style::surface(dark));
         ui.painter().rect_stroke(
             rect,
-            10.0,
+            radius,
             egui::Stroke::new(1.0, style::border(dark)),
             egui::StrokeKind::Inside,
         );
         let icon_rect =
-            egui::Rect::from_min_size(rect.min + Vec2::new(14.0, 14.0), Vec2::splat(28.0));
-        icons::paint(
-            ui.painter(),
-            icon_rect,
-            group.icon(),
-            style::icon_tint(group.icon(), v.text_color()),
-        );
+            egui::Rect::from_min_size(rect.min + Vec2::new(16.0, 16.0), Vec2::splat(40.0));
+        icons::glyph(ui.painter(), icon_rect, group.icon(), dark);
         ui.painter().text(
-            rect.min + Vec2::new(14.0, 54.0),
+            rect.min + Vec2::new(16.0, 68.0),
             egui::Align2::LEFT_TOP,
             group.label(),
             egui::FontId::proportional(15.0),
             v.text_color(),
         );
         ui.painter().text(
-            rect.min + Vec2::new(14.0, 76.0),
+            rect.min + Vec2::new(16.0, 90.0),
             egui::Align2::LEFT_TOP,
             hint,
             egui::FontId::proportional(12.5),
